@@ -62,7 +62,7 @@ interface OpenAIImagesResponse {
  * - 仍保留 v1 关键能力：JSON+base64 优先 + FormData 回退、自定义分辨率、GPT Image 超时下限提升
  */
 export class OpenAIImagesProvider extends BaseImageProvider {
-  override readonly name = 'openai-images'
+  override readonly name: string = 'openai-images'
 
   /** GPT Image 模型对超时的下限保护（秒） */
   private getEffectiveTimeoutSeconds(): number {

@@ -1,11 +1,10 @@
 {
   "name": "koishi-plugin-aka-ai-image-generator",
-  "version": "0.1.0",
-  "description": "AI image & video generator for Koishi (V2: provider-registry architecture, multi-model adaptive).",
+  "version": "0.2.2",
+  "description": "AI image generator for Koishi (V2: provider-registry architecture, multi-model adaptive).",
   "license": "MIT",
-  "type": "module",
   "main": "dist/index.js",
-  "module": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
@@ -13,9 +12,16 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "peerDependencies": {
     "koishi": "^4.18.9"
@@ -31,7 +37,7 @@
     "typescript": "^5.9.2"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap",
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap",
     "clean": "rimraf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --project tsconfig.json --noEmit"
@@ -45,7 +51,6 @@
     "koishi-plugin",
     "ai",
     "image-generation",
-    "video-generation",
     "yunwu",
     "gptgod",
     "gemini",

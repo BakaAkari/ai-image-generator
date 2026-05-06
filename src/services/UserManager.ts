@@ -73,40 +73,18 @@ export interface RechargeHistory {
   records: RechargeRecord[]
 }
 
-// 待结算的视频任务（用于"超时但最终成功"场景补扣积分）
-export interface PendingVideoTask {
-  taskId: string
-  userId: string
-  userName: string
-  commandName: string
-  credits: number
-  createdAt: string
-  charged: boolean
-  chargedAt?: string
-}
-
-export interface PendingVideoTasksData {
-  version: string
-  lastUpdate: string
-  tasks: Record<string, PendingVideoTask>
-}
-
 export class UserManager {
   private dataDir: string
   private dataFile: string
   private backupFile: string
   private rechargeHistoryFile: string
-  private pendingVideoTasksFile: string
   private logger: any
   private dataLock = new AsyncLock()
   private historyLock = new AsyncLock()
-  private pendingLock = new AsyncLock()
 
   // 内存缓存
   private usersCache: UsersData | null = null
-  private pendingVideoCache: PendingVideoTasksData | null = null
   private activeTasks = new Map<string, string>()  // userId -> requestId (图像任务锁)
-  private activeVideoTasks = new Map<string, string>()  // userId -> requestId (视频任务锁，独立于图像任务)
   private rateLimitMap = new Map<string, number[]>()  // userId -> timestamps
   private securityBlockMap = new Map<string, number[]>()  // userId -> 拦截时间戳数组
   private securityWarningMap = new Map<string, boolean>()  // userId -> 是否已收到警示
@@ -118,16 +96,14 @@ export class UserManager {
     this.dataFile = join(this.dataDir, 'users_data.json')
     this.backupFile = join(this.dataDir, 'users_data.json.backup')
     this.rechargeHistoryFile = join(this.dataDir, 'recharge_history.json')
-    this.pendingVideoTasksFile = join(this.dataDir, 'pending_video_tasks.json')
 
     if (!existsSync(this.dataDir)) {
       mkdirSync(this.dataDir, { recursive: true })
     }
   }
 
-  // --- 任务管理 ---
+  // --- 任务管理（仅图像任务） ---
 
-  // 图像任务锁（原有逻辑保持不变）
   startTask(userId: string): boolean {
     if (this.activeTasks.has(userId)) return false
     this.activeTasks.set(userId, 'processing')
@@ -140,21 +116,6 @@ export class UserManager {
 
   isTaskActive(userId: string): boolean {
     return this.activeTasks.has(userId)
-  }
-
-  // 视频任务锁（独立于图像任务，不影响图像生成）
-  startVideoTask(userId: string): boolean {
-    if (this.activeVideoTasks.has(userId)) return false
-    this.activeVideoTasks.set(userId, 'processing')
-    return true
-  }
-
-  endVideoTask(userId: string) {
-    this.activeVideoTasks.delete(userId)
-  }
-
-  isVideoTaskActive(userId: string): boolean {
-    return this.activeVideoTasks.has(userId)
   }
 
   // --- 权限管理 ---
@@ -219,168 +180,6 @@ export class UserManager {
       this.logger.error('保存用户数据失败', error)
       throw error
     }
-  }
-
-  // --- 待结算视频任务（防止超时套利） ---
-
-  private async loadPendingVideoTasks(): Promise<PendingVideoTasksData> {
-    if (this.pendingVideoCache) return this.pendingVideoCache
-
-    return await this.pendingLock.acquire(async () => {
-      if (this.pendingVideoCache) return this.pendingVideoCache
-
-      try {
-        if (existsSync(this.pendingVideoTasksFile)) {
-          const data = await fs.readFile(this.pendingVideoTasksFile, 'utf-8')
-          const parsed = JSON.parse(data)
-          this.pendingVideoCache = {
-            version: parsed?.version || '1.0.0',
-            lastUpdate: parsed?.lastUpdate || new Date().toISOString(),
-            tasks: parsed?.tasks || {}
-          }
-          return this.pendingVideoCache
-        }
-      } catch (error) {
-        this.logger.error('读取待结算视频任务失败', error)
-      }
-
-      this.pendingVideoCache = {
-        version: '1.0.0',
-        lastUpdate: new Date().toISOString(),
-        tasks: {}
-      }
-      return this.pendingVideoCache
-    })
-  }
-
-  private async savePendingVideoTasksInternal(): Promise<void> {
-    if (!this.pendingVideoCache) return
-    try {
-      this.pendingVideoCache.lastUpdate = new Date().toISOString()
-      await fs.writeFile(this.pendingVideoTasksFile, JSON.stringify(this.pendingVideoCache, null, 2), 'utf-8')
-    } catch (error) {
-      this.logger.error('保存待结算视频任务失败', error)
-      throw error
-    }
-  }
-
-  /**
-   * 记录一个待结算的视频任务（任务创建成功后立即写入，避免"超时但最终成功"不扣费）
-   */
-  async addPendingVideoTask(task: PendingVideoTask): Promise<void> {
-    await this.loadPendingVideoTasks()
-    await this.pendingLock.acquire(async () => {
-      if (!this.pendingVideoCache) {
-        this.pendingVideoCache = { version: '1.0.0', lastUpdate: new Date().toISOString(), tasks: {} }
-      }
-      // 幂等：若已存在则不覆盖（避免重复写入）
-      if (this.pendingVideoCache.tasks[task.taskId]) return
-      this.pendingVideoCache.tasks[task.taskId] = task
-      await this.savePendingVideoTasksInternal()
-    })
-  }
-
-  async getPendingVideoTask(taskId: string): Promise<PendingVideoTask | null> {
-    const data = await this.loadPendingVideoTasks()
-    return data.tasks[taskId] || null
-  }
-
-  async markPendingVideoTaskCharged(taskId: string): Promise<PendingVideoTask | null> {
-    await this.loadPendingVideoTasks()
-    return await this.pendingLock.acquire(async () => {
-      if (!this.pendingVideoCache) return null
-      const task = this.pendingVideoCache.tasks[taskId]
-      if (!task) return null
-      if (task.charged) return task
-
-      task.charged = true
-      task.chargedAt = new Date().toISOString()
-      await this.savePendingVideoTasksInternal()
-      return task
-    })
-  }
-
-  async deletePendingVideoTask(taskId: string): Promise<void> {
-    await this.loadPendingVideoTasks()
-    await this.pendingLock.acquire(async () => {
-      if (!this.pendingVideoCache) return
-      if (!this.pendingVideoCache.tasks[taskId]) return
-      delete this.pendingVideoCache.tasks[taskId]
-      await this.savePendingVideoTasksInternal()
-    })
-  }
-
-  /**
-   * 获取某个用户最近一次未扣费的待结算视频任务
-   */
-  async getLatestPendingVideoTaskForUser(userId: string): Promise<PendingVideoTask | null> {
-    const data = await this.loadPendingVideoTasks()
-    const tasks = Object.values(data.tasks)
-      .filter(t => t.userId === userId && !t.charged)
-      .sort((a, b) => {
-        const ta = Date.parse(a.createdAt || '') || 0
-        const tb = Date.parse(b.createdAt || '') || 0
-        return tb - ta
-      })
-    return tasks[0] || null
-  }
-
-  /**
-   * 统计某个用户未扣费的待结算视频任务数量
-   */
-  async countPendingVideoTasksForUser(userId: string): Promise<number> {
-    const data = await this.loadPendingVideoTasks()
-    return Object.values(data.tasks)
-      .filter(t => t.userId === userId && !t.charged)
-      .length
-  }
-
-  /**
-   * 列出某个用户所有未扣费的待结算视频任务
-   */
-  async listPendingVideoTasksForUser(userId: string): Promise<PendingVideoTask[]> {
-    const data = await this.loadPendingVideoTasks()
-    return Object.values(data.tasks)
-      .filter(t => t.userId === userId && !t.charged)
-      .sort((a, b) => {
-        const ta = Date.parse(a.createdAt || '') || 0
-        const tb = Date.parse(b.createdAt || '') || 0
-        return tb - ta // 最新的在前
-      })
-  }
-
-  /**
-   * 添加待结算视频任务，并检查上限（默认max=1）
-   * @returns {Promise<{success: boolean, message?: string}>} 成功返回 {success: true}，失败返回 {success: false, message: '错误信息'}
-   */
-  async addPendingVideoTaskWithLimit(task: PendingVideoTask, max: number = 1): Promise<{ success: boolean, message?: string }> {
-    await this.loadPendingVideoTasks()
-    return await this.pendingLock.acquire(async () => {
-      if (!this.pendingVideoCache) {
-        this.pendingVideoCache = { version: '1.0.0', lastUpdate: new Date().toISOString(), tasks: {} }
-      }
-
-      // 检查该用户未扣费任务数量
-      const currentCount = Object.values(this.pendingVideoCache.tasks)
-        .filter(t => t.userId === task.userId && !t.charged)
-        .length
-
-      if (currentCount >= max) {
-        return {
-          success: false,
-          message: `您当前已有 ${currentCount} 个视频正在生成中（最多允许 ${max} 个），请先使用"查询视频"查看进度或等待完成`
-        }
-      }
-
-      // 幂等：若已存在则不覆盖（避免重复写入）
-      if (this.pendingVideoCache.tasks[task.taskId]) {
-        return { success: true } // 已存在，视为成功
-      }
-
-      this.pendingVideoCache.tasks[task.taskId] = task
-      await this.savePendingVideoTasksInternal()
-      return { success: true }
-    })
   }
 
   // 获取特定用户数据
@@ -521,9 +320,6 @@ export class UserManager {
 
     const userData = await this.getUserData(userId, userId) // 获取或初始化
 
-    // 注意：getUserData 返回的是缓存对象的引用，直接读取是安全的，但修改需要加锁
-    // 但这里我们只是读取来做判断，真正的扣减在 updateUserData
-
     const today = new Date().toDateString()
     const lastReset = new Date(userData.lastDailyReset || userData.createdAt).toDateString()
 
@@ -531,12 +327,6 @@ export class UserManager {
     let dailyCount = userData.dailyUsageCount
     if (today !== lastReset) {
       dailyCount = 0
-    }
-
-    if (numImages > config.dailyFreeLimit && userData.totalUsageCount === 0 && userData.purchasedCount === 0) {
-      // 特殊情况：新用户且一次性请求超过免费额度
-      // 但其实 getUserData 会初始化 totalUsageCount=0
-      // 这里的逻辑主要是为了给用户友好的提示
     }
 
     const remainingToday = Math.max(0, config.dailyFreeLimit - dailyCount)
@@ -559,7 +349,7 @@ export class UserManager {
     userName: string,
     numImages: number,
     config: Config,
-    platform?: string  // 新增：平台参数，用于检查平台免配额
+    platform?: string  // 平台参数，用于检查平台免配额
   ): Promise<{ allowed: boolean; message?: string; reservationId?: string }> {
     // 管理员免配额
     if (this.isAdmin(userId, config)) {
@@ -589,7 +379,6 @@ export class UserManager {
 
     return await this.dataLock.acquire(async () => {
       // 在锁内直接使用缓存中的数据（避免死锁）
-      // 确保缓存存在
       if (!this.usersCache) {
         this.logger.error('checkAndReserveQuota: usersCache 为空，这不应该发生')
         this.usersCache = {}
@@ -671,7 +460,6 @@ export class UserManager {
 
     return await this.dataLock.acquire(async () => {
       // 在锁内直接使用缓存，不再调用 loadUsersData（避免死锁）
-      // 确保缓存存在（理论上已经加载，但为了安全起见）
       if (!this.usersCache) {
         this.logger.error('consumeQuota: usersCache 为空，这不应该发生')
         this.usersCache = {}
@@ -682,8 +470,6 @@ export class UserManager {
       const today = new Date().toDateString()
 
       if (!userData) {
-        // 理论上不会发生，因为前面 checkDailyLimit 应该已经创建了
-        // 但为了安全起见
         userData = {
           userId,
           userName: userName || userId,
@@ -772,7 +558,7 @@ export class UserManager {
       this.securityWarningMap.set(userId, true)
       shouldWarn = true
     } else if (blockCount > config.securityBlockWarningThreshold) {
-      // 修改：超过阈值后，每次都扣除积分（而不是只有 hasWarning 才扣）
+      // 超过阈值后，每次都扣除积分
       shouldDeduct = true
     }
 
