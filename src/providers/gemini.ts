@@ -42,8 +42,8 @@ const RESOLUTION_IMAGE_SIZE_MAP: Record<string, string> = {
  * 鉴权：URL params 携带 ?key=xxx（与官方一致）
  *
  * 关键能力：
- * - 同时兼容官方 generativelanguage.googleapis.com 与 yunwu 中转
- * - 仅在「官方 Gemini」或「yunwu gemini-3-pro-image-preview」下发送 imageConfig
+ * - 兼容 Google Gemini 原生 generateContent 响应结构
+ * - 仅在官方 Gemini API 或已知支持 imageConfig 的模型下发送 imageConfig
  * - 解析 inlineData / inline_data / fileData 三种结构
  * - 严格识别 promptFeedback.blockReason / candidate.finishReason 中的安全拦截
  */

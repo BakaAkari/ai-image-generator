@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-aka-ai-image-generator",
-  "version": "0.3.0",
-  "description": "AI image generator for Koishi (V2: provider-registry architecture, multi-model adaptive).",
+  "version": "0.5.3",
+  "description": "AI image generator for Koishi (V2: semantic supplier UI with OpenAI-compatible image protocols).",
   "license": "MIT",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -52,9 +52,11 @@
     "koishi-plugin",
     "ai",
     "image-generation",
-    "yunwu",
-    "gptgod",
-    "gemini",
-    "openai"
+    "openai-compatible",
+    "openai-official",
+    "gemini-official",
+    "openai-images",
+    "openai-chat",
+    "gemini"
   ]
 }

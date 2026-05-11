@@ -2,8 +2,7 @@
  * ImageGenerationOrchestrator —— V2 MVP 简化版编排层。
  *
  * 与 v1 的差异：
- * - 仅支持「文生图」与「图生图」两种核心流程；合成图、风格迁移多图、视频、ChatLuna 注入等
- *   留给 Phase 5 完整命令族阶段补全。
+ * - 当前阶段仅支持「文生图」与「图生图」两种核心流程。
  * - 移除 v1 中 `processComposeImageWithTimeout` / `processPresetImagesWithTimeout` 这类
  *   多分支 race 包装，改为单一线性 async/await + 顶层 Promise.race 处理超时。
  * - 不再依赖外部 `onRecordUserUsage` / `onGenerationFailure` 钩子；本编排器内部直接
@@ -145,7 +144,7 @@ export function createImageGenerationHandlers(
     if (collected.length > 0) {
       if (collected.length > 1) {
         return {
-          error: '本功能仅支持处理一张图片，检测到多张图片。如需合成多张图片请使用「合成图」命令',
+          error: '本功能仅支持处理一张图片，检测到多张图片',
         }
       }
       if (!promptText) {

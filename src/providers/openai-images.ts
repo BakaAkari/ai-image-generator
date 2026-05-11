@@ -27,9 +27,9 @@ const GPT_IMAGE_MIN_TIMEOUT_SECONDS = 180
 /**
  * OpenAI Images API 默认 base。
  *
- * 与 v1 行为保持一致：默认指向 yunwu 兼容端点，可由配置覆盖。
+ * 服务层通常会显式传入 apiBase；此处保留官方 OpenAI 默认值作为 Provider 独立使用时的兜底。
  */
-const DEFAULT_API_BASE = 'https://yunwu.ai'
+const DEFAULT_API_BASE = 'https://api.openai.com/v1'
 
 /**
  * 宽高比 → 尺寸映射（OpenAI Images 仅支持固定 size 字符串）

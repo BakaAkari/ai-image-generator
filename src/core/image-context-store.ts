@@ -10,7 +10,7 @@ export interface AddImageRecordOptions {
  * 用于：
  * - 记录最近一次生成的图像（lastGenerated）
  * - 维护会话级最近 N 条记录（recentRecords）
- * - 支持 ChatLuna 上下文注入与"沿用上次设定"等场景
+ * - 支持后续图像上下文追踪与调试
  */
 export class ImageContextStore {
   private readonly conversations = new Map<string, ConversationImageContext>()

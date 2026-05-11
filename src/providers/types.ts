@@ -35,7 +35,7 @@ export type ImageGeneratedCallback = (
  * - 通过基类 BaseImageProvider 共享 timeout / retry / 错误处理逻辑
  */
 export interface ImageProvider {
-  /** Provider 标识，例如 'openai-images' / 'gemini' / 'gptgod' */
+  /** Provider 标识，例如 'openai-images' / 'openai-chat' / 'gemini' */
   readonly name: string
 
   /**

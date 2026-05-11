@@ -12,8 +12,8 @@ import { sanitizeError, sanitizeString } from './utils.js'
 /**
  * OpenAI Chat Completions 多模态图像 Provider。
  *
- * 用于云雾 / Packy / 米醋等第三方 OpenAI-compatible 站点暴露的
- * `/v1/chat/completions` 图像生成兼容接口，重点覆盖 Gemini Banana 类模型。
+ * 用于 OpenAI-compatible 站点暴露的 `/v1/chat/completions` 图像生成兼容接口，
+ * 重点覆盖 Gemini Banana / Nano Banana 类模型。
  */
 export type OpenAIChatImageProviderOptions = BaseProviderOptions
 
