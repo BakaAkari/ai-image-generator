@@ -7,6 +7,7 @@ import { createGeminiProvider } from './providers/gemini.js'
 import { createGptOfficialProvider } from './providers/gpt-official.js'
 import { createGptGodProvider } from './providers/gptgod.js'
 import { createGrokProvider } from './providers/grok.js'
+import { createOpenAIChatImageProvider } from './providers/openai-chat.js'
 import { createOpenAIImagesProvider } from './providers/openai-images.js'
 import { ProviderRegistry } from './providers/registry.js'
 import { createYunwuAdaptiveProvider } from './providers/yunwu-adaptive.js'
@@ -24,7 +25,7 @@ import { PLUGIN_NAME } from './shared/constants.js'
  *   - UserManager：用户配额 / 限流 / 安全计数（cherry-pick 自 v1）
  *   - AiImageGeneratorService：核心服务（Provider 实例化 + 配额 + 用量 + 图像记忆）
  *   - ImageGenerationOrchestrator：MVP 编排（文生图 + 图生图，命令级超时）
- *   - 命令族：aig.文生图 / aig.图生图 / aig.图像额度
+ *   - 命令族：文生图 / 图生图 / 图像额度
  *
  * 配置热重载：通过 ctx.scope.update 风格的 acceptor 处理；本入口在变更时同步
  * 更新闭包内的 currentConfig，并调用 `service.updateConfig(next)`。
@@ -48,6 +49,7 @@ const providerRegistry = new ProviderRegistry()
 
 // 内置 Provider 注册（image-only：6 个图像供应商，与 shared/config.ts 中的 Tagged Union 一一对应）
 providerRegistry.register('openai-images', createOpenAIImagesProvider)
+providerRegistry.register('openai-chat', createOpenAIChatImageProvider)
 providerRegistry.register('openai', createOpenAIImagesProvider) // Schema 中的 provider 标签别名
 providerRegistry.register('gemini', createGeminiProvider)
 providerRegistry.register('gptgod', createGptGodProvider)
@@ -111,6 +113,6 @@ export function apply(ctx: Context, config: Config) {
     name,
     registered.join(',') || '<none>',
     registered.length,
-    'aig.文生图,aig.图生图,aig.图像额度',
+    '文生图,图生图,图像额度',
   )
 }

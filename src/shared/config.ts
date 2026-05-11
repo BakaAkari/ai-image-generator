@@ -58,6 +58,8 @@ export interface Config {
   openaiApiKey?: string
   openaiModelId?: string
   openaiApiBase?: string
+  openaiProtocol?: 'openai-images' | 'openai-chat'
+  openaiExtraHeaders?: Record<string, string>
 
   // 官方 GPT Image 分支
   gptOfficialApiKey?: string
@@ -124,7 +126,7 @@ const ProviderTagSchema = Schema.object({
     Schema.const('gptgod').description('GPT God'),
     Schema.const('gemini').description('Google Gemini 官方'),
     Schema.const('grok').description('Grok (xAI，可经云雾中转)'),
-    Schema.const('openai').description('OpenAI 兼容（任意符合 OpenAI Images API 的端点）'),
+    Schema.const('openai').description('OpenAI 兼容第三方图像站点'),
     Schema.const('gpt-official').description('OpenAI 官方 GPT Image'),
   ])
     .default('yunwu')
@@ -204,11 +206,20 @@ const ProviderConfigSchema = Schema.union([
       .required()
       .description('OpenAI 兼容 API 密钥'),
     openaiModelId: Schema.string()
-      .default('gpt-image-1')
-      .description('模型ID'),
+      .default('gpt-image-2')
+      .description('模型ID，例如 gpt-image-2 或 Gemini/Banana 兼容模型'),
     openaiApiBase: Schema.string()
       .default('https://api.openai.com/v1')
-      .description('API 地址（含 /v1，例：https://api.openai.com/v1）'),
+      .description('API 地址，建议填写到 /v1；未包含 /v1 时会自动补齐'),
+    openaiProtocol: Schema.union([
+      Schema.const('openai-images').description('GPT 图片接口（/v1/images/generations、/v1/images/edits）'),
+      Schema.const('openai-chat').description('Gemini/Banana 多模态接口（/v1/chat/completions）'),
+    ])
+      .default('openai-images')
+      .description('接口格式'),
+    openaiExtraHeaders: Schema.dict(Schema.string())
+      .default({})
+      .description('额外请求头。米醋等站点如需 User-Agent，可在这里填写'),
   }),
 
   // GPT 官方
@@ -231,7 +242,7 @@ const ProviderConfigSchema = Schema.union([
 // 顶层 Schema
 // ----------------------------------------------------------------------------
 
-export const Config: Schema<Config> = Schema.intersect([
+export const Config = Schema.intersect([
   // ① 图像供应商（标签 + 分支）
   ProviderTagSchema,
   ProviderConfigSchema,
@@ -297,9 +308,10 @@ export const Config: Schema<Config> = Schema.intersect([
         apiFormat: Schema.union([
           Schema.const('gemini').description('Gemini 原生'),
           Schema.const('openai').description('OpenAI Images / GPT-Image'),
+          Schema.const('openai-chat').description('OpenAI Chat Completions 多模态'),
         ])
           .default('gemini')
-          .description('接口格式（仅 yunwu 供应商有效）'),
+          .description('接口格式（yunwu 供应商使用 gemini/openai；openai 兼容站点可使用 openai/openai-chat）'),
         restricted: Schema.boolean()
           .default(false)
           .description('是否为受限模型（仅模型白名单用户可调用）'),
@@ -409,4 +421,4 @@ export const Config: Schema<Config> = Schema.intersect([
       .role('slider')
       .description('API 请求超时时间（秒）'),
   }).description('⚙️ 通用设置').collapse(),
-])
+]) as unknown as Schema<Config>

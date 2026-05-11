@@ -76,6 +76,8 @@ export interface BaseProviderOptions {
   logLevel?: 'silent' | 'error' | 'warn' | 'info' | 'debug'
   /** 子 logger 名称，默认用 Provider name */
   loggerName?: string
+  /** 第三方 OpenAI-compatible 站点所需的额外请求头 */
+  extraHeaders?: Record<string, string>
 }
 
 /**

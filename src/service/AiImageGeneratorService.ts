@@ -7,7 +7,7 @@
  *   而是 `providerRegistry.createProvider(name, ctx, config)`。
  * - Schema 标签 `ImageProvider`（用户配置）→ Registry 名（运行期）做集中映射：
  *     'yunwu'  → 'yunwu-adaptive'
- *     'openai' → 'openai-images'
+ *     'openai' → 'openai-images' / 'openai-chat'（由 openaiProtocol 决定）
  *     其它同名（gemini / gptgod / grok / gpt-official）。
  * - 各 Provider 工厂只接收自己用到的字段（apiKey/modelId/apiBase/apiFormat...），
  *   Service 在此处按 provider 标签做字段映射，Provider 内部不再需要 .hidden() 反模式。
@@ -491,8 +491,8 @@ export class AiImageGeneratorService extends Service {
     requestContext?: ImageRequestContext,
   ): { providerTag: ImageProviderTag; registryName: ProviderType } {
     if (requestContext?.provider) {
-      const registryName = requestContext.provider
-      const providerTag = this.providerTypeToTag(requestContext.provider)
+      const registryName = this.resolveRequestedRegistryName(requestContext)
+      const providerTag = this.providerTypeToTag(registryName)
       return { providerTag, registryName }
     }
 
@@ -500,12 +500,19 @@ export class AiImageGeneratorService extends Service {
     return { providerTag, registryName: this.tagToRegistryName(providerTag) }
   }
 
+  private resolveRequestedRegistryName(requestContext: ImageRequestContext): ProviderType {
+    if (requestContext.provider === 'openai-images' && requestContext.apiFormat === 'openai-chat') {
+      return 'openai-chat'
+    }
+    return requestContext.provider ?? 'yunwu-adaptive'
+  }
+
   private tagToRegistryName(tag: ImageProviderTag): ProviderType {
     switch (tag) {
       case 'yunwu':
         return 'yunwu-adaptive'
       case 'openai':
-        return 'openai-images'
+        return this.pluginConfig.openaiProtocol === 'openai-chat' ? 'openai-chat' : 'openai-images'
       case 'gptgod':
       case 'gemini':
       case 'grok':
@@ -523,6 +530,7 @@ export class AiImageGeneratorService extends Service {
       case 'yunwu-adaptive':
         return 'yunwu'
       case 'openai-images':
+      case 'openai-chat':
         return 'openai'
       case 'gemini':
       case 'gptgod':
@@ -540,7 +548,7 @@ export class AiImageGeneratorService extends Service {
       case 'yunwu':
         return 'yunwu-adaptive'
       case 'openai':
-        return 'openai-images'
+        return this.pluginConfig.openaiProtocol === 'openai-chat' ? 'openai-chat' : 'openai-images'
       case 'gptgod':
       case 'gemini':
       case 'grok':
@@ -606,6 +614,7 @@ export class AiImageGeneratorService extends Service {
           apiKey: cfg.openaiApiKey || '',
           modelId: targetModelId || cfg.openaiModelId || DEFAULT_OPENAI_MODEL_ID,
           apiBase: cfg.openaiApiBase || DEFAULT_OPENAI_API_BASE,
+          extraHeaders: cfg.openaiExtraHeaders || {},
         }
       case 'gpt-official':
         return {

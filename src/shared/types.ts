@@ -24,6 +24,7 @@
  */
 export type ProviderType =
   | 'openai-images'
+  | 'openai-chat'
   | 'gemini'
   | 'gptgod'
   | 'grok'
@@ -38,8 +39,8 @@ export type ProviderType =
  */
 export type ImageProvider = 'yunwu' | 'gptgod' | 'gemini' | 'grok' | 'openai' | 'gpt-official'
 
-/** 云雾 Provider 的协议格式选择 */
-export type ApiFormat = 'gemini' | 'openai'
+/** 兼容站点的协议格式选择 */
+export type ApiFormat = 'gemini' | 'openai' | 'openai-chat'
 
 export interface ModelMappingConfig {
   suffix: string

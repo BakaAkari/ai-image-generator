@@ -5,7 +5,7 @@
  * - 仅注册 3 条核心命令，对应 V2 MVP 阶段。
  * - 解析 `parseStyleCommandModifiers` 返回的 modifiers，由 Service 转换为
  *   `ImageRequestContext + GenerationDisplayInfo`，Orchestrator 不感知 modifier 细节。
- * - 命令前缀使用 `aig` 以与 v1 `ai`/`aig` 系命令隔离，方便双插件并存。
+ * - 命令统一使用无前缀直呼格式，例如 `文生图` / `图生图` / `图像额度`。
  */
 
 import type { Argv, Context, Session } from 'koishi'
@@ -31,10 +31,10 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
   const { ctx, service, handlers, getConfig } = params
 
   // ---------------------------------------------------------------------------
-  // 文生图：aig.文生图 [-1k|-16:9|-add ...] <prompt:text>
+  // 文生图：文生图 [-1k|-16:9|-add ...] <prompt:text>
   // ---------------------------------------------------------------------------
-  ctx.command(`aig.${COMMANDS.TXT_TO_IMG} [prompt:text]`, '文生图')
-    .alias('aig.t2i')
+  ctx.command(`${COMMANDS.TXT_TO_IMG} [prompt:text]`, '文生图')
+    .alias('t2i')
     .action(async (argv: Argv, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
@@ -57,10 +57,10 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
     })
 
   // ---------------------------------------------------------------------------
-  // 图生图：aig.图生图 [-1k|-16:9|-add ...] [img] [prompt:text]
+  // 图生图：图生图 [-1k|-16:9|-add ...] [img] [prompt:text]
   // ---------------------------------------------------------------------------
-  ctx.command(`aig.${COMMANDS.IMG_TO_IMG} [img] [prompt:text]`, '图生图')
-    .alias('aig.i2i')
+  ctx.command(`${COMMANDS.IMG_TO_IMG} [img] [prompt:text]`, '图生图')
+    .alias('i2i')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
@@ -84,10 +84,10 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
     })
 
   // ---------------------------------------------------------------------------
-  // 额度查询：aig.图像额度
+  // 额度查询：图像额度
   // ---------------------------------------------------------------------------
-  ctx.command(`aig.${COMMANDS.QUERY_QUOTA}`, '查询当前额度')
-    .alias('aig.quota')
+  ctx.command(`${COMMANDS.QUERY_QUOTA}`, '查询当前额度')
+    .alias('quota')
     .action(async (argv: Argv) => {
       const session: Session | undefined = argv.session
       if (!session) return ''

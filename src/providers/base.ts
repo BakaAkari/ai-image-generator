@@ -40,6 +40,7 @@ export abstract class BaseImageProvider implements ImageProvider {
   protected readonly apiBase: string | undefined
   protected readonly apiTimeoutSeconds: number
   protected readonly logLevel: BaseProviderOptions['logLevel']
+  protected readonly extraHeaders: Record<string, string>
 
   constructor(options: BaseProviderOptions) {
     this.ctx = options.ctx
@@ -48,6 +49,7 @@ export abstract class BaseImageProvider implements ImageProvider {
     this.apiBase = options.apiBase?.replace(/\/$/, '') || undefined
     this.apiTimeoutSeconds = options.apiTimeout
     this.logLevel = options.logLevel
+    this.extraHeaders = options.extraHeaders ?? {}
     this.logger = options.ctx.logger(options.loggerName ?? 'aka-ai-image-generator:provider')
   }
 
@@ -66,6 +68,7 @@ export abstract class BaseImageProvider implements ImageProvider {
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${this.apiKey}`,
+      ...this.extraHeaders,
       ...extra,
     }
   }

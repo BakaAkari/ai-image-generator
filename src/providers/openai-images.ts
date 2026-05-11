@@ -140,7 +140,7 @@ export class OpenAIImagesProvider extends BaseImageProvider {
   }
 
   private getApiBase(): string {
-    return this.apiBase ?? DEFAULT_API_BASE
+    return normalizeV1Base(this.apiBase ?? DEFAULT_API_BASE)
   }
 
   // -------- 文生图 --------
@@ -185,7 +185,7 @@ export class OpenAIImagesProvider extends BaseImageProvider {
         const response = await this.callApi<OpenAIImagesResponse>(() =>
           (this.ctx.http as unknown as {
             post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-          }).post(`${apiBase}/v1/images/generations`, requestData, {
+          }).post(`${apiBase}/images/generations`, requestData, {
             headers: this.buildHeaders(),
             timeout: this.getTimeoutMs(),
           })
@@ -348,7 +348,7 @@ export class OpenAIImagesProvider extends BaseImageProvider {
     size: string,
     imageDataList: Array<{ data: string; mimeType: string }>
   ): Promise<OpenAIImagesResponse> {
-    const editUrl = `${apiBase}/v1/images/edits`
+    const editUrl = `${apiBase}/images/edits`
     const http = this.ctx.http as unknown as {
       post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
     }
@@ -482,5 +482,18 @@ export function createOpenAIImagesProvider(
       : 60,
     logLevel: config.logLevel as BaseProviderOptions['logLevel'],
     loggerName: 'aka-ai-image-generator:openai-images',
+    extraHeaders: isRecordOfStrings(config.extraHeaders) ? config.extraHeaders : undefined,
   })
+}
+
+function normalizeV1Base(apiBase: string): string {
+  const trimmed = apiBase.replace(/\/$/, '')
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+}
+
+function isRecordOfStrings(value: unknown): value is Record<string, string> {
+  return !!value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.values(value).every((item) => typeof item === 'string')
 }
