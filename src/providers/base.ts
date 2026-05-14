@@ -109,7 +109,17 @@ export abstract class BaseImageProvider implements ImageProvider {
       {
         providerName: this.name,
         onRetry: (err, attempt, delayMs) => {
-          this.logger.warn('provider=%s event=retry attempt=%d delay_ms=%d code=%s message=%s', this.name, attempt, delayMs, err.code, err.message)
+          this.logger.warn(
+            'provider=%s event=retry attempt=%d delay_ms=%d code=%s status=%s retryable=%s message=%s context=%s',
+            this.name,
+            attempt,
+            delayMs,
+            err.code,
+            err.statusCode ?? '-',
+            err.retryable,
+            err.message,
+            safeStringify(err.context),
+          )
         },
         ...retryOptions,
       }
@@ -191,5 +201,13 @@ function describeError(error: unknown): string {
     return JSON.stringify(error)
   } catch {
     return String(error)
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? {})
+  } catch {
+    return String(value)
   }
 }

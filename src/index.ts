@@ -4,8 +4,7 @@ import path from 'node:path'
 import { registerAllCommands } from './commands/index.js'
 import { createImageGenerationHandlers } from './orchestrators/ImageGenerationOrchestrator.js'
 import { createGeminiProvider } from './providers/gemini.js'
-import { createOpenAIChatImageProvider } from './providers/openai-chat.js'
-import { createOpenAIImagesProvider } from './providers/openai-images.js'
+import { createOpenAIProvider } from './providers/openai.js'
 import { ProviderRegistry } from './providers/registry.js'
 import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { UserManager } from './services/UserManager.js'
@@ -17,7 +16,7 @@ import { PLUGIN_NAME } from './shared/constants.js'
  * V2 插件入口（aka-ai-image-generator） —— 仅图像生成。
  *
  * Phase 4 MVP 接线：
- *   - ProviderRegistry：模块级单例，注册 3 个协议优先 image Provider 工厂
+ *   - ProviderRegistry：模块级单例，注册 2 个协议优先 image Provider 工厂
  *   - UserManager：用户配额 / 限流 / 安全计数（cherry-pick 自 v1）
  *   - AiImageGeneratorService：核心服务（Provider 实例化 + 配额 + 用量 + 图像记忆）
  *   - ImageGenerationOrchestrator：MVP 编排（文生图 + 图生图，命令级超时）
@@ -40,8 +39,7 @@ export const Config = ConfigSchema
 const providerRegistry = new ProviderRegistry()
 
 // 内置 Provider 注册（image-only：协议优先，不注册供应商别名）
-providerRegistry.register('openai-images', createOpenAIImagesProvider)
-providerRegistry.register('openai-chat', createOpenAIChatImageProvider)
+providerRegistry.register('openai', createOpenAIProvider)
 providerRegistry.register('gemini', createGeminiProvider)
 
 
@@ -73,7 +71,7 @@ export function apply(ctx: Context, config: Config) {
   })
 
   // 4. 命令族
-  registerAllCommands({
+  const commands = registerAllCommands({
     ctx,
     service,
     handlers,
@@ -84,6 +82,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.accept((next: Config) => {
     currentConfig = next
     service.updateConfig(next)
+    commands.image.refreshStyleCommands()
   })
 
   const registered = providerRegistry.list()
@@ -92,6 +91,6 @@ export function apply(ctx: Context, config: Config) {
     name,
     registered.join(',') || '<none>',
     registered.length,
-    '文生图,图生图,图像额度',
+    '文生图,图生图,合成图,图像查询,图像排行榜,图像额度',
   )
 }

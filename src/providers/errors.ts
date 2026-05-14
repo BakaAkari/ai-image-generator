@@ -20,7 +20,7 @@ export type ProviderErrorCode =
   | 'UNKNOWN'
 
 export interface ProviderErrorOptions {
-  /** 出错的 Provider 名（如 'openai-images'） */
+  /** 出错的 Provider 名（如 'openai'） */
   providerName?: string
   /** 上游 HTTP 状态码（若有） */
   statusCode?: number
@@ -153,7 +153,18 @@ export function normalizeProviderError(
   if (error instanceof ProviderError) return error
 
   const err = error as
-    | (Error & { response?: { status?: number; data?: unknown }; status?: number; code?: string })
+    | (Error & {
+      response?: { status?: number; data?: unknown; headers?: unknown }
+      status?: number
+      code?: string
+      errno?: string | number
+      syscall?: string
+      hostname?: string
+      host?: string
+      address?: string
+      port?: string | number
+      cause?: unknown
+    })
     | undefined
 
   const message = err?.message ?? '未知错误'
@@ -163,6 +174,7 @@ export function normalizeProviderError(
     providerName,
     statusCode,
     cause: error,
+    context: buildErrorContext(error),
   }
 
   if (statusCode === 401 || statusCode === 403) {
@@ -195,8 +207,86 @@ export function normalizeProviderError(
   ) {
     return new ProviderUnavailableError(message, baseOptions)
   }
-
+  
   return new ProviderError('UNKNOWN', message, baseOptions)
+}
+
+function buildErrorContext(error: unknown): Record<string, unknown> {
+  const context: Record<string, unknown> = {}
+  collectErrorContext(context, error, 'error')
+  return context
+}
+
+function collectErrorContext(context: Record<string, unknown>, error: unknown, prefix: string) {
+  if (!error || typeof error !== 'object') return
+
+  const err = error as {
+    name?: unknown
+    message?: unknown
+    code?: unknown
+    errno?: unknown
+    syscall?: unknown
+    hostname?: unknown
+    host?: unknown
+    address?: unknown
+    port?: unknown
+    status?: unknown
+    response?: { status?: unknown; data?: unknown }
+    cause?: unknown
+  }
+
+  for (const key of ['name', 'message', 'code', 'errno', 'syscall', 'hostname', 'host', 'address', 'port', 'status'] as const) {
+    const value = err[key]
+    if (typeof value === 'string' || typeof value === 'number') {
+      context[`${prefix}.${key}`] = sanitizeDiagnosticString(String(value))
+    }
+  }
+
+  if (typeof err.response?.status === 'number') {
+    context[`${prefix}.responseStatus`] = err.response.status
+  }
+  if (err.response?.data !== undefined) {
+    context[`${prefix}.responseData`] = truncateDiagnostic(sanitizeDiagnosticValue(err.response.data), 800)
+  }
+
+  if (err.cause && err.cause !== error) {
+    collectErrorContext(context, err.cause, `${prefix}.cause`)
+  }
+}
+
+function sanitizeDiagnosticValue(value: unknown): unknown {
+  if (typeof value === 'string') return sanitizeDiagnosticString(value)
+  if (!value || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.slice(0, 20).map(sanitizeDiagnosticValue)
+
+  const result: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const lower = key.toLowerCase()
+    if (lower.includes('authorization') || lower.includes('api-key') || lower.includes('apikey') || lower.includes('token') || lower.includes('secret') || lower.includes('password')) {
+      result[key] = '[REDACTED]'
+      continue
+    }
+    result[key] = sanitizeDiagnosticValue(item)
+  }
+  return result
+}
+
+function sanitizeDiagnosticString(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+\-/=]+/gi, 'Bearer [REDACTED]')
+    .replace(/(api[_-]?key=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/(key=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/(token=)[^&\s]+/gi, '$1[REDACTED]')
+}
+
+function truncateDiagnostic(value: unknown, max: number): string {
+  let text: string
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(value)
+  } catch {
+    text = String(value)
+  }
+  return text.length <= max ? text : `${text.slice(0, max)}…`
 }
 
 function defaultRetryable(code: ProviderErrorCode): boolean {

@@ -13,8 +13,8 @@ import type { ImageProvider, ProviderFactory } from './types.js'
  * 使用示例：
  * ```ts
  * const registry = new ProviderRegistry()
- * registry.register('openai-images', (ctx, cfg) => new OpenAIImagesProvider({ ctx, ...cfg }))
- * const provider = registry.createProvider('openai-images', ctx, cfg)
+ * registry.register('openai', (ctx, cfg) => new OpenAIProvider({ ctx, ...cfg }))
+ * const provider = registry.createProvider('openai', ctx, cfg)
  * ```
  */
 export class ProviderRegistry {

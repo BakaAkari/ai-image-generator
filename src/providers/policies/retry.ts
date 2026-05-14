@@ -31,7 +31,7 @@ export interface RetryOptions {
  * @example
  * const images = await withRetry(
  *   () => provider.callApi(...),
- *   { maxRetries: 3, providerName: 'openai-images' }
+ *   { maxRetries: 3, providerName: 'openai' }
  * )
  */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {

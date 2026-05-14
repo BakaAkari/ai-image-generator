@@ -58,6 +58,8 @@ export interface ImageGenerationHandlers {
     initialPrompt: string | undefined,
     setupContext?: ImageRequestContext,
     displayInfo?: GenerationDisplayInfo,
+    styleName?: string,
+    stylePreset?: string,
   ): Promise<string>
 
   /** 图生图主流程：从 imgParam/quote/后续输入收集图片 + 描述，再触发生成。 */
@@ -67,6 +69,18 @@ export interface ImageGenerationHandlers {
     initialPrompt: string | undefined,
     setupContext?: ImageRequestContext,
     displayInfo?: GenerationDisplayInfo,
+    styleName?: string,
+    stylePreset?: string,
+  ): Promise<string>
+
+  /** 合成图主流程：收集多张图片，直到收到 prompt 文字后触发生成。 */
+  executeComposeImage(
+    session: Session,
+    initialPrompt: string | undefined,
+    setupContext?: ImageRequestContext,
+    displayInfo?: GenerationDisplayInfo,
+    styleName?: string,
+    stylePreset?: string,
   ): Promise<string>
 
   /** 查询额度（额度命令的核心）。 */
@@ -116,16 +130,16 @@ export function createImageGenerationHandlers(
     const trimmed = typeof initialPrompt === 'string' ? initialPrompt.trim() : ''
     if (trimmed) return { prompt: trimmed }
 
-    await session.send('请输入画面描述')
+    await session.send('请发送画面描述')
     const msg = await session.prompt(getPromptTimeoutMs(config))
     if (!msg) return { error: formatPromptTimeoutError(config) }
 
     const parsed = parseMessageImagesAndText(msg)
     if (parsed.images.length > 0) {
-      return { error: '检测到图片，文生图仅支持文字输入' }
+      return { error: '输入不匹配｜文生图仅支持文字描述' }
     }
     if (!parsed.text) {
-      return { error: '未检测到描述，操作已取消' }
+      return { error: '已取消｜未检测到描述' }
     }
     return { prompt: parsed.text }
   }
@@ -144,22 +158,22 @@ export function createImageGenerationHandlers(
     if (collected.length > 0) {
       if (collected.length > 1) {
         return {
-          error: '本功能仅支持处理一张图片，检测到多张图片',
+          error: '输入不匹配｜图生图仅支持 1 张图片',
         }
       }
       if (!promptText) {
-        await session.send('请输入对图片的修改描述')
+        await session.send('请发送图片修改描述')
         const msg = await session.prompt(getPromptTimeoutMs(config))
         if (!msg) return { error: formatPromptTimeoutError(config) }
         const parsed = parseMessageImagesAndText(msg)
-        if (!parsed.text) return { error: '未检测到描述，操作已取消' }
+        if (!parsed.text) return { error: '已取消｜未检测到描述' }
         promptText = parsed.text
       }
       return { images: collected, prompt: promptText }
     }
 
     // 没有图片：循环等待用户上传图片+描述
-    await session.send(`请在${getPromptTimeoutText(config)}内发送一张图片`)
+    await session.send(`请在 ${getPromptTimeoutText(config)}内发送 1 张图片`)
     while (true) {
       const msg = await session.prompt(getPromptTimeoutMs(config))
       if (!msg) return { error: formatPromptTimeoutError(config) }
@@ -170,23 +184,67 @@ export function createImageGenerationHandlers(
           if (img.attrs?.src) collected.push(img.attrs.src as string)
         }
         if (collected.length > 1) {
-          return { error: '本功能仅支持处理一张图片，检测到多张图片' }
+          return { error: '输入不匹配｜图生图仅支持 1 张图片' }
         }
         if (parsed.text) promptText = parsed.text
         if (!promptText) {
-          await session.send('请输入对图片的修改描述')
+          await session.send('请发送图片修改描述')
           const msg2 = await session.prompt(getPromptTimeoutMs(config))
           if (!msg2) return { error: formatPromptTimeoutError(config) }
           const parsed2 = parseMessageImagesAndText(msg2)
-          if (!parsed2.text) return { error: '未检测到描述，操作已取消' }
+          if (!parsed2.text) return { error: '已取消｜未检测到描述' }
           promptText = parsed2.text
         }
         return { images: collected, prompt: promptText }
       }
 
       if (parsed.text) {
-        return { error: '未检测到图片，请重新发起指令并发送图片' }
+        return { error: '输入不匹配｜未检测到图片，请重新发起指令' }
       }
+    }
+  }
+
+  /** 收集合成图输入：累计多张图片，直到收到 prompt 文字后执行。 */
+  async function collectComposeInput(
+    session: Session,
+    initialPrompt: string | undefined,
+  ): Promise<{ images: string[]; prompt: string } | { error: string }> {
+    const config = getConfig()
+    const collected: string[] = []
+    const initialPromptText = typeof initialPrompt === 'string' ? initialPrompt.trim() : ''
+
+    await session.send(`请在 ${getPromptTimeoutText(config)}内发送至少 2 张图片；发送合成描述后开始`)
+
+    while (true) {
+      const msg = await session.prompt(getPromptTimeoutMs(config))
+      if (!msg) return { error: formatPromptTimeoutError(config) }
+
+      const parsed = parseMessageImagesAndText(msg)
+      for (const img of parsed.images) {
+        if (img.attrs?.src && collected.length < 8) {
+          collected.push(img.attrs.src as string)
+        }
+      }
+
+      const promptText = parsed.text || initialPromptText
+      if (promptText) {
+        if (collected.length < 2) {
+          return { error: `图片不足｜至少需要 2 张，当前 ${collected.length} 张` }
+        }
+        return { images: collected, prompt: promptText }
+      }
+
+      if (collected.length >= 8) {
+        await session.send('已收到 8 张；已达上限，请发送合成描述')
+        continue
+      }
+
+      if (parsed.images.length > 0) {
+        await session.send(`已收到 ${collected.length} 张；继续发图或发送合成描述`)
+        continue
+      }
+
+      return { error: '已取消｜未检测到图片或描述' }
     }
   }
 
@@ -203,8 +261,10 @@ export function createImageGenerationHandlers(
     const userName = session.username || session.author?.name || userId
     const platform = session.platform
 
-    if (!userManager.startTask(userId)) {
-      return '您当前已有正在处理的任务，请等待完成后再发起新请求'
+    const taskTtlMs = Math.max(COMMAND_TIMEOUT_SECONDS * 1000 + 60_000, (config.apiTimeout || 60) * 1000 * 4)
+    const requestId = userManager.startTask(userId, taskTtlMs)
+    if (!requestId) {
+      return '任务进行中，请完成后再试'
     }
 
     const startedAt = Date.now()
@@ -229,19 +289,21 @@ export function createImageGenerationHandlers(
         platform,
       )
       if (!reservation.allowed) {
-        return reservation.message || '配额不足，无法继续生成'
+        return reservation.message || '额度不足｜无法继续生成'
       }
 
       // 2. 状态提示
-      const statusParts: string[] = [`开始处理图片（${options.styleName}）`]
+      const statusParts: string[] = []
       if (options.displayInfo?.customAdditions?.length) {
-        statusParts.push(`自定义内容：${options.displayInfo.customAdditions.join('；')}`)
+        statusParts.push(`- 追加｜${options.displayInfo.customAdditions.join('；')}`)
       }
       if (options.displayInfo?.modelId) {
         const modelDesc = options.displayInfo.modelDescription || options.displayInfo.modelId
-        statusParts.push(`使用模型：${modelDesc}`)
+        statusParts.push(`- 模型｜${modelDesc}`)
       }
-      await session.send(statusParts.join('\n') + '...')
+      await session.send(statusParts.length
+        ? ['开始生成', '', `- 类型｜${options.styleName}`, ...statusParts].join('\n')
+        : `开始生成｜${options.styleName}`)
 
       // 3. 流式回调：每生成一张就发送
       const generatedImages: string[] = []
@@ -363,7 +425,13 @@ export function createImageGenerationHandlers(
         if (config.showQuotaInImageCommands) {
           try {
             const summary = await service.getQuotaSummary(userId, userName)
-            return `本次共发送 ${generatedImages.length} 张，剩余可用：今日免费 ${summary.remainingToday}，已购 ${summary.remainingPurchasedCount}`
+            return [
+              '生成完成',
+              '',
+              `- 图片｜${generatedImages.length} 张`,
+              `- 今日免费｜${summary.remainingToday}`,
+              `- 已购次数｜${summary.remainingPurchasedCount}`,
+            ].join('\n')
           } catch {
             return ''
           }
@@ -371,7 +439,7 @@ export function createImageGenerationHandlers(
         return ''
       }
 
-      return '生成失败：未返回任何图片，请稍后重试'
+      return ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n')
     } catch (error) {
       logger.error('图像生成流程异常', {
         userId,
@@ -384,7 +452,7 @@ export function createImageGenerationHandlers(
         try {
           const result = await userManager.recordSecurityBlock(userId, config)
           if (result.shouldWarn) {
-            return '检测到内容安全相关错误，已记录。多次触发将影响后续使用，请调整描述后再试'
+            return ['内容安全拦截', '', '请调整描述后再试；多次触发会影响后续使用'].join('\n')
           }
         } catch (recordErr) {
           logger.error('记录安全阻断失败', {
@@ -395,9 +463,9 @@ export function createImageGenerationHandlers(
       }
 
       const message = error instanceof Error ? error.message : String(error)
-      return `生成失败：${message}`
+      return ['生成失败', '', `- 原因｜${message}`].join('\n')
     } finally {
-      userManager.endTask(userId)
+      userManager.endTask(userId, requestId)
     }
   }
 
@@ -410,6 +478,8 @@ export function createImageGenerationHandlers(
     initialPrompt: string | undefined,
     setupContext?: ImageRequestContext,
     displayInfo?: GenerationDisplayInfo,
+    styleName = '文生图',
+    stylePreset?: string,
   ): Promise<string> {
     const config = getConfig()
     const collected = await collectTextInput(session, initialPrompt)
@@ -417,12 +487,13 @@ export function createImageGenerationHandlers(
 
     const numImages = setupContext?.numImages || config.defaultNumImages || 1
     return runGeneration(session, {
-      styleName: '文生图',
+      styleName,
       finalPrompt: collected.prompt,
       imageUrls: [],
       numImages,
       ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
       ...(displayInfo !== undefined ? { displayInfo } : {}),
+      ...(stylePreset !== undefined ? { stylePreset } : {}),
     })
   }
 
@@ -432,6 +503,8 @@ export function createImageGenerationHandlers(
     initialPrompt: string | undefined,
     setupContext?: ImageRequestContext,
     displayInfo?: GenerationDisplayInfo,
+    styleName = '图生图',
+    stylePreset?: string,
   ): Promise<string> {
     const config = getConfig()
     const collected = await collectImageInput(session, imgParam, initialPrompt)
@@ -439,12 +512,37 @@ export function createImageGenerationHandlers(
 
     const numImages = setupContext?.numImages || config.defaultNumImages || 1
     return runGeneration(session, {
-      styleName: '图生图',
+      styleName,
       finalPrompt: collected.prompt,
       imageUrls: collected.images,
       numImages,
       ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
       ...(displayInfo !== undefined ? { displayInfo } : {}),
+      ...(stylePreset !== undefined ? { stylePreset } : {}),
+    })
+  }
+
+  async function executeComposeImage(
+    session: Session,
+    initialPrompt: string | undefined,
+    setupContext?: ImageRequestContext,
+    displayInfo?: GenerationDisplayInfo,
+    styleName = '合成图',
+    stylePreset?: string,
+  ): Promise<string> {
+    const config = getConfig()
+    const collected = await collectComposeInput(session, initialPrompt)
+    if ('error' in collected) return collected.error
+
+    const numImages = setupContext?.numImages || config.defaultNumImages || 1
+    return runGeneration(session, {
+      styleName,
+      finalPrompt: collected.prompt,
+      imageUrls: collected.images,
+      numImages,
+      ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
+      ...(displayInfo !== undefined ? { displayInfo } : {}),
+      ...(stylePreset !== undefined ? { stylePreset } : {}),
     })
   }
 
@@ -454,14 +552,16 @@ export function createImageGenerationHandlers(
     try {
       const summary = await service.getQuotaSummary(userId, userName)
       const lines: string[] = [
-        `用户：${summary.userName}`,
-        `今日免费剩余：${summary.remainingToday}`,
-        `已购剩余：${summary.remainingPurchasedCount}`,
-        `合计可用：${summary.totalAvailable}`,
-        `历史总用量：${summary.totalUsageCount}`,
+        '图像额度',
+        '',
+        `- 用户｜${summary.userName}`,
+        `- 今日免费｜${summary.remainingToday}`,
+        `- 已购次数｜${summary.remainingPurchasedCount}`,
+        `- 合计可用｜${summary.totalAvailable}`,
+        `- 历史用量｜${summary.totalUsageCount}`,
       ]
       if (summary.purchasedCount > 0) {
-        lines.push(`累计已购：${summary.purchasedCount}`)
+        lines.push(`- 累计已购｜${summary.purchasedCount}`)
       }
       return lines.join('\n')
     } catch (error) {
@@ -469,13 +569,14 @@ export function createImageGenerationHandlers(
         userId,
         ...sanitizeForLog(error),
       })
-      return '查询额度失败，请稍后重试'
+      return ['查询失败', '', '- 类型｜图像额度', '- 建议｜稍后重试'].join('\n')
     }
   }
 
   return {
     executeTextToImage,
     executeImageToImage,
+    executeComposeImage,
     executeQueryQuota,
   }
 }

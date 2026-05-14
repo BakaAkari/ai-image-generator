@@ -27,11 +27,22 @@ export type GeminiProviderOptions = BaseProviderOptions
 const DEFAULT_API_BASE = 'https://generativelanguage.googleapis.com'
 
 /**
- * resolution → Gemini imageConfig.imageSize 映射
+ * resolution → Gemini 官方 imageConfig.imageSize 映射
  */
 const RESOLUTION_IMAGE_SIZE_MAP: Record<string, string> = {
   '1k': 'LOW',
   '2k': 'MEDIUM',
+  '4k': '4K',
+}
+
+/**
+ * resolution → 云雾（yunwu）等第三方 Gemini 兼容端 imageConfig.imageSize 映射
+ *
+ * 云雾原生接口使用数值字符串：512 / 1K / 2K / 4K
+ */
+const YUNWU_RESOLUTION_IMAGE_SIZE_MAP: Record<string, string> = {
+  '1k': '1K',
+  '2k': '2K',
   '4k': '4K',
 }
 
@@ -94,10 +105,9 @@ export class GeminiProvider extends BaseImageProvider {
     const apiBase = this.apiBase ?? DEFAULT_API_BASE
     const endpoint = `${apiBase}/v1beta/models/${this.modelId}:generateContent`
     const isOfficialGeminiApi = apiBase.includes('generativelanguage.googleapis.com')
-    const supportsImageConfig =
-      isOfficialGeminiApi || this.modelId === 'gemini-3-pro-image-preview'
+    const supportsImageConfig = true
 
-    const generationConfig = this.buildGenerationConfig(options, supportsImageConfig)
+    const generationConfig = this.buildGenerationConfig(options, isOfficialGeminiApi)
     const safetySettings = buildSafetySettings()
 
 
@@ -197,26 +207,15 @@ export class GeminiProvider extends BaseImageProvider {
    * 构建 generationConfig。
    *
    * - 始终包含 responseModalities: ['TEXT', 'IMAGE']
-   * - 仅在 supportsImageConfig 为真时附加 imageConfig
+   * - 在官方 Gemini API 和云雾等兼容端点均发送 imageConfig（现代模型已支持）
+   * - 官方端点使用 LOW / MEDIUM / 4K；云雾等第三方使用 1K / 2K / 4K
    */
   private buildGenerationConfig(
     options: ImageGenerationOptions | undefined,
-    supportsImageConfig: boolean
+    isOfficialGeminiApi: boolean
   ): Record<string, unknown> {
     const generationConfig: Record<string, unknown> = {
       responseModalities: ['TEXT', 'IMAGE'],
-    }
-
-    if (!supportsImageConfig) {
-      if (options?.aspectRatio || options?.resolution) {
-        this.logger.debug(
-          'provider=%s event=image_config_skipped reason=unsupported_endpoint aspect=%s resolution=%s',
-          this.name,
-          options?.aspectRatio ?? '-',
-          options?.resolution ?? '-'
-        )
-      }
-      return generationConfig
     }
 
     const imageConfig: Record<string, unknown> = {}
@@ -226,7 +225,10 @@ export class GeminiProvider extends BaseImageProvider {
     }
 
     if (options?.resolution) {
-      const mapped = RESOLUTION_IMAGE_SIZE_MAP[options.resolution]
+      const map = isOfficialGeminiApi
+        ? RESOLUTION_IMAGE_SIZE_MAP
+        : YUNWU_RESOLUTION_IMAGE_SIZE_MAP
+      const mapped = map[options.resolution]
       if (mapped) {
         imageConfig.imageSize = mapped
       } else if (/^\d+x\d+$/.test(options.resolution)) {

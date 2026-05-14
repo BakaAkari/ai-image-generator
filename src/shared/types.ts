@@ -1,29 +1,33 @@
 /**
- * V2 共享类型定义（供应商语义 + 协议路由版本）。
+ * V2 共享类型定义（供应商凭证 + 模型路由统一配置版本）。
  *
- * 配置层只暴露用户可理解的三类供应商入口：
- * - openai-compatible：第三方 OpenAI-compatible 站点，通过接口格式选择具体协议。
- * - openai-official：OpenAI 官方 Images API。
- * - gemini-official：Google Gemini 官方原生接口。
+ * 配置层供应商只负责凭证：
+ * - openai-compatible：第三方 OpenAI-compatible 站点（apiKey + apiBase）
+ * - gemini-official：Google Gemini 官方（仅 apiKey，固定 base）
+ * - gpt-official：OpenAI 官方 GPT（仅 apiKey，固定 base）
  *
- * 运行时 ProviderRegistry 仍按协议 / 通道注册：openai-images / openai-chat / gemini。
+ * 运行时 ProviderRegistry 按协议注册：openai / gemini。
+ * 模型映射显式声明 supplier + protocol，系统默认使用第一条映射作为默认模型。
  */
 
 /** V2 已注册的运行时 Provider 名称（与 ProviderRegistry 中 register 的 key 对应）。 */
-export type ProviderType = 'openai-images' | 'openai-chat' | 'gemini'
+export type ProviderType = 'openai' | 'gemini'
 
-/** 配置页中的顶层供应商入口。 */
-export type ImageProvider = 'openai-compatible' | 'openai-official' | 'gemini-official'
+/** 配置页中的供应商入口（仅用于凭证分区）。 */
+export type ImageProvider = 'openai-compatible' | 'gemini-official' | 'gpt-official'
 
-/** OpenAI-compatible 站点可选择的接口格式。 */
-export type OpenAICompatibleProtocol = 'openai-images' | 'openai-chat'
 
-/** 模型映射可覆盖的运行时协议 / 通道。 */
+/** 模型映射可覆盖的运行时协议。 */
 export type ApiFormat = ProviderType
 
 export interface ModelMappingConfig {
   suffix: string
   modelId: string
+  /** 供应商凭证入口：openai-compatible / gemini-official / gpt-official */
+  supplier?: ImageProvider
+  /** 运行时协议：openai / gemini */
+  protocol?: ProviderType
+  /** @deprecated 0.5.10 起改名为 protocol；保留读取以兼容 0.5.9 配置 */
   provider?: ProviderType
   /** 是否为受限模型，仅模型白名单内的用户可调用 */
   restricted?: boolean
@@ -37,10 +41,16 @@ export interface ImageGenerationModifiers {
   aspectRatio?: '1:1' | '4:3' | '16:9' | '9:16' | '3:2' | '2:3'
 }
 
+export type StyleMode = 'text-to-image' | 'image-to-image' | 'compose-image'
+
 export interface StyleConfig {
   commandName: string
   description?: string
   prompt: string
+  /** 该预设默认走哪条生成链路；为空时兼容旧配置，按 image-to-image 处理。 */
+  mode?: StyleMode
+  /** 该预设默认使用的模型映射后缀；为空时使用插件默认模型。 */
+  modelSuffix?: string
   aliases?: string[]
   keywords?: string[]
   examples?: string[]
@@ -64,6 +74,9 @@ export interface StyleMatchCandidate {
 
 export interface ImageRequestContext {
   numImages?: number
+  /** 供应商凭证入口 */
+  supplier?: ImageProvider
+  /** 运行时协议通道 */
   provider?: ProviderType
   modelId?: string
   apiFormat?: ApiFormat
@@ -87,6 +100,7 @@ export interface GeneratedImageRecord {
   imageUrl: string
   prompt: string
   normalizedPrompt?: string
+  supplier?: ImageProvider
   provider: ProviderType
   modelId: string
   aspectRatio?: string
@@ -110,28 +124,22 @@ export interface ConversationImageContext {
 
 export interface OpenAICompatibleCredentials {
   provider: 'openai-compatible'
-  protocol: OpenAICompatibleProtocol
   apiKey: string
-  modelId: string
   apiBase: string
   extraHeaders?: Record<string, string>
-}
-
-export interface OpenAIOfficialCredentials {
-  provider: 'openai-official'
-  apiKey: string
-  modelId: string
-  apiBase: string
 }
 
 export interface GeminiOfficialCredentials {
   provider: 'gemini-official'
   apiKey: string
-  modelId: string
-  apiBase: string
+}
+
+export interface GptOfficialCredentials {
+  provider: 'gpt-official'
+  apiKey: string
 }
 
 export type ProviderCredentials =
   | OpenAICompatibleCredentials
-  | OpenAIOfficialCredentials
   | GeminiOfficialCredentials
+  | GptOfficialCredentials

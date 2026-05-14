@@ -84,7 +84,7 @@ export class UserManager {
 
   // 内存缓存
   private usersCache: UsersData | null = null
-  private activeTasks = new Map<string, string>()  // userId -> requestId (图像任务锁)
+  private activeTasks = new Map<string, { requestId: string; startedAt: number; expiresAt: number }>()  // userId -> 图像任务锁
   private rateLimitMap = new Map<string, number[]>()  // userId -> timestamps
   private securityBlockMap = new Map<string, number[]>()  // userId -> 拦截时间戳数组
   private securityWarningMap = new Map<string, boolean>()  // userId -> 是否已收到警示
@@ -104,18 +104,44 @@ export class UserManager {
 
   // --- 任务管理（仅图像任务） ---
 
-  startTask(userId: string): boolean {
-    if (this.activeTasks.has(userId)) return false
-    this.activeTasks.set(userId, 'processing')
-    return true
+  startTask(userId: string, ttlMs = 10 * 60 * 1000): string | undefined {
+    this.cleanupExpiredTasks()
+    if (this.activeTasks.has(userId)) return undefined
+
+    const now = Date.now()
+    const requestId = `${now}-${Math.random().toString(36).slice(2, 10)}`
+    this.activeTasks.set(userId, {
+      requestId,
+      startedAt: now,
+      expiresAt: now + Math.max(60 * 1000, ttlMs),
+    })
+    return requestId
   }
 
-  endTask(userId: string) {
+  endTask(userId: string, requestId?: string) {
+    const task = this.activeTasks.get(userId)
+    if (!task) return
+    if (requestId && task.requestId !== requestId) return
     this.activeTasks.delete(userId)
   }
 
   isTaskActive(userId: string): boolean {
+    this.cleanupExpiredTasks()
     return this.activeTasks.has(userId)
+  }
+
+  private cleanupExpiredTasks() {
+    const now = Date.now()
+    for (const [userId, task] of this.activeTasks) {
+      if (task.expiresAt <= now) {
+        this.logger.warn('清理过期图像任务锁', {
+          userId,
+          requestId: task.requestId,
+          ageMs: now - task.startedAt,
+        })
+        this.activeTasks.delete(userId)
+      }
+    }
   }
 
   // --- 权限管理 ---
@@ -213,6 +239,12 @@ export class UserManager {
     return this.usersCache![userId]!
   }
 
+  // 只读获取特定用户数据；不存在时不创建新用户。
+  async getExistingUserData(userId: string): Promise<UserData | undefined> {
+    const users = await this.loadUsersData()
+    return users[userId]
+  }
+
   // 获取所有用户数据 (用于充值等批量操作)
   async getAllUsers(): Promise<UsersData> {
     return await this.loadUsersData()
@@ -290,7 +322,7 @@ export class UserManager {
       const oldest = validTimestamps[0] ?? now
       return {
         allowed: false,
-        message: `操作过于频繁，请${Math.ceil((oldest + config.rateLimitWindow * 1000 - now) / 1000)}秒后再试`
+        message: `操作过于频繁，请 ${Math.ceil((oldest + config.rateLimitWindow * 1000 - now) / 1000)} 秒后再试`
       }
     }
 
@@ -335,7 +367,14 @@ export class UserManager {
     if (totalAvailable < numImages) {
       return {
         allowed: false,
-        message: `生成 ${numImages} 张图片需要 ${numImages} 次可用次数，但您的可用次数不足（今日免费剩余：${remainingToday}次，充值剩余：${userData.remainingPurchasedCount}次，共${totalAvailable}次）`,
+        message: [
+          '额度不足',
+          '',
+          `- 本次需要｜${numImages}`,
+          `- 今日免费｜${remainingToday}`,
+          `- 已购次数｜${userData.remainingPurchasedCount}`,
+          `- 合计可用｜${totalAvailable}`,
+        ].join('\n'),
         isAdmin: false
       }
     }
@@ -401,7 +440,14 @@ export class UserManager {
       if (totalAvailable < numImages) {
         return {
           allowed: false,
-          message: `生成 ${numImages} 张图片需要 ${numImages} 次可用次数，但您的可用次数不足（今日免费剩余：${remainingToday}次，充值剩余：${cachedUserData.remainingPurchasedCount}次，共${totalAvailable}次）`
+          message: [
+            '额度不足',
+            '',
+            `- 本次需要｜${numImages}`,
+            `- 今日免费｜${remainingToday}`,
+            `- 已购次数｜${cachedUserData.remainingPurchasedCount}`,
+            `- 合计可用｜${totalAvailable}`,
+          ].join('\n')
         }
       }
 

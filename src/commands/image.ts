@@ -1,22 +1,28 @@
 /**
- * MVP 命令族：文生图 / 图生图 / 额度查询。
+ * 图像命令族：核心文生图 / 图生图 / 合成图、额度查询与 styles 快捷命令。
  *
  * 设计要点：
- * - 仅注册 3 条核心命令，对应 V2 MVP 阶段。
- * - 解析 `parseStyleCommandModifiers` 返回的 modifiers，由 Service 转换为
- *   `ImageRequestContext + GenerationDisplayInfo`，Orchestrator 不感知 modifier 细节。
- * - 命令统一使用无前缀直呼格式，例如 `文生图` / `图生图` / `图像额度`。
+ * - 核心命令保持无前缀直呼格式，例如 `文生图` / `图生图` / `合成图` / `图像额度`。
+ * - styles 命令由配置动态注册，按 `mode` 分发到对应生成链路。
+ * - 模型选择优先级：用户显式模型后缀 > style 默认模型后缀 > 插件默认模型。
  */
 
-import type { Argv, Context, Session } from 'koishi'
 import { h } from 'koishi'
+import type { Argv, Command, Context, Session } from 'koishi'
 
 import type { Config } from '../shared/config.js'
 import { COMMANDS } from '../shared/constants.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
+import type {
+  ImageGenerationModifiers,
+  ModelMappingConfig,
+  ResolvedStyleConfig,
+  StyleMode,
+} from '../shared/types.js'
 import {
   buildModelMappingIndex,
+  normalizeSuffix,
   parseStyleCommandModifiers,
 } from '../utils/parser.js'
 
@@ -27,24 +33,31 @@ export interface RegisterImageCommandsParams {
   getConfig: () => Config
 }
 
-export function registerImageCommands(params: RegisterImageCommandsParams) {
+export interface RegisteredImageCommands {
+  refreshStyleCommands: () => void
+}
+
+export function registerImageCommands(params: RegisterImageCommandsParams): RegisteredImageCommands {
   const { ctx, service, handlers, getConfig } = params
+  const logger = ctx.logger('aka-ai-image-generator')
 
   // ---------------------------------------------------------------------------
-  // 文生图：文生图 [-1k|-16:9|-add ...] <prompt:text>
+  // 文生图：文生图 [-n 数量|-1k|-16:9|-add ...] <prompt:text>
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.TXT_TO_IMG} [prompt:text]`, '文生图')
     .alias('t2i')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
       const config = getConfig()
-      const modelIndex = buildModelMappingIndex(config.modelMappings)
-      const modifiers = parseStyleCommandModifiers(argv, undefined, modelIndex)
+      const modifiers = buildCommandModifiers(argv, undefined, config)
+      const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
+      if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
 
       const setup = service.buildGenerationSetup(
-        config.defaultNumImages || 1,
+        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
         modifiers,
       )
 
@@ -57,20 +70,22 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
     })
 
   // ---------------------------------------------------------------------------
-  // 图生图：图生图 [-1k|-16:9|-add ...] [img] [prompt:text]
+  // 图生图：图生图 [-n 数量|-1k|-16:9|-add ...] [img] [prompt:text]
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.IMG_TO_IMG} [img] [prompt:text]`, '图生图')
     .alias('i2i')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
       const config = getConfig()
-      const modelIndex = buildModelMappingIndex(config.modelMappings)
-      const modifiers = parseStyleCommandModifiers(argv, img, modelIndex)
+      const modifiers = buildCommandModifiers(argv, img, config)
+      const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
+      if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
 
       const setup = service.buildGenerationSetup(
-        config.defaultNumImages || 1,
+        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
         modifiers,
       )
 
@@ -84,6 +99,98 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
     })
 
   // ---------------------------------------------------------------------------
+  // 合成图：合成图 [-n 数量|-1k|-16:9|-add ...]
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.COMPOSE_IMAGE} [prompt:text]`, '合成多张图片')
+    .alias('compose-image')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
+    .action(async (argv: Argv, prompt?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      const modifiers = buildCommandModifiers(argv, undefined, config)
+      const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
+      if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+
+      const setup = service.buildGenerationSetup(
+        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
+        modifiers,
+      )
+
+      return handlers.executeComposeImage(
+        session,
+        prompt,
+        setup.requestContext,
+        setup.displayInfo,
+      )
+    })
+
+  const refreshStyleCommands = registerStyleCommands({
+    ctx,
+    service,
+    handlers,
+    getConfig,
+    logger,
+  })
+
+  // ---------------------------------------------------------------------------
+  // 管理员查询：图像查询 @用户
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.ADMIN_QUERY} [target:text]`, '管理员查询用户图像用量')
+    .action(async (argv: Argv, target?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      if (!service.userManager.isAdmin(session.userId || 'unknown', config)) {
+        return ['权限不足', '', '- 命令｜图像查询', '- 要求｜管理员'].join('\n')
+      }
+
+      const targetUser = parseMentionTarget(target || session.content || '')
+      if (!targetUser?.userId) return '请使用｜图像查询 @用户'
+
+      const summary = await service.getExistingUsageSummary(targetUser.userId)
+      if (!summary) return [
+        '图像查询',
+        '',
+        `- 用户｜${targetUser.userName || targetUser.userId}`,
+        '- 状态｜暂无图像用量数据',
+      ].join('\n')
+
+      return [
+        '图像查询',
+        '',
+        `- 用户｜${summary.userName || targetUser.userName || targetUser.userId}`,
+        `- 总用量｜${summary.totalUsageCount}`,
+        `- 剩余次数｜${summary.totalAvailable}`,
+      ].join('\n')
+    })
+
+  // ---------------------------------------------------------------------------
+  // 管理员排行榜：图像排行榜 [-n 数量]
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.USAGE_RANKING}`, '管理员查看用户图像用量排行榜')
+    .option('num', '-n <num:number> 显示数量（1-50）')
+    .action(async (argv: Argv) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      if (!service.userManager.isAdmin(session.userId || 'unknown', config)) {
+        return ['权限不足', '', '- 命令｜图像排行榜', '- 要求｜管理员'].join('\n')
+      }
+
+      const rows = await service.getUsageRanking(resolveRankingLimit(getCommandOptionNumber(argv, 'num')))
+      if (!rows.length) return ['图像排行榜', '', '- 状态｜暂无图像用量数据'].join('\n')
+      return [
+        '图像排行榜',
+        '',
+        ...rows.map(row => `- ${row.userName}｜总 ${row.totalUsageCount}｜今日 ${row.dailyUsageCount}｜剩余 ${row.totalAvailable}`),
+      ].join('\n')
+    })
+
+  // ---------------------------------------------------------------------------
   // 额度查询：图像额度
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.QUERY_QUOTA}`, '查询当前额度')
@@ -93,7 +200,185 @@ export function registerImageCommands(params: RegisterImageCommandsParams) {
       if (!session) return ''
       return handlers.executeQueryQuota(session)
     })
+
+  return { refreshStyleCommands }
 }
 
-// h 在 Koishi 中按需用于发送消息片段；命令模块内部不直接发图，仅提供给将来扩展使用。
-void h
+interface RegisterStyleCommandsParams extends RegisterImageCommandsParams {
+  logger: ReturnType<Context['logger']>
+}
+
+function registerStyleCommands(params: RegisterStyleCommandsParams): () => void {
+  const { logger } = params
+  let registeredCommands: Command[] = []
+
+  const refresh = () => {
+    for (const command of registeredCommands) command.dispose()
+    registeredCommands = []
+
+    const reservedNames = new Set<string>([
+      COMMANDS.TXT_TO_IMG,
+      COMMANDS.IMG_TO_IMG,
+      COMMANDS.COMPOSE_IMAGE,
+      COMMANDS.QUERY_QUOTA,
+      COMMANDS.ADMIN_QUERY,
+      COMMANDS.USAGE_RANKING,
+      COMMANDS.IMAGE_HELP,
+      COMMANDS.PARAM_HELP,
+    ])
+
+    for (const style of params.service.listStylePresets()) {
+      const command = registerStyleCommand(params, style, reservedNames)
+      if (command) registeredCommands.push(command)
+    }
+
+    logger.info('style 命令刷新完成', { count: registeredCommands.length })
+  }
+
+  refresh()
+  return refresh
+}
+
+function registerStyleCommand(
+  params: RegisterStyleCommandsParams,
+  style: ResolvedStyleConfig,
+  reservedNames: Set<string>,
+): Command | undefined {
+  const { ctx, service, handlers, getConfig, logger } = params
+  if (!style.commandName || !style.prompt) return undefined
+  if (reservedNames.has(style.commandName)) {
+    logger.warn('跳过与核心命令冲突的 style 命令', { commandName: style.commandName })
+    return undefined
+  }
+  reservedNames.add(style.commandName)
+
+  const command = ctx.command(`${style.commandName} [img] [prompt:text]`, style.description || 'Prompt 预设')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
+    .action(async (argv: Argv, img?: unknown, prompt?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      const modifiers = buildCommandModifiers(argv, img, config, style)
+      const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
+      if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+
+      const setup = service.buildGenerationSetup(
+        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
+        modifiers,
+      )
+      const finalPrompt = mergePrompt(style.prompt, prompt, modifiers.customAdditions)
+      const mode = resolveStyleMode(style.mode)
+
+      if (mode === 'text-to-image') {
+        return handlers.executeTextToImage(
+          session,
+          finalPrompt,
+          setup.requestContext,
+          setup.displayInfo,
+          style.commandName,
+          style.commandName,
+        )
+      }
+      if (mode === 'compose-image') {
+        return handlers.executeComposeImage(
+          session,
+          finalPrompt,
+          setup.requestContext,
+          setup.displayInfo,
+          style.commandName,
+          style.commandName,
+        )
+      }
+      return handlers.executeImageToImage(
+        session,
+        img,
+        finalPrompt,
+        setup.requestContext,
+        setup.displayInfo,
+        style.commandName,
+        style.commandName,
+      )
+    })
+
+  logger.info('已注册 style 命令', {
+    commandName: style.commandName,
+    groupName: style.groupName || '',
+    mode: resolveStyleMode(style.mode),
+    modelSuffix: style.modelSuffix || '',
+  })
+  return command
+}
+
+function buildCommandModifiers(
+  argv: Argv,
+  imgParam: unknown,
+  config: Config,
+  style?: ResolvedStyleConfig,
+): ImageGenerationModifiers {
+  const modelIndex = buildModelMappingIndex(config.modelMappings)
+  const modifiers = parseStyleCommandModifiers(argv, imgParam, modelIndex)
+  if (!modifiers.modelMapping) {
+    const defaultMapping = resolveStyleModelMapping(style, modelIndex)
+    if (defaultMapping) modifiers.modelMapping = defaultMapping
+  }
+  return modifiers
+}
+
+function resolveStyleModelMapping(
+  style: ResolvedStyleConfig | undefined,
+  modelIndex: Map<string, ModelMappingConfig>,
+): ModelMappingConfig | undefined {
+  const key = normalizeSuffix(style?.modelSuffix)
+  return key ? modelIndex.get(key) : undefined
+}
+
+function resolveStyleMode(mode: StyleMode | undefined): StyleMode {
+  return mode || 'image-to-image'
+}
+
+function mergePrompt(
+  basePrompt: string,
+  prompt: string | undefined,
+  additions: string[] | undefined,
+): string {
+  return [basePrompt, prompt, ...(additions || [])]
+    .map(item => typeof item === 'string' ? item.trim() : '')
+    .filter(Boolean)
+    .join(' - ')
+}
+
+function parseMentionTarget(input: string): { userId: string; userName?: string } | undefined {
+  const elements = h.parse(input || '')
+  const at = h.select(elements, 'at')[0]
+  const id = at?.attrs?.id || at?.attrs?.user_id
+  if (!id || id === 'all') return undefined
+  const name = typeof at.attrs?.name === 'string' && at.attrs.name.trim()
+    ? at.attrs.name.trim()
+    : undefined
+  return {
+    userId: String(id),
+    ...(name !== undefined ? { userName: name } : {}),
+  }
+}
+
+function resolveRankingLimit(rawValue: number | undefined): number {
+  const value = typeof rawValue === 'number' && Number.isFinite(rawValue)
+    ? Math.floor(rawValue)
+    : 10
+  return Math.min(50, Math.max(1, value || 10))
+}
+
+function getCommandOptionNumber(argv: Argv, key: string): number | undefined {
+  const options = argv.options as Record<string, unknown> | undefined
+  const value = options?.[key]
+  return typeof value === 'number' ? value : undefined
+}
+
+function resolveCommandNum(rawValue: number | undefined, fallback: number): number {
+  const value = typeof rawValue === 'number' && Number.isFinite(rawValue)
+    ? Math.floor(rawValue)
+    : Math.floor(fallback)
+  return Math.min(4, Math.max(1, value || 1))
+}
+

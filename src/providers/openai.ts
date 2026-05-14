@@ -10,11 +10,11 @@ import type {
 import { downloadImageAsBase64, sanitizeError, sanitizeString } from './utils.js'
 
 /**
- * OpenAI Images Provider 配置
+ * OpenAI Provider 配置
  *
  * 复用 BaseProviderOptions 的全部字段，无需额外字段。
  */
-export type OpenAIImagesProviderOptions = BaseProviderOptions
+export type OpenAIProviderOptions = BaseProviderOptions
 
 /**
  * GPT Image 模型最低超时（秒）。
@@ -53,7 +53,7 @@ interface OpenAIImagesResponse {
 }
 
 /**
- * OpenAIImagesProvider（v2 重写版）
+ * OpenAIProvider（v2 重写版）
  *
  * 相比 v1：
  * - 继承 BaseImageProvider，复用 callApi / handleProviderError / 流式回调封装
@@ -61,8 +61,8 @@ interface OpenAIImagesResponse {
  * - 不再持有 ProviderConfig；apiKey/modelId/apiBase/apiTimeout 全部由基类管理
  * - 仍保留 v1 关键能力：JSON+base64 优先 + FormData 回退、自定义分辨率、GPT Image 超时下限提升
  */
-export class OpenAIImagesProvider extends BaseImageProvider {
-  override readonly name: string = 'openai-images'
+export class OpenAIProvider extends BaseImageProvider {
+  override readonly name: string = 'openai'
 
   /** GPT Image 模型对超时的下限保护（秒） */
   private getEffectiveTimeoutSeconds(): number {
@@ -100,12 +100,16 @@ export class OpenAIImagesProvider extends BaseImageProvider {
     const hasInputImages = validUrls.length > 0
 
     this.logger.debug(
-      'provider=%s event=generate_start has_input=%s input_count=%d num=%d model=%s',
+      'provider=%s event=generate_start has_input=%s input_count=%d num=%d model=%s api_base=%s timeout_ms=%d auth=%s extra_headers=%s',
       this.name,
       hasInputImages,
       validUrls.length,
       numImages,
-      this.modelId
+      this.modelId,
+      this.getApiBase(),
+      this.getTimeoutMs(),
+      this.apiKey ? 'configured' : 'missing',
+      JSON.stringify(redactHeaders(this.extraHeaders)),
     )
 
     try {
@@ -116,11 +120,13 @@ export class OpenAIImagesProvider extends BaseImageProvider {
     } catch (error) {
       const normalized = error instanceof ProviderError ? error : this.handleProviderError(error)
       this.logger.error(
-        'provider=%s event=generate_failed code=%s status=%s message=%s',
+        'provider=%s event=generate_failed code=%s status=%s retryable=%s message=%s context=%s',
         this.name,
         normalized.code,
         normalized.statusCode ?? '-',
-        normalized.message
+        normalized.retryable,
+        normalized.message,
+        JSON.stringify(normalized.context),
       )
       throw normalized
     }
@@ -173,12 +179,16 @@ export class OpenAIImagesProvider extends BaseImageProvider {
       }
 
       this.logger.debug(
-        'provider=%s event=create_request current=%d total=%d model=%s size=%s',
+        'provider=%s event=create_request current=%d total=%d url=%s model=%s size=%s timeout_ms=%d request=%s headers=%s',
         this.name,
         i + 1,
         numImages,
+        `${apiBase}/images/generations`,
         this.modelId,
-        size
+        size,
+        this.getTimeoutMs(),
+        JSON.stringify(redactRequestBody(requestData)),
+        JSON.stringify(redactHeaders(this.buildHeaders())),
       )
 
       try {
@@ -282,11 +292,16 @@ export class OpenAIImagesProvider extends BaseImageProvider {
 
     for (let i = 0; i < numImages; i++) {
       this.logger.debug(
-        'provider=%s event=edit_request current=%d total=%d input_count=%d',
+        'provider=%s event=edit_request current=%d total=%d url=%s model=%s size=%s input_count=%d timeout_ms=%d headers=%s',
         this.name,
         i + 1,
         numImages,
-        imageDataList.length
+        `${apiBase}/images/edits`,
+        this.modelId,
+        size,
+        imageDataList.length,
+        this.getTimeoutMs(),
+        JSON.stringify(redactHeaders(this.buildHeaders())),
       )
 
       try {
@@ -363,6 +378,13 @@ export class OpenAIImagesProvider extends BaseImageProvider {
         size,
         image: imageInputs.length === 1 ? imageInputs[0] : imageInputs,
       }
+      this.logger.debug(
+        'provider=%s event=edit_json_request url=%s request=%s headers=%s',
+        this.name,
+        editUrl,
+        JSON.stringify(redactRequestBody(requestData)),
+        JSON.stringify(redactHeaders(this.buildHeaders())),
+      )
       return await http.post(editUrl, requestData, {
         headers: this.buildHeaders(),
         timeout: this.getTimeoutMs(),
@@ -386,6 +408,15 @@ export class OpenAIImagesProvider extends BaseImageProvider {
       formData.append('n', '1')
       formData.append('size', size)
 
+      this.logger.debug(
+        'provider=%s event=edit_formdata_request url=%s model=%s size=%s image_count=%d headers=%s',
+        this.name,
+        editUrl,
+        this.modelId,
+        size,
+        imageDataList.length,
+        JSON.stringify(redactHeaders({ Authorization: `Bearer ${this.apiKey}` })),
+      )
       return await http.post(editUrl, formData, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -400,16 +431,16 @@ export class OpenAIImagesProvider extends BaseImageProvider {
 
 function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): string[] {
   if (!response) {
-    throw new ParseError('OpenAI Images API 响应为空', { providerName: 'openai-images' })
+    throw new ParseError('OpenAI Images API 响应为空', { providerName: 'openai' })
   }
 
   if (response.error) {
     const errMessage = sanitizeString(response.error.message ?? JSON.stringify(sanitizeError(response.error)))
     if (isContentFilter(errMessage)) {
-      throw new ContentFilterError(errMessage, { providerName: 'openai-images' })
+      throw new ContentFilterError(errMessage, { providerName: 'openai' })
     }
     throw new ProviderError('UNKNOWN', `OpenAI Images API 错误: ${errMessage}`, {
-      providerName: 'openai-images',
+      providerName: 'openai',
     })
   }
 
@@ -455,6 +486,50 @@ function truncate(value: string, max: number): string {
   return `${value.slice(0, max)}…`
 }
 
+function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase()
+    if (lower === 'authorization' || lower.includes('api-key') || lower.includes('apikey') || lower.includes('token') || lower.includes('secret')) {
+      result[key] = value ? '[REDACTED]' : ''
+    } else {
+      result[key] = truncate(value, 120)
+    }
+  }
+  return result
+}
+
+function redactRequestBody(body: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(body)) {
+    if (key === 'prompt' && typeof value === 'string') {
+      result.promptLength = value.length
+      result.promptPreview = truncate(value, 80)
+    } else if (key === 'image') {
+      result.image = describeImagePayload(value)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
+
+function describeImagePayload(value: unknown): unknown {
+  if (typeof value === 'string') return describeImageString(value)
+  if (Array.isArray(value)) return value.map(describeImageString)
+  return typeof value
+}
+
+function describeImageString(value: unknown): string {
+  if (typeof value !== 'string') return typeof value
+  if (value.startsWith('data:')) {
+    const commaIndex = value.indexOf(',')
+    const meta = commaIndex >= 0 ? value.slice(0, commaIndex) : 'data:*'
+    return `${meta},[base64 length=${Math.max(0, value.length - commaIndex - 1)}]`
+  }
+  return truncate(value, 120)
+}
+
 /**
  * 工厂函数（注册表用）。
  *
@@ -468,11 +543,11 @@ function truncate(value: string, max: number): string {
  * }
  * ```
  */
-export function createOpenAIImagesProvider(
+export function createOpenAIProvider(
   ctx: Context,
   config: Record<string, unknown>
-): OpenAIImagesProvider {
-  return new OpenAIImagesProvider({
+): OpenAIProvider {
+  return new OpenAIProvider({
     ctx,
     apiKey: String(config.apiKey ?? ''),
     modelId: String(config.modelId ?? ''),
@@ -481,7 +556,7 @@ export function createOpenAIImagesProvider(
       ? Number(config.apiTimeout)
       : 60,
     logLevel: config.logLevel as BaseProviderOptions['logLevel'],
-    loggerName: 'aka-ai-image-generator:openai-images',
+    loggerName: 'aka-ai-image-generator:openai',
     extraHeaders: isRecordOfStrings(config.extraHeaders) ? config.extraHeaders : undefined,
   })
 }
