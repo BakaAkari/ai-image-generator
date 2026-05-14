@@ -121,6 +121,23 @@ export function createImageGenerationHandlers(
     return { value: String(error ?? '') }
   }
 
+  async function sendFinalText(
+    session: Session,
+    message: string,
+    userId: string,
+    logLabel: string,
+  ): Promise<string> {
+    try {
+      await session.send(message)
+    } catch (sendError) {
+      logger.error(logLabel, {
+        userId,
+        ...sanitizeForLog(sendError),
+      })
+    }
+    return ''
+  }
+
   /** 收集文生图输入：优先取参数；否则发起 prompt 等待用户输入。 */
   async function collectTextInput(
     session: Session,
@@ -439,7 +456,12 @@ export function createImageGenerationHandlers(
         return ''
       }
 
-      return ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n')
+      return sendFinalText(
+        session,
+        ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n'),
+        userId,
+        '发送生成失败提示失败',
+      )
     } catch (error) {
       logger.error('图像生成流程异常', {
         userId,
@@ -452,7 +474,12 @@ export function createImageGenerationHandlers(
         try {
           const result = await userManager.recordSecurityBlock(userId, config)
           if (result.shouldWarn) {
-            return ['内容安全拦截', '', '请调整描述后再试；多次触发会影响后续使用'].join('\n')
+            return sendFinalText(
+              session,
+              ['内容安全拦截', '', '请调整描述后再试；多次触发会影响后续使用'].join('\n'),
+              userId,
+              '发送内容安全拦截提示失败',
+            )
           }
         } catch (recordErr) {
           logger.error('记录安全阻断失败', {
@@ -463,7 +490,12 @@ export function createImageGenerationHandlers(
       }
 
       const message = error instanceof Error ? error.message : String(error)
-      return ['生成失败', '', `- 原因｜${message}`].join('\n')
+      return sendFinalText(
+        session,
+        ['生成失败', '', `- 原因｜${message}`].join('\n'),
+        userId,
+        '发送生成失败提示失败',
+      )
     } finally {
       userManager.endTask(userId, requestId)
     }

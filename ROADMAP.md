@@ -2,7 +2,7 @@
 
 ## Current status
 
-- Current package version: `0.5.22`.
+- Current package version: `0.5.23`.
 - Current line: V2 image-only plugin.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
@@ -209,6 +209,15 @@ Completed scope:
 - Renamed model mapping labels to `命令名`, `模型 ID`, `供应商`, `接口格式`, and `限制项`.
 - Shortened Prompt preset labels to `命令名`, `生成模式`, `生成模型`, `帮助说明`, and `提示词`.
 - Kept runtime field names and behavior unchanged; this is a Console wording-only patch.
+
+### `0.5.23` Final failure chat delivery stabilization
+
+Completed scope:
+
+- Changed final no-image generation failures to explicitly send a chat message before returning from the command action.
+- Changed final provider exceptions to explicitly send `生成失败` in chat instead of relying on Koishi action auto-reply behavior.
+- Changed content safety final warnings to explicitly send `内容安全拦截` when the warning threshold is reached.
+- Kept intermediate provider fallback and retry warnings log-only, because those states can recover and still produce images.
 
 ## Deferred lines
 
