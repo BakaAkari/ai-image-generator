@@ -9,5 +9,5 @@ export const COMMANDS = {
   ADMIN_QUERY: '图像查询',
   USAGE_RANKING: '图像排行榜',
   IMAGE_HELP: '图像指令',
-  PARAM_HELP: '参数指令',
+  PARAM_HELP: '图像参数',
 } as const

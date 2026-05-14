@@ -2,7 +2,7 @@
 
 ## Current status
 
-- Current package version: `0.5.19`.
+- Current package version: `0.5.22`.
 - Current line: V2 image-only plugin.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
@@ -26,7 +26,7 @@ Stable runtime direction:
    - `图像排行榜`
    - `图像额度`
    - `图像指令`
-   - `参数指令`
+   - `图像参数`
 5. Keep remote Koishi validation as the source of truth for runtime behavior.
 
 ## Completed milestones
@@ -61,6 +61,7 @@ Stable runtime direction:
 ### `0.5.6` Command basics and permission completion
 
 - Added `图像指令` and `参数指令`.
+- `参数指令` was later renamed to `图像参数` in `0.5.20`.
 - Explicitly registered `-n <num:number>` on `文生图` and `图生图`.
 - Added command-entry restricted model blocking for model mappings marked with `restricted`.
 - Documented that dynamic style commands remain deferred after the command basics patch.
@@ -181,6 +182,33 @@ Completed scope:
 - Standardized chat-visible quota, admin query, ranking, permission, input prompt, generation status, completion, and failure messages.
 - Used short titles and one-line `field｜value` rows for query-style outputs.
 - Kept process prompts concise while preserving actionable next steps for errors and blocked requests.
+
+### `0.5.20` Image parameter command rename
+
+Completed scope:
+
+- Renamed the parameter help command from `参数指令` to `图像参数`.
+- Updated the `图像参数` response title to match the command name.
+- Kept `图像指令` pointing to the parameter help entry through the shared command constant, so both help commands now start with `图像`.
+
+### `0.5.21` Log level semantics and diagnostics cleanup
+
+Completed scope:
+
+- Changed the user-facing log level labels to `simple` and `detail`.
+- Kept backward compatibility for legacy `info` and `debug` config values through log level normalization.
+- Made `detail` explicitly control provider request diagnostics instead of depending on Koishi debug visibility.
+- Reduced normal request logs to key routing and generation information.
+- Removed prompt previews from OpenAI request diagnostics while preserving prompt length and image payload summaries.
+
+### `0.5.22` Console table label compaction
+
+Completed scope:
+
+- Shortened model mapping table column labels to reduce wrapping in Koishi Console.
+- Renamed model mapping labels to `命令名`, `模型 ID`, `供应商`, `接口格式`, and `限制项`.
+- Shortened Prompt preset labels to `命令名`, `生成模式`, `生成模型`, `帮助说明`, and `提示词`.
+- Kept runtime field names and behavior unchanged; this is a Console wording-only patch.
 
 ## Deferred lines
 

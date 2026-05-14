@@ -14,6 +14,7 @@ import type {
   StyleConfig,
   StyleGroupConfig,
 } from './types.js'
+import type { LogLevel } from './logging.js'
 
 // ----------------------------------------------------------------------------
 // 运行期 Config interface
@@ -79,7 +80,7 @@ export interface Config {
   adminUsers: string[]
   permanentMembers: string[]
   modelWhitelistUsers: string[]
-  logLevel: 'info' | 'debug'
+  logLevel: LogLevel
 
   // ── 通用 ──────────────────────────────────────────────────────────────────
   apiTimeout: number
@@ -92,7 +93,7 @@ export interface Config {
 const StyleItemSchema = Schema.object({
   commandName: Schema.string()
     .required()
-    .description('命令名，用户可直接发送它来调用该预设')
+    .description('命令名')
     .role('table-cell', { width: 24 }),
   mode: Schema.union([
     Schema.const('text-to-image').description('文生图'),
@@ -100,19 +101,19 @@ const StyleItemSchema = Schema.object({
     Schema.const('compose-image').description('合成图'),
   ])
     .default('image-to-image')
-    .description('默认生成链路，决定需要文字、单图还是多图输入')
+    .description('生成模式')
     .role('table-cell', { width: 24 }),
   modelSuffix: Schema.string()
     .default('')
-    .description('默认模型后缀；留空时使用模型映射第一条')
+    .description('生成模型')
     .role('table-cell', { width: 24 }),
   description: Schema.string()
     .role('textarea', { rows: 2 })
-    .description('在帮助中展示的简短说明'),
+    .description('帮助说明'),
   prompt: Schema.string()
     .role('textarea', { rows: 6 })
     .required()
-    .description('预设提示词，会与用户追加内容合并'),
+    .description('提示词'),
 })
 
 const ProviderSettingsSchema = Schema.object({
@@ -166,24 +167,24 @@ export const Config = Schema.intersect([
   Schema.object({
     modelMappings: Schema.array(
       Schema.object({
-        suffix: Schema.string().required().description('后缀；命令中用 -后缀 选择模型'),
-        modelId: Schema.string().required().description('模型 ID，上游真实模型名'),
+        suffix: Schema.string().required().description('命令名'),
+        modelId: Schema.string().required().description('模型 ID'),
         supplier: Schema.union([
           Schema.const('openai-compatible').description('第三方'),
           Schema.const('gpt-official').description('OpenAI'),
           Schema.const('gemini-official').description('Gemini'),
         ])
           .default('openai-compatible')
-          .description('供应商，决定使用哪组凭证'),
+          .description('供应商'),
         protocol: Schema.union([
           Schema.const('openai').description('OpenAI'),
           Schema.const('gemini').description('Gemini'),
         ])
           .default('openai')
-          .description('协议，决定按哪种接口格式请求'),
+          .description('接口格式'),
         restricted: Schema.boolean()
           .default(false)
-          .description('受限；开启后仅管理员或模型白名单可用'),
+          .description('限制项'),
       }).collapse()
     )
       .role('table')
@@ -254,11 +255,11 @@ export const Config = Schema.intersect([
       .default([])
       .description('允许使用受限模型的用户 ID'),
     logLevel: Schema.union([
-      Schema.const('info').description('普通'),
-      Schema.const('debug').description('调试'),
+      Schema.const('simple').description('simple'),
+      Schema.const('detail').description('detail'),
     ])
-      .default('info')
-      .description('日志级别；排查问题时可临时切到调试'),
+      .default('simple')
+      .description('日志级别；simple 记录关键流程，detail 增加脱敏请求诊断'),
   }).description('👑 管理员与权限').collapse(),
 
   // ⑤ 限流与配额

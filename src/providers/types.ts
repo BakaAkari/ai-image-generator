@@ -1,5 +1,7 @@
 import type { Context } from 'koishi'
 
+import type { LogLevel } from '../shared/logging.js'
+
 /**
  * 图像生成参数
  *
@@ -72,8 +74,8 @@ export interface BaseProviderOptions {
   apiBase?: string
   /** 单次 HTTP 请求超时时间（秒） */
   apiTimeout: number
-  /** 日志级别（用于决定是否打印 debug） */
-  logLevel?: 'silent' | 'error' | 'warn' | 'info' | 'debug'
+  /** 日志级别；simple 只记录关键流程，detail 增加脱敏诊断 */
+  logLevel?: LogLevel
   /** 子 logger 名称，默认用 Provider name */
   loggerName?: string
   /** 第三方 OpenAI-compatible 站点所需的额外请求头 */

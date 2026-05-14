@@ -46,7 +46,7 @@ function buildImageHelp(config: Config): string {
 function buildParameterHelp(config: Config): string {
   const defaultNum = resolveCommandNum(config.defaultNumImages)
   const lines: string[] = [
-    '参数指令',
+    '图像参数',
     '',
     '通用参数：',
     `- -n <数量>｜生成数量，1-4，默认 ${defaultNum}`,

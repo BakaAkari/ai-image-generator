@@ -22,6 +22,7 @@ import type {
   StyleMatchCandidate,
 } from '../shared/types.js'
 import { PLUGIN_NAME } from '../shared/constants.js'
+import { isDetailLogLevel, normalizeLogLevel } from '../shared/logging.js'
 import { ImageContextStore } from '../core/image-context-store.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ImageProvider as RuntimeImageProvider } from '../providers/types.js'
@@ -138,21 +139,29 @@ export class AiImageGeneratorService extends Service {
       aspectRatio: requestContext?.aspectRatio,
     }
 
-    this.pluginLogger.info('requestProviderImages 调用', {
+    const requestLog = {
       supplier,
       provider,
       modelId: effectiveModelId || 'default',
       modelSource: targetModelId ? 'requestContext' : 'providerDefault',
       numImages,
-      hasCallback: !!onImageGenerated,
-      promptLength: prompt.length,
       imageUrlsCount: Array.isArray(imageUrls) ? imageUrls.length : (imageUrls ? 1 : 0),
-      apiBase: factoryConfig.apiBase || 'default',
-      apiKey: factoryConfig.apiKey ? 'configured' : 'missing',
-      extraHeaders: redactHeadersForLog(factoryConfig.extraHeaders),
-      timeout: factoryConfig.apiTimeout,
       ...imageOptions,
-    })
+    }
+
+    this.pluginLogger.info('requestProviderImages 调用', requestLog)
+
+    if (isDetailLogLevel(this.pluginConfig.logLevel)) {
+      this.pluginLogger.info('requestProviderImages 诊断', {
+        ...requestLog,
+        hasCallback: !!onImageGenerated,
+        promptLength: prompt.length,
+        apiBase: factoryConfig.apiBase || 'default',
+        apiKey: factoryConfig.apiKey ? 'configured' : 'missing',
+        extraHeaders: redactHeadersForLog(factoryConfig.extraHeaders),
+        timeout: factoryConfig.apiTimeout,
+      })
+    }
 
     const providerInstance = this.providerRegistry.createProvider(provider, this.ctx, factoryConfig)
     const result = await providerInstance.generateImages(
@@ -593,7 +602,7 @@ export class AiImageGeneratorService extends Service {
     this.assertRouteSupported(supplier, provider)
     const common = {
       apiTimeout: cfg.apiTimeout,
-      logLevel: cfg.logLevel,
+      logLevel: normalizeLogLevel(cfg.logLevel),
     }
 
     switch (supplier) {

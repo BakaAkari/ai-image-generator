@@ -17,6 +17,7 @@ import type {
 } from './types.js'
 import { withRetry, type RetryOptions } from './policies/retry.js'
 import { withTimeout } from './policies/timeout.js'
+import { isDetailLogLevel, normalizeLogLevel } from '../shared/logging.js'
 
 /**
  * BaseImageProvider（7.2 节）
@@ -48,7 +49,7 @@ export abstract class BaseImageProvider implements ImageProvider {
     this.modelId = options.modelId
     this.apiBase = options.apiBase?.replace(/\/$/, '') || undefined
     this.apiTimeoutSeconds = options.apiTimeout
-    this.logLevel = options.logLevel
+    this.logLevel = normalizeLogLevel(options.logLevel)
     this.extraHeaders = options.extraHeaders ?? {}
     this.logger = options.ctx.logger(options.loggerName ?? 'aka-ai-image-generator:provider')
   }
@@ -62,6 +63,10 @@ export abstract class BaseImageProvider implements ImageProvider {
   ): Promise<string[]>
 
   // -------- 通用工具 --------
+
+  protected shouldLogDetail(): boolean {
+    return isDetailLogLevel(this.logLevel)
+  }
 
   /** 构造常规 Bearer 鉴权头 */
   protected buildHeaders(extra: Record<string, string> = {}): Record<string, string> {

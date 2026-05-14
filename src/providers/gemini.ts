@@ -71,14 +71,16 @@ export class GeminiProvider extends BaseImageProvider {
     const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls]
     const validUrls = urls.filter((url) => url && typeof url === 'string' && url.trim().length > 0)
 
-    this.logger.debug(
-      'provider=%s event=generate_start has_input=%s input_count=%d num=%d model=%s',
-      this.name,
-      validUrls.length > 0,
-      validUrls.length,
-      numImages,
-      this.modelId
-    )
+    if (this.shouldLogDetail()) {
+      this.logger.info(
+        'provider=%s event=generate_detail has_input=%s input_count=%d num=%d model=%s',
+        this.name,
+        validUrls.length > 0,
+        validUrls.length,
+        numImages,
+        this.modelId
+      )
+    }
 
     // 下载所有输入图片并转换为 inline_data parts
     const imageParts: Array<{ inline_data: { mime_type: string; data: string } }> = []
@@ -125,16 +127,18 @@ export class GeminiProvider extends BaseImageProvider {
         safetySettings,
       }
 
-      this.logger.debug(
-        'provider=%s event=generate_request current=%d total=%d endpoint=%s aspect=%s resolution=%s image_size=%s',
-        this.name,
-        i + 1,
-        numImages,
-        endpoint,
-        options?.aspectRatio ?? '-',
-        options?.resolution ?? '-',
-        (generationConfig.imageConfig as { imageSize?: string } | undefined)?.imageSize ?? '-'
-      )
+      if (this.shouldLogDetail()) {
+        this.logger.info(
+          'provider=%s event=generate_request_detail current=%d total=%d endpoint=%s aspect=%s resolution=%s image_size=%s',
+          this.name,
+          i + 1,
+          numImages,
+          endpoint,
+          options?.aspectRatio ?? '-',
+          options?.resolution ?? '-',
+          (generationConfig.imageConfig as { imageSize?: string } | undefined)?.imageSize ?? '-'
+        )
+      }
 
       try {
         const response = await this.callApi<unknown>(() =>

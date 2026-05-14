@@ -99,18 +99,20 @@ export class OpenAIProvider extends BaseImageProvider {
     const validUrls = urls.filter((url) => url && typeof url === 'string' && url.trim().length > 0)
     const hasInputImages = validUrls.length > 0
 
-    this.logger.debug(
-      'provider=%s event=generate_start has_input=%s input_count=%d num=%d model=%s api_base=%s timeout_ms=%d auth=%s extra_headers=%s',
-      this.name,
-      hasInputImages,
-      validUrls.length,
-      numImages,
-      this.modelId,
-      this.getApiBase(),
-      this.getTimeoutMs(),
-      this.apiKey ? 'configured' : 'missing',
-      JSON.stringify(redactHeaders(this.extraHeaders)),
-    )
+    if (this.shouldLogDetail()) {
+      this.logger.info(
+        'provider=%s event=generate_detail has_input=%s input_count=%d num=%d model=%s api_base=%s timeout_ms=%d auth=%s extra_headers=%s',
+        this.name,
+        hasInputImages,
+        validUrls.length,
+        numImages,
+        this.modelId,
+        this.getApiBase(),
+        this.getTimeoutMs(),
+        this.apiKey ? 'configured' : 'missing',
+        JSON.stringify(redactHeaders(this.extraHeaders)),
+      )
+    }
 
     try {
       if (hasInputImages) {
@@ -178,18 +180,20 @@ export class OpenAIProvider extends BaseImageProvider {
         size,
       }
 
-      this.logger.debug(
-        'provider=%s event=create_request current=%d total=%d url=%s model=%s size=%s timeout_ms=%d request=%s headers=%s',
-        this.name,
-        i + 1,
-        numImages,
-        `${apiBase}/images/generations`,
-        this.modelId,
-        size,
-        this.getTimeoutMs(),
-        JSON.stringify(redactRequestBody(requestData)),
-        JSON.stringify(redactHeaders(this.buildHeaders())),
-      )
+      if (this.shouldLogDetail()) {
+        this.logger.info(
+          'provider=%s event=create_detail current=%d total=%d url=%s model=%s size=%s timeout_ms=%d request=%s headers=%s',
+          this.name,
+          i + 1,
+          numImages,
+          `${apiBase}/images/generations`,
+          this.modelId,
+          size,
+          this.getTimeoutMs(),
+          JSON.stringify(redactRequestBody(requestData)),
+          JSON.stringify(redactHeaders(this.buildHeaders())),
+        )
+      }
 
       try {
         const response = await this.callApi<OpenAIImagesResponse>(() =>
@@ -260,12 +264,14 @@ export class OpenAIProvider extends BaseImageProvider {
     const apiBase = this.getApiBase()
     const size = this.getSize(options)
 
-    this.logger.debug(
-      'provider=%s event=edit_download_inputs count=%d size=%s',
-      this.name,
-      imageUrls.length,
-      size
-    )
+    if (this.shouldLogDetail()) {
+      this.logger.info(
+        'provider=%s event=edit_download_detail count=%d size=%s',
+        this.name,
+        imageUrls.length,
+        size
+      )
+    }
 
     const imageDataList: Array<{ data: string; mimeType: string }> = []
     for (const url of imageUrls) {
@@ -291,18 +297,20 @@ export class OpenAIProvider extends BaseImageProvider {
     const allImages: string[] = []
 
     for (let i = 0; i < numImages; i++) {
-      this.logger.debug(
-        'provider=%s event=edit_request current=%d total=%d url=%s model=%s size=%s input_count=%d timeout_ms=%d headers=%s',
-        this.name,
-        i + 1,
-        numImages,
-        `${apiBase}/images/edits`,
-        this.modelId,
-        size,
-        imageDataList.length,
-        this.getTimeoutMs(),
-        JSON.stringify(redactHeaders(this.buildHeaders())),
-      )
+      if (this.shouldLogDetail()) {
+        this.logger.info(
+          'provider=%s event=edit_detail current=%d total=%d url=%s model=%s size=%s input_count=%d timeout_ms=%d headers=%s',
+          this.name,
+          i + 1,
+          numImages,
+          `${apiBase}/images/edits`,
+          this.modelId,
+          size,
+          imageDataList.length,
+          this.getTimeoutMs(),
+          JSON.stringify(redactHeaders(this.buildHeaders())),
+        )
+      }
 
       try {
         const response = await this.callApi<OpenAIImagesResponse>(() =>
@@ -378,13 +386,15 @@ export class OpenAIProvider extends BaseImageProvider {
         size,
         image: imageInputs.length === 1 ? imageInputs[0] : imageInputs,
       }
-      this.logger.debug(
-        'provider=%s event=edit_json_request url=%s request=%s headers=%s',
-        this.name,
-        editUrl,
-        JSON.stringify(redactRequestBody(requestData)),
-        JSON.stringify(redactHeaders(this.buildHeaders())),
-      )
+      if (this.shouldLogDetail()) {
+        this.logger.info(
+          'provider=%s event=edit_json_detail url=%s request=%s headers=%s',
+          this.name,
+          editUrl,
+          JSON.stringify(redactRequestBody(requestData)),
+          JSON.stringify(redactHeaders(this.buildHeaders())),
+        )
+      }
       return await http.post(editUrl, requestData, {
         headers: this.buildHeaders(),
         timeout: this.getTimeoutMs(),
@@ -408,15 +418,17 @@ export class OpenAIProvider extends BaseImageProvider {
       formData.append('n', '1')
       formData.append('size', size)
 
-      this.logger.debug(
-        'provider=%s event=edit_formdata_request url=%s model=%s size=%s image_count=%d headers=%s',
-        this.name,
-        editUrl,
-        this.modelId,
-        size,
-        imageDataList.length,
-        JSON.stringify(redactHeaders({ Authorization: `Bearer ${this.apiKey}` })),
-      )
+      if (this.shouldLogDetail()) {
+        this.logger.info(
+          'provider=%s event=edit_formdata_detail url=%s model=%s size=%s image_count=%d headers=%s',
+          this.name,
+          editUrl,
+          this.modelId,
+          size,
+          imageDataList.length,
+          JSON.stringify(redactHeaders({ Authorization: `Bearer ${this.apiKey}` })),
+        )
+      }
       return await http.post(editUrl, formData, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -504,7 +516,6 @@ function redactRequestBody(body: Record<string, unknown>): Record<string, unknow
   for (const [key, value] of Object.entries(body)) {
     if (key === 'prompt' && typeof value === 'string') {
       result.promptLength = value.length
-      result.promptPreview = truncate(value, 80)
     } else if (key === 'image') {
       result.image = describeImagePayload(value)
     } else {
