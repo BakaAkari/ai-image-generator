@@ -8,6 +8,9 @@ export const COMMANDS = {
   QUERY_QUOTA: '图像额度',
   ADMIN_QUERY: '图像查询',
   USAGE_RANKING: '图像排行榜',
+  ADMIN_RECHARGE: '图像充值',
+  ADMIN_DEDUCT: '图像扣除',
+  ADMIN_BILL: '图像账单',
   IMAGE_HELP: '图像指令',
   PARAM_HELP: '图像参数',
 } as const

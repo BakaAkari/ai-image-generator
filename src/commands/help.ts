@@ -39,7 +39,12 @@ function buildImageHelp(config: Config): string {
     lines.push('暂无，请在配置页 styles / styleGroups 中添加')
   }
 
-  lines.push('', `参数可选项：发送 ${COMMANDS.PARAM_HELP} 查看`)
+  lines.push(
+    '',
+    `额度查询：${COMMANDS.QUERY_QUOTA}`,
+    `管理员：${COMMANDS.ADMIN_QUERY} / ${COMMANDS.ADMIN_RECHARGE} / ${COMMANDS.ADMIN_DEDUCT} / ${COMMANDS.ADMIN_BILL}`,
+    `参数可选项：发送 ${COMMANDS.PARAM_HELP} 查看`,
+  )
   return lines.join('\n')
 }
 
@@ -59,6 +64,11 @@ function buildParameterHelp(config: Config): string {
     '',
     '比例：',
     '- -1:1 / -4:3 / -16:9 / -9:16 / -3:2 / -2:3｜画幅比例',
+    '',
+    '积分：',
+    `- 默认每张｜${config.defaultCreditCostPerImage ?? 1} ${config.creditUnitName || '积分'}`,
+    `- 每日免费｜${config.dailyFreeCredits ?? 0} ${config.creditUnitName || '积分'}`,
+    '- 受限模型仍需白名单或管理员权限；白名单不代表免费',
   ]
 
   const restrictedMappings = Array.isArray(config.modelMappings)

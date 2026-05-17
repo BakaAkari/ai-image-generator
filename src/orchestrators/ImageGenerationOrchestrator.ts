@@ -20,6 +20,7 @@ import {
   getPromptTimeoutMs,
   getPromptTimeoutText,
 } from '../shared/prompt-timeout.js'
+import type { GenerationCost } from '../shared/billing.js'
 import type {
   GenerationDisplayInfo,
   ImageRequestContext,
@@ -38,6 +39,7 @@ export interface ExecuteGenerationOptions {
   numImages: number
   requestContext?: ImageRequestContext
   displayInfo?: GenerationDisplayInfo
+  generationCost?: GenerationCost
   /** 用于 rememberGeneratedImages 的可选样式标记（如 '文生图' 关联的预设名） */
   stylePreset?: string
 }
@@ -298,11 +300,13 @@ export function createImageGenerationHandlers(
     })
 
     try {
-      // 1. 配额预检
+      const estimatedCost = options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
+
+      // 1. 积分预检
       const reservation = await service.checkAndReserveQuota(
         userId,
         userName,
-        options.numImages,
+        estimatedCost,
         platform,
       )
       if (!reservation.allowed) {
@@ -318,13 +322,15 @@ export function createImageGenerationHandlers(
         const modelDesc = options.displayInfo.modelDescription || options.displayInfo.modelId
         statusParts.push(`- 模型｜${modelDesc}`)
       }
+      if (config.showCreditCostInResult) {
+        statusParts.push(`- 预计消耗｜${service.formatCredits(estimatedCost.totalCredits)}`)
+      }
       await session.send(statusParts.length
         ? ['开始生成', '', `- 类型｜${options.styleName}`, ...statusParts].join('\n')
         : `开始生成｜${options.styleName}`)
 
       // 3. 流式回调：每生成一张就发送
       const generatedImages: string[] = []
-      let usageRecorded = false
       const onImageGenerated = async (
         imageUrl: string,
         index: number,
@@ -347,25 +353,6 @@ export function createImageGenerationHandlers(
           throw sendError
         }
 
-        // 第一张成功后立即记录用量，避免后续失败时漏扣
-        if (!usageRecorded) {
-          usageRecorded = true
-          try {
-            await service.recordUsage(
-              userId,
-              userName,
-              options.styleName,
-              total,
-              platform,
-            )
-          } catch (recordError) {
-            logger.error('记录用量失败', {
-              userId,
-              ...sanitizeForLog(recordError),
-            })
-          }
-        }
-
         if (total > 1 && index < total - 1) {
           await new Promise((resolve) => setTimeout(resolve, 1000))
         }
@@ -382,8 +369,8 @@ export function createImageGenerationHandlers(
 
       const allImages = await Promise.race([generationPromise, timeoutPromise])
 
-      // 5. 兜底：流式回调没触发时，统一发送 + 记录用量
-      if (!usageRecorded && allImages && allImages.length > 0) {
+      // 5. 兜底：流式回调没触发时，统一发送
+      if (allImages && allImages.length > 0) {
         for (const imageUrl of allImages) {
           if (!generatedImages.includes(imageUrl)) {
             try {
@@ -397,26 +384,36 @@ export function createImageGenerationHandlers(
             }
           }
         }
-        if (generatedImages.length > 0) {
-          try {
-            await service.recordUsage(
-              userId,
-              userName,
-              options.styleName,
-              generatedImages.length,
-              platform,
-            )
-            usageRecorded = true
-          } catch (recordError) {
-            logger.error('记录用量失败（回退路径）', {
-              userId,
-              ...sanitizeForLog(recordError),
-            })
-          }
+      }
+
+      // 6. 成功发送后按实际图片数扣费并记录用量
+      let usageResult: Awaited<ReturnType<AiImageGeneratorService['recordUsage']>> | undefined
+      if (generatedImages.length > 0) {
+        const actualCost = service.scaleGenerationCost(estimatedCost, generatedImages.length)
+        try {
+          usageResult = await service.recordUsage(
+            userId,
+            userName,
+            options.styleName,
+            actualCost,
+            platform,
+            requestId,
+          )
+        } catch (recordError) {
+          logger.error('记录用量失败', {
+            userId,
+            ...sanitizeForLog(recordError),
+          })
+          return sendFinalText(
+            session,
+            ['生成已完成但扣费记录失败', '', '- 建议｜联系管理员核对账单'].join('\n'),
+            userId,
+            '发送扣费失败提示失败',
+          )
         }
       }
 
-      // 6. 记忆生成结果
+      // 7. 记忆生成结果
       if (generatedImages.length > 0) {
         try {
           service.rememberGeneratedImages({
@@ -438,17 +435,26 @@ export function createImageGenerationHandlers(
           })
         }
 
-        // 可选：附带剩余配额提示
-        if (config.showQuotaInImageCommands) {
+        // 可选：附带积分提示
+        if (config.showQuotaInImageCommands || config.showCreditCostInResult) {
           try {
-            const summary = await service.getQuotaSummary(userId, userName)
-            return [
+            const summary = usageResult?.summary || await service.getQuotaSummary(userId, userName)
+            const lines = [
               '生成完成',
               '',
               `- 图片｜${generatedImages.length} 张`,
-              `- 今日免费｜${summary.remainingToday}`,
-              `- 已购次数｜${summary.remainingPurchasedCount}`,
-            ].join('\n')
+            ]
+            if (config.showCreditCostInResult) {
+              lines.push(`- 本次消耗｜${service.formatCredits(usageResult?.consumedCredits ?? 0)}`)
+            }
+            if (config.showQuotaInImageCommands) {
+              lines.push(
+                `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
+                `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+                `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+              )
+            }
+            return lines.join('\n')
           } catch {
             return ''
           }
@@ -525,6 +531,7 @@ export function createImageGenerationHandlers(
       numImages,
       ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
       ...(displayInfo !== undefined ? { displayInfo } : {}),
+      generationCost: setupContext ? service.calculateGenerationCost(numImages, setupContext) : undefined,
       ...(stylePreset !== undefined ? { stylePreset } : {}),
     })
   }
@@ -550,6 +557,7 @@ export function createImageGenerationHandlers(
       numImages,
       ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
       ...(displayInfo !== undefined ? { displayInfo } : {}),
+      generationCost: setupContext ? service.calculateGenerationCost(numImages, setupContext) : undefined,
       ...(stylePreset !== undefined ? { stylePreset } : {}),
     })
   }
@@ -574,6 +582,7 @@ export function createImageGenerationHandlers(
       numImages,
       ...(setupContext !== undefined ? { requestContext: setupContext } : {}),
       ...(displayInfo !== undefined ? { displayInfo } : {}),
+      generationCost: setupContext ? service.calculateGenerationCost(numImages, setupContext) : undefined,
       ...(stylePreset !== undefined ? { stylePreset } : {}),
     })
   }
@@ -587,13 +596,14 @@ export function createImageGenerationHandlers(
         '图像额度',
         '',
         `- 用户｜${summary.userName}`,
-        `- 今日免费｜${summary.remainingToday}`,
-        `- 已购次数｜${summary.remainingPurchasedCount}`,
-        `- 合计可用｜${summary.totalAvailable}`,
-        `- 历史用量｜${summary.totalUsageCount}`,
+        `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
+        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+        `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+        `- 已生成｜${summary.totalImagesGenerated} 张`,
+        `- 历史消耗｜${service.formatCredits(summary.totalConsumedCredits)}`,
       ]
-      if (summary.purchasedCount > 0) {
-        lines.push(`- 累计已购｜${summary.purchasedCount}`)
+      if (summary.estimatedCny !== undefined) {
+        lines.push(`- 余额估算｜约 ${summary.estimatedCny} 元`)
       }
       return lines.join('\n')
     } catch (error) {

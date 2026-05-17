@@ -34,11 +34,11 @@ export interface ProviderSettingsConfig {
 }
 
 const SETUP_GUIDE = [
-  '初始化顺序：先填供应商凭证，再检查模型映射，最后按需配置快捷命令。',
+  '初始化顺序：先填供应商凭证，再检查模型映射与积分单价，最后按需配置快捷命令。',
   '供应商只决定使用哪组 Key / Base；协议决定请求格式；模型 ID 是上游真实模型名。',
   '模型映射第一条是默认模型；命令中可用 -后缀 临时切换模型。',
-  'styles / styleGroups 会注册为聊天快捷命令；重载配置后会自动刷新。',
-  '受限模型仅管理员或模型白名单可用；永久会员只跳过额度和限流。',
+  '0.6.0 使用积分制：生成前按请求张数预检，生成后按成功发送张数扣费。',
+  '管理员负责手动充值 / 扣除 / 查账；受限模型仅管理员或模型白名单可用。',
 ].join('\n')
 
 export interface Config {
@@ -66,8 +66,14 @@ export interface Config {
   // ── ③ 模型映射 ────────────────────────────────────────────────────────────
   modelMappings?: ModelMappingConfig[]
 
-  // ── ④ 限流与配额 ──────────────────────────────────────────────────────────
-  dailyFreeLimit: number
+  // ── ④ 积分计费 ────────────────────────────────────────────────────────────
+  creditUnitName: string
+  defaultCreditCostPerImage: number
+  dailyFreeCredits: number
+  showCreditCostInResult: boolean
+  creditsPerCny?: number
+  showEstimatedCny?: boolean
+  minRechargeCredits?: number
   unlimitedPlatforms: string[]
   rateLimitWindow: number
   rateLimitMax: number
@@ -185,6 +191,12 @@ export const Config = Schema.intersect([
         restricted: Schema.boolean()
           .default(false)
           .description('限制项'),
+        creditCostPerImage: Schema.number()
+          .default(1)
+          .min(0)
+          .max(100000)
+          .step(0.01)
+          .description('每张积分，支持小数'),
       }).collapse()
     )
       .role('table')
@@ -195,6 +207,7 @@ export const Config = Schema.intersect([
           supplier: 'gpt-official',
           protocol: 'openai',
           restricted: false,
+          creditCostPerImage: 1,
         },
         {
           suffix: 'gemini',
@@ -202,6 +215,7 @@ export const Config = Schema.intersect([
           supplier: 'openai-compatible',
           protocol: 'gemini',
           restricted: false,
+          creditCostPerImage: 1,
         },
       ])
       .description('模型路由；第一条为默认模型，快捷命令可通过模型后缀引用'),
@@ -243,36 +257,61 @@ export const Config = Schema.intersect([
       .description('按分组管理快捷命令；重载配置后自动刷新'),
   }).description('🧩 Prompt 预设 / 快捷命令'),
 
-  // ④ 管理员与权限
+  // ④ 管理员与运营
   Schema.object({
     adminUsers: Schema.array(Schema.string())
       .default([])
-      .description('管理员用户 ID，可查询用量并使用受限模型'),
+      .description('管理员用户 ID；可查询、充值、扣除、查账并使用受限模型'),
+  }).description('👑 管理员与运营'),
+
+  // ⑤ 用户豁免与白名单
+  Schema.object({
     permanentMembers: Schema.array(Schema.string())
       .default([])
-      .description('跳过额度和限流，但不自动获得受限模型权限'),
+      .description('跳过积分扣费和限流，但不自动获得受限模型权限'),
     modelWhitelistUsers: Schema.array(Schema.string())
       .default([])
-      .description('允许使用受限模型的用户 ID'),
-    logLevel: Schema.union([
-      Schema.const('simple').description('simple'),
-      Schema.const('detail').description('detail'),
-    ])
-      .default('simple')
-      .description('日志级别；simple 记录关键流程，detail 增加脱敏请求诊断'),
-  }).description('👑 管理员与权限').collapse(),
+      .description('允许使用受限模型；不代表免费或管理员权限'),
+  }).description('🪪 用户豁免与白名单').collapse(),
 
-  // ⑤ 限流与配额
+  // ⑥ 积分计费与限流
   Schema.object({
-    dailyFreeLimit: Schema.number()
+    creditUnitName: Schema.string()
+      .default('积分')
+      .description('聊天输出里的余额单位'),
+    defaultCreditCostPerImage: Schema.number()
+      .default(1)
+      .min(0)
+      .max(100000)
+      .step(0.01)
+      .description('模型未设置单价时，每张图消耗的积分，支持小数'),
+    dailyFreeCredits: Schema.number()
       .default(5)
-      .min(1)
-      .max(100)
-      .step(1)
-      .description('普通用户每天可免费生成的次数'),
+      .min(0)
+      .max(100000)
+      .step(0.01)
+      .description('普通用户每天免费积分，支持小数'),
+    showCreditCostInResult: Schema.boolean()
+      .default(true)
+      .description('生成完成后显示本次消耗和剩余积分'),
+    creditsPerCny: Schema.number()
+      .default(0)
+      .min(0)
+      .max(100000)
+      .step(0.01)
+      .description('经营参考：1 元对应多少积分；0 表示不估算，支持小数'),
+    showEstimatedCny: Schema.boolean()
+      .default(false)
+      .description('管理员查询时显示余额估算金额'),
+    minRechargeCredits: Schema.number()
+      .default(0)
+      .min(0)
+      .max(1000000)
+      .step(0.01)
+      .description('充值提示用最低积分，支持小数；不限制管理员输入'),
     unlimitedPlatforms: Schema.array(Schema.string())
       .default(['lark'])
-      .description('这些平台跳过每日免费次数限制'),
+      .description('这些平台跳过积分扣费和限流'),
     rateLimitWindow: Schema.number()
       .default(300)
       .min(60)
@@ -285,7 +324,7 @@ export const Config = Schema.intersect([
       .max(20)
       .step(1)
       .description('每个窗口内允许的请求次数'),
-  }).description('🚦 限流与配额').collapse(),
+  }).description('💳 积分计费与限流').collapse(),
 
   // ⑥ 安全策略
   Schema.object({
@@ -303,11 +342,17 @@ export const Config = Schema.intersect([
       .description('窗口内触发多少次拦截后给出警示'),
   }).description('🛡️ 安全策略').collapse(),
 
-  // ⚙️ 通用设置
+  // ⚙️ 运行与诊断
   Schema.object({
+    logLevel: Schema.union([
+      Schema.const('simple').description('simple'),
+      Schema.const('detail').description('detail'),
+    ])
+      .default('simple')
+      .description('日志级别；simple 记录关键流程，detail 增加脱敏请求诊断'),
     showQuotaInImageCommands: Schema.boolean()
       .default(true)
-      .description('生成完成后是否显示剩余额度'),
+      .description('生成完成后是否显示剩余积分'),
     defaultNumImages: Schema.number()
       .default(1)
       .min(1)
@@ -320,5 +365,5 @@ export const Config = Schema.intersect([
       .max(600)
       .step(10)
       .description('上游请求超时时间，单位秒'),
-  }).description('⚙️ 通用设置').collapse(),
+  }).description('🧰 运行与诊断').collapse(),
 ]) as unknown as Schema<Config>

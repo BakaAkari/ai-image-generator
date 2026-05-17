@@ -2,8 +2,8 @@
 
 ## Current status
 
-- Current package version: `0.5.23`.
-- Current line: `0.5.x` runtime stabilization is archived as stable after remote validation; `0.6.0` credit billing and user data v2 development is now the active planning line.
+- Current package version: `0.6.2`.
+- Current line: `0.6.x` credit billing and user data v2 is implemented for release preparation; `0.5.x` runtime stabilization is archived as stable after remote validation.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
@@ -24,6 +24,9 @@ Stable runtime direction:
    - `合成图`
    - `图像查询`
    - `图像排行榜`
+   - `图像充值`
+   - `图像扣除`
+   - `图像账单`
    - `图像额度`
    - `图像指令`
    - `图像参数`
@@ -221,28 +224,32 @@ Completed scope:
 - Changed content safety final warnings to explicitly send `内容安全拦截` when the warning threshold is reached.
 - Kept intermediate provider fallback and retry warnings log-only, because those states can recover and still produce images.
 
-## Active next line: `0.6.0` credit billing and user data v2
+## Completed line: `0.6.0` credit billing and user data v2
 
 Reference: `plans/ai-image-generator-credit-billing.md`.
 
-Status: active planning line after `0.5.23` stabilization was confirmed in the remote Koishi environment.
+Status: implemented for release preparation after `0.5.23` stabilization was confirmed in the remote Koishi environment; pending user publish and remote validation.
 
-Development intent:
+Implemented scope:
 
-- Upgrade user-facing quota semantics from image-count based quota to credit based billing.
-- Add per-model credit cost configuration while keeping the default behavior simple: 1 generated image consumes 1 credit.
-- Keep image generation statistics separate from credit consumption statistics.
-- Introduce user data v2, credit ledger, recharge records, snapshots, and safer write behavior in staged implementation steps.
-- Keep the first `0.6.0` implementation focused on billing and data durability; do not mix in Console WebUI, ChatLuna bridge, or unrelated preset expansion.
+- Upgraded user-facing quota semantics from image-count based quota to credit based billing.
+- Added per-model credit cost configuration while keeping the default behavior simple: 1 generated image consumes 1 credit.
+- Kept image generation statistics separate from credit consumption statistics.
+- Introduced user data v2 files: `users.v2.json`, `credit-ledger.v2.jsonl`, and `recharge-records.v2.jsonl` with atomic user-store writes and backup file handling.
+- Added generation precheck by estimated credits and post-success deduction by successfully sent image count.
+- Added administrator recharge, deduction, ledger, query, ranking, and user quota outputs using credit terminology.
+- Kept the first `0.6.0` implementation focused on billing and data durability; Console WebUI, ChatLuna bridge, and unrelated preset expansion remain deferred.
 
-Suggested implementation split:
+Remote validation focus:
 
-1. Documentation and product decision lock: confirm terminology, cost model, partial success behavior, and first-version storage boundary.
-2. Cost calculation foundation: add `calculateGenerationCost()` and model mapping cost fields.
-3. Runtime quota and consumption refactor: pass generation cost through precheck, reservation, usage recording, and logging.
-4. Chat and admin display update: adjust `图像额度`, completion messages, admin query, and ranking to show credits clearly.
-5. User data v2 and ledger hardening: introduce `users.v2.json`, `credit-ledger.v2.jsonl`, recharge records, snapshots, and integrity checks.
-6. Remote validation: verify default cost, advanced model cost, balance shortage, admin bypass, platform bypass, failed generation, and ledger traceability.
+1. Default cost: 1 generated image consumes 1 credit.
+2. Per-model cost: a model mapping with custom `creditCostPerImage` changes precheck and deduction.
+3. Balance shortage: insufficient credit shows required, daily free, purchased balance, and total available.
+4. Decimal credits: model and global credit settings accept decimal values and normalize balances to two decimal places.
+5. Admin / permanent member / platform bypass: generation records statistics but does not deduct credits, and first-time exempt user snapshots follow the current daily free credit config.
+6. Partial success: only successfully sent images are charged.
+7. Ledger traceability: generation, recharge, and deduction appear in `图像账单` and JSONL files.
+8. Admin deduction feedback: insufficient purchased balance returns partial deduction or deduction failure instead of a normal completion message.
 
 ## Deferred lines
 
@@ -258,7 +265,7 @@ Do not use the Console WebUI document as implementation input for the current ru
 
 Status: retained as future planning only.
 
-The current `0.5.x` runtime must not expose incomplete ChatLuna configuration, ChatLuna tools, or V1 migration commands.
+The current `0.6.x` runtime must not expose incomplete ChatLuna configuration, ChatLuna tools, or V1 migration commands.
 
 ## Documentation maintenance rules
 

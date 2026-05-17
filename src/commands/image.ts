@@ -20,6 +20,7 @@ import type {
   ResolvedStyleConfig,
   StyleMode,
 } from '../shared/types.js'
+import type { CreditLedgerEventV2 } from '../services/UserManager.js'
 import {
   buildModelMappingIndex,
   normalizeSuffix,
@@ -155,16 +156,24 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         '图像查询',
         '',
         `- 用户｜${targetUser.userName || targetUser.userId}`,
-        '- 状态｜暂无图像用量数据',
+        '- 状态｜暂无图像积分数据',
       ].join('\n')
 
-      return [
+      const lines = [
         '图像查询',
         '',
         `- 用户｜${summary.userName || targetUser.userName || targetUser.userId}`,
-        `- 总用量｜${summary.totalUsageCount}`,
-        `- 剩余次数｜${summary.totalAvailable}`,
-      ].join('\n')
+        `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
+        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+        `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+        `- 已生成｜${summary.totalImagesGenerated} 张`,
+        `- 历史消耗｜${service.formatCredits(summary.totalConsumedCredits)}`,
+        `- 累计充值｜${service.formatCredits(summary.totalGrantedCredits)}`,
+      ]
+      if (summary.estimatedCny !== undefined) {
+        lines.push(`- 余额估算｜约 ${summary.estimatedCny} 元`)
+      }
+      return lines.join('\n')
     })
 
   // ---------------------------------------------------------------------------
@@ -182,11 +191,135 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       }
 
       const rows = await service.getUsageRanking(resolveRankingLimit(getCommandOptionNumber(argv, 'num')))
-      if (!rows.length) return ['图像排行榜', '', '- 状态｜暂无图像用量数据'].join('\n')
+      if (!rows.length) return ['图像排行榜', '', '- 状态｜暂无图像积分数据'].join('\n')
       return [
         '图像排行榜',
         '',
-        ...rows.map(row => `- ${row.userName}｜总 ${row.totalUsageCount}｜今日 ${row.dailyUsageCount}｜剩余 ${row.totalAvailable}`),
+        ...rows.map(row => `- ${row.userName}｜生成 ${row.totalImagesGenerated} 张｜消耗 ${service.formatCredits(row.totalConsumedCredits)}｜余额 ${service.formatCredits(row.totalAvailable)}`),
+      ].join('\n')
+    })
+
+  // ---------------------------------------------------------------------------
+  // 管理员充值：图像充值 @用户 100 [原因]
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.ADMIN_RECHARGE} [input:text]`, '管理员为用户充值图像积分')
+    .action(async (argv: Argv, input?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      if (!service.userManager.isAdmin(session.userId || 'unknown', config)) {
+        return ['权限不足', '', '- 命令｜图像充值', '- 要求｜管理员'].join('\n')
+      }
+
+      const parsed = parseCreditCommandInput(input || session.content || '', COMMANDS.ADMIN_RECHARGE)
+      if (!parsed.target?.userId || !parsed.amount) return '请使用｜图像充值 @用户 积分 [原因]'
+
+      const operator = {
+        userId: session.userId || 'unknown',
+        userName: session.username || session.author?.name || session.userId || 'unknown',
+      }
+      const result = await service.grantCredits(
+        parsed.target.userId,
+        parsed.target.userName || parsed.target.userId,
+        parsed.amount,
+        parsed.reason || '管理员充值',
+        operator,
+      )
+      const summary = service.userManager.buildCreditSummary(result.userData, config)
+      return [
+        '图像充值完成',
+        '',
+        `- 用户｜${summary.userName}`,
+        `- 本次充值｜${service.formatCredits(result.ledgerEvent.amount)}`,
+        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+        `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+        `- 流水｜#${result.ledgerEvent.sequence}`,
+      ].join('\n')
+    })
+
+  // ---------------------------------------------------------------------------
+  // 管理员扣除：图像扣除 @用户 100 [原因]
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.ADMIN_DEDUCT} [input:text]`, '管理员扣除用户图像积分')
+    .action(async (argv: Argv, input?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      if (!service.userManager.isAdmin(session.userId || 'unknown', config)) {
+        return ['权限不足', '', '- 命令｜图像扣除', '- 要求｜管理员'].join('\n')
+      }
+
+      const parsed = parseCreditCommandInput(input || session.content || '', COMMANDS.ADMIN_DEDUCT)
+      if (!parsed.target?.userId || !parsed.amount) return '请使用｜图像扣除 @用户 积分 [原因]'
+
+      const operator = {
+        userId: session.userId || 'unknown',
+        userName: session.username || session.author?.name || session.userId || 'unknown',
+      }
+      const result = await service.adjustCredits(
+        parsed.target.userId,
+        parsed.target.userName || parsed.target.userId,
+        parsed.amount,
+        parsed.reason || '管理员扣除',
+        operator,
+      )
+      const summary = service.userManager.buildCreditSummary(result.userData, config)
+      if (!result.ledgerEvent) {
+        return [
+          '扣除失败',
+          '',
+          `- 用户｜${summary.userName}`,
+          `- 请求扣除｜${service.formatCredits(result.requestedAmount)}`,
+          `- 实际扣除｜${service.formatCredits(result.deductedAmount)}`,
+          `- 原因｜用户已购余额不足`,
+          `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+          `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+        ].join('\n')
+      }
+
+      return [
+        result.isPartial ? '图像部分扣除完成' : '图像扣除完成',
+        '',
+        `- 用户｜${summary.userName}`,
+        `- 请求扣除｜${service.formatCredits(result.requestedAmount)}`,
+        `- 实际扣除｜${service.formatCredits(result.deductedAmount)}`,
+        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+        `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
+        `- 流水｜#${result.ledgerEvent.sequence}`,
+      ].join('\n')
+    })
+
+  // ---------------------------------------------------------------------------
+  // 管理员账单：图像账单 [@用户] [-n 数量]
+  // ---------------------------------------------------------------------------
+  ctx.command(`${COMMANDS.ADMIN_BILL} [target:text]`, '管理员查看图像积分流水')
+    .option('num', '-n <num:number> 显示数量（1-50）')
+    .action(async (argv: Argv, target?: string) => {
+      const session = argv.session
+      if (!session) return ''
+
+      const config = getConfig()
+      if (!service.userManager.isAdmin(session.userId || 'unknown', config)) {
+        return ['权限不足', '', '- 命令｜图像账单', '- 要求｜管理员'].join('\n')
+      }
+
+      const targetUser = parseMentionTarget(target || session.content || '')
+      const limit = resolveRankingLimit(getCommandOptionNumber(argv, 'num'))
+      const events = await service.listLedgerEvents(targetUser?.userId, limit)
+      if (!events.length) return [
+        '图像账单',
+        '',
+        targetUser?.userId ? `- 用户｜${targetUser.userName || targetUser.userId}` : '- 范围｜全部用户',
+        '- 状态｜暂无积分流水',
+      ].join('\n')
+
+      return [
+        '图像账单',
+        '',
+        targetUser?.userId ? `- 用户｜${targetUser.userName || targetUser.userId}` : '- 范围｜全部用户',
+        ...events.map(event => formatLedgerEvent(event, service.formatCredits.bind(service))),
       ].join('\n')
     })
 
@@ -223,6 +356,9 @@ function registerStyleCommands(params: RegisterStyleCommandsParams): () => void 
       COMMANDS.QUERY_QUOTA,
       COMMANDS.ADMIN_QUERY,
       COMMANDS.USAGE_RANKING,
+      COMMANDS.ADMIN_RECHARGE,
+      COMMANDS.ADMIN_DEDUCT,
+      COMMANDS.ADMIN_BILL,
       COMMANDS.IMAGE_HELP,
       COMMANDS.PARAM_HELP,
     ])
@@ -359,6 +495,49 @@ function parseMentionTarget(input: string): { userId: string; userName?: string 
   return {
     userId: String(id),
     ...(name !== undefined ? { userName: name } : {}),
+  }
+}
+
+function parseCreditCommandInput(input: string, commandName: string): {
+  target?: { userId: string; userName?: string }
+  amount?: number
+  reason?: string
+} {
+  const withoutCommand = String(input || '').replace(commandName, '').trim()
+  const target = parseMentionTarget(withoutCommand)
+  const withoutAtTags = withoutCommand.replace(/<at\b[^>]*>/g, ' ').replace(/<at\b[^>]*\/>/g, ' ')
+  const amountMatch = withoutAtTags.match(/(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/)
+  const amount = amountMatch ? Number(amountMatch[1]) : undefined
+  const reason = amountMatch
+    ? withoutAtTags.slice((amountMatch.index || 0) + amountMatch[0].length).trim()
+    : ''
+  return {
+    ...(target ? { target } : {}),
+    ...(amount !== undefined && Number.isFinite(amount) && amount > 0 ? { amount } : {}),
+    ...(reason ? { reason } : {}),
+  }
+}
+
+function formatLedgerEvent(event: CreditLedgerEventV2, formatCredits: (value: number) => string): string {
+  const time = typeof event.timestamp === 'string'
+    ? event.timestamp.replace('T', ' ').slice(0, 16)
+    : ''
+  const label = resolveLedgerTypeLabel(event.type)
+  const detail = event.generation?.numImages
+    ? `｜${event.generation.commandName || '生成'} ${event.generation.numImages} 张`
+    : ''
+  return `- #${event.sequence}｜${time}｜${event.userName || event.userId}｜${label} ${formatCredits(event.amount)}${detail}`
+}
+
+function resolveLedgerTypeLabel(type: CreditLedgerEventV2['type']): string {
+  switch (type) {
+    case 'grant': return '充值'
+    case 'consume': return '消费'
+    case 'refund': return '退款'
+    case 'adjust': return '调整'
+    case 'daily-reset': return '重置'
+    case 'migration': return '迁移'
+    default: return type || '流水'
   }
 }
 

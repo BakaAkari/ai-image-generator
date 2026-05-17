@@ -9,6 +9,8 @@ import type { Context, Session } from 'koishi'
 import { Service } from 'koishi'
 
 import type { Config, ProviderSettingsConfig } from '../shared/config.js'
+import type { GenerationCost } from '../shared/billing.js'
+import { calculateGenerationCost, formatCredits, scaleGenerationCost } from '../shared/billing.js'
 import type {
   GeneratedImageRecord,
   GenerationDisplayInfo,
@@ -26,6 +28,7 @@ import { isDetailLogLevel, normalizeLogLevel } from '../shared/logging.js'
 import { ImageContextStore } from '../core/image-context-store.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ImageProvider as RuntimeImageProvider } from '../providers/types.js'
+import type { CreditLedgerEventV2, CreditSummary } from '../services/UserManager.js'
 import { UserManager } from '../services/UserManager.js'
 
 declare module 'koishi' {
@@ -46,11 +49,14 @@ export interface RememberGeneratedImagesParams {
 }
 
 export interface UsageRecordingResult {
-  totalUsageCount: number
-  remainingPurchasedCount: number
-  remainingToday?: number
+  summary: CreditSummary
+  consumedCredits: number
+  freeUsed: number
+  purchasedUsed: number
   isAdmin: boolean
+  isPermanentMember: boolean
   isPlatformExempt: boolean
+  ledgerEvent?: CreditLedgerEventV2
 }
 
 export interface ModelAccessCheckResult {
@@ -361,63 +367,34 @@ export class AiImageGeneratorService extends Service {
   // 配额 & 用量
   // ---------------------------------------------------------------------------
 
-  getQuotaSummary(userId: string, userName: string) {
-    return this.userManager.getUserData(userId, userName).then((userData) => {
-      const remainingToday = this.calculateRemainingToday(userData)
-      const totalAvailable = remainingToday + userData.remainingPurchasedCount
-      return {
-        userId,
-        userName: userData.userName,
-        remainingToday,
-        remainingPurchasedCount: userData.remainingPurchasedCount,
-        totalAvailable,
-        totalUsageCount: userData.totalUsageCount,
-        purchasedCount: userData.purchasedCount,
-      }
-    })
+  async getQuotaSummary(userId: string, userName: string): Promise<CreditSummary> {
+    const userData = await this.userManager.getUserData(userId, userName, this.pluginConfig)
+    return this.userManager.buildCreditSummary(userData, this.pluginConfig)
   }
 
-  async getExistingUsageSummary(userId: string) {
+  async getExistingUsageSummary(userId: string): Promise<CreditSummary | undefined> {
     const userData = await this.userManager.getExistingUserData(userId)
     if (!userData) return undefined
-    const remainingToday = this.calculateRemainingToday(userData)
-    return {
-      userId,
-      userName: userData.userName || userId,
-      dailyUsageCount: this.calculateTodayUsage(userData),
-      remainingToday,
-      remainingPurchasedCount: userData.remainingPurchasedCount,
-      totalAvailable: remainingToday + userData.remainingPurchasedCount,
-      totalUsageCount: userData.totalUsageCount,
-    }
+    return this.userManager.buildCreditSummary(userData, this.pluginConfig)
   }
 
   async getUsageRanking(limit = 10) {
     const users = await this.userManager.getAllUsers()
     return Object.values(users)
-      .map((userData) => {
-        const remainingToday = this.calculateRemainingToday(userData)
-        return {
-          userId: userData.userId,
-          userName: userData.userName || userData.userId,
-          totalUsageCount: userData.totalUsageCount,
-          dailyUsageCount: this.calculateTodayUsage(userData),
-          remainingPurchasedCount: userData.remainingPurchasedCount,
-          totalAvailable: remainingToday + userData.remainingPurchasedCount,
-        }
-      })
+      .map(userData => this.userManager.buildCreditSummary(userData, this.pluginConfig))
       .sort((a, b) => {
-        if (b.totalUsageCount !== a.totalUsageCount) return b.totalUsageCount - a.totalUsageCount
+        if (b.totalConsumedCredits !== a.totalConsumedCredits) return b.totalConsumedCredits - a.totalConsumedCredits
+        if (b.totalImagesGenerated !== a.totalImagesGenerated) return b.totalImagesGenerated - a.totalImagesGenerated
         return a.userName.localeCompare(b.userName, 'zh-CN')
       })
       .slice(0, Math.min(50, Math.max(1, Math.floor(limit || 10))))
   }
 
-  checkAndReserveQuota(userId: string, userName: string, numImages: number, platform?: string) {
+  checkAndReserveQuota(userId: string, userName: string, cost: GenerationCost, platform?: string) {
     return this.userManager.checkAndReserveQuota(
       userId,
       userName,
-      numImages,
+      cost,
       this.pluginConfig,
       platform,
     )
@@ -426,6 +403,11 @@ export class AiImageGeneratorService extends Service {
   buildGenerationSetup(numImages: number, modifiers?: ImageGenerationModifiers) {
     const requestContext: ImageRequestContext = { numImages }
     const modelMapping = modifiers?.modelMapping
+    const generationCost = calculateGenerationCost({
+      numImages,
+      modelMapping,
+      config: this.pluginConfig,
+    })
 
     if (modelMapping) {
       const resolvedRoute = this.resolveModelRoute(modelMapping)
@@ -451,7 +433,26 @@ export class AiImageGeneratorService extends Service {
       displayInfo.modelDescription = modelMapping.suffix || modelMapping.modelId
     }
 
-    return { requestContext, displayInfo }
+    return { requestContext, displayInfo, generationCost }
+  }
+
+  calculateGenerationCost(numImages: number, requestContext?: ImageRequestContext): GenerationCost {
+    const modelMapping = requestContext?.modelId
+      ? this.pluginConfig.modelMappings?.find(mapping => mapping.modelId === requestContext.modelId)
+      : undefined
+    return calculateGenerationCost({
+      numImages,
+      modelMapping,
+      config: this.pluginConfig,
+    })
+  }
+
+  scaleGenerationCost(cost: GenerationCost, actualImages: number): GenerationCost {
+    return scaleGenerationCost(cost, actualImages)
+  }
+
+  formatCredits(value: number): string {
+    return formatCredits(value, this.pluginConfig.creditUnitName)
   }
 
   checkModelAccess(userId: string, modifiers?: ImageGenerationModifiers): ModelAccessCheckResult {
@@ -468,22 +469,13 @@ export class AiImageGeneratorService extends Service {
     }
   }
 
-  private calculateTodayUsage(userData: { dailyUsageCount: number; lastDailyReset?: string; createdAt?: string }): number {
-    const today = new Date().toDateString()
-    const lastReset = new Date(userData.lastDailyReset || userData.createdAt || Date.now()).toDateString()
-    return today === lastReset ? userData.dailyUsageCount : 0
-  }
-
-  private calculateRemainingToday(userData: { dailyUsageCount: number; lastDailyReset?: string; createdAt?: string }): number {
-    return Math.max(0, this.pluginConfig.dailyFreeLimit - this.calculateTodayUsage(userData))
-  }
-
   async recordUsage(
     userId: string,
     userName: string,
     commandName: string,
-    numImages: number,
+    cost: GenerationCost,
     platform?: string,
+    requestId?: string,
   ): Promise<UsageRecordingResult> {
     const isAdmin = this.userManager.isAdmin(userId, this.pluginConfig)
     const isPermanentMember = this.userManager.isPermanentMember(userId, this.pluginConfig)
@@ -491,31 +483,61 @@ export class AiImageGeneratorService extends Service {
       platform && this.pluginConfig.unlimitedPlatforms?.includes(platform),
     )
 
-    if (isAdmin || isPermanentMember || isPlatformExempt) {
-      const userData = await this.userManager.recordUsageOnly(userId, userName, commandName, numImages)
+    if (isAdmin || isPermanentMember || isPlatformExempt || cost.totalCredits <= 0) {
+      const userData = await this.userManager.recordUsageOnly(userId, userName, commandName, cost.numImages, this.pluginConfig)
       return {
-        totalUsageCount: userData.totalUsageCount,
-        remainingPurchasedCount: userData.remainingPurchasedCount,
-        remainingToday: this.calculateRemainingToday(userData),
+        summary: this.userManager.buildCreditSummary(userData, this.pluginConfig),
+        consumedCredits: 0,
+        freeUsed: 0,
+        purchasedUsed: 0,
         isAdmin,
+        isPermanentMember,
         isPlatformExempt,
       }
     }
 
-    const result = await this.userManager.consumeQuota(
+    const result = await this.userManager.consumeCredits(
       userId,
       userName,
       commandName,
-      numImages,
+      cost,
       this.pluginConfig,
+      requestId,
     )
     return {
-      totalUsageCount: result.userData.totalUsageCount,
-      remainingPurchasedCount: result.userData.remainingPurchasedCount,
-      remainingToday: this.calculateRemainingToday(result.userData),
+      summary: this.userManager.buildCreditSummary(result.userData, this.pluginConfig),
+      consumedCredits: cost.totalCredits,
+      freeUsed: result.freeUsed,
+      purchasedUsed: result.purchasedUsed,
       isAdmin: false,
+      isPermanentMember: false,
       isPlatformExempt: false,
+      ...(result.ledgerEvent ? { ledgerEvent: result.ledgerEvent } : {}),
     }
+  }
+
+  async grantCredits(
+    userId: string,
+    userName: string,
+    amount: number,
+    reason: string,
+    operator: { userId: string; userName: string },
+  ) {
+    return this.userManager.grantCredits(userId, userName, amount, reason, operator, this.pluginConfig)
+  }
+
+  async adjustCredits(
+    userId: string,
+    userName: string,
+    amount: number,
+    reason: string,
+    operator: { userId: string; userName: string },
+  ) {
+    return this.userManager.adjustCredits(userId, userName, amount, reason, operator, this.pluginConfig)
+  }
+
+  listLedgerEvents(userId?: string, limit = 10) {
+    return this.userManager.listLedgerEvents(userId, limit)
   }
 
   // ---------------------------------------------------------------------------

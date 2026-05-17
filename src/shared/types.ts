@@ -31,6 +31,8 @@ export interface ModelMappingConfig {
   provider?: ProviderType
   /** 是否为受限模型，仅模型白名单内的用户可调用 */
   restricted?: boolean
+  /** 0.6.0 积分制：该模型每张图片向用户收取的积分；支持小数，为空则使用全局默认单价。 */
+  creditCostPerImage?: number
 }
 
 export interface ImageGenerationModifiers {
