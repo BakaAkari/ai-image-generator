@@ -3,7 +3,7 @@
 ## Current status
 
 - Current package version: `0.5.23`.
-- Current line: V2 image-only plugin.
+- Current line: `0.5.x` runtime stabilization is archived as stable after remote validation; `0.6.0` credit billing and user data v2 development is now the active planning line.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
@@ -120,11 +120,13 @@ Stable runtime direction:
 - Added per-task `requestId` ownership so cleanup only releases the current task.
 - Added task lock TTL cleanup as a final in-process fallback for leaked locks.
 
-## Active next line: Phase 5 stabilization
+## Archived line: Phase 5 stabilization
 
-Primary plan: `plans/ai-image-generator-phase5-command-prompt-plan.md`.
+Primary plan: `plans/archive/ai-image-generator/ai-image-generator-phase5-command-prompt-plan.md`.
 
-Recommended next patch split:
+The `0.5.x` command, Console wording, logging, and failure-message stabilization line is archived after `0.5.23` remote validation. Future `0.5.24` patches should only be used for urgent remote bugfixes discovered before or during `0.6.0` work.
+
+Completed patch split:
 
 ### `0.5.13` Protocol cleanup
 
@@ -219,19 +221,34 @@ Completed scope:
 - Changed content safety final warnings to explicitly send `内容安全拦截` when the warning threshold is reached.
 - Kept intermediate provider fallback and retry warnings log-only, because those states can recover and still produce images.
 
-## Deferred lines
-
-### Credit billing and user data v2
+## Active next line: `0.6.0` credit billing and user data v2
 
 Reference: `plans/ai-image-generator-credit-billing.md`.
 
-Status: deferred to `0.6.0` or later minor versions.
+Status: active planning line after `0.5.23` stabilization was confirmed in the remote Koishi environment.
 
-Do not mix the credit ledger, user data v2 storage, or audit-style recharge records into the current `0.5.x` command stabilization line unless the plan is explicitly revised.
+Development intent:
+
+- Upgrade user-facing quota semantics from image-count based quota to credit based billing.
+- Add per-model credit cost configuration while keeping the default behavior simple: 1 generated image consumes 1 credit.
+- Keep image generation statistics separate from credit consumption statistics.
+- Introduce user data v2, credit ledger, recharge records, snapshots, and safer write behavior in staged implementation steps.
+- Keep the first `0.6.0` implementation focused on billing and data durability; do not mix in Console WebUI, ChatLuna bridge, or unrelated preset expansion.
+
+Suggested implementation split:
+
+1. Documentation and product decision lock: confirm terminology, cost model, partial success behavior, and first-version storage boundary.
+2. Cost calculation foundation: add `calculateGenerationCost()` and model mapping cost fields.
+3. Runtime quota and consumption refactor: pass generation cost through precheck, reservation, usage recording, and logging.
+4. Chat and admin display update: adjust `图像额度`, completion messages, admin query, and ranking to show credits clearly.
+5. User data v2 and ledger hardening: introduce `users.v2.json`, `credit-ledger.v2.jsonl`, recharge records, snapshots, and integrity checks.
+6. Remote validation: verify default cost, advanced model cost, balance shortage, admin bypass, platform bypass, failed generation, and ledger traceability.
+
+## Deferred lines
 
 ### Console WebUI
 
-Reference: `plans/ai-image-generator-optional-console-webui.md`.
+Reference: `plans/archive/ai-image-generator/ai-image-generator-optional-console-webui.md`.
 
 Status: low-priority optional future direction.
 
@@ -244,6 +261,10 @@ Status: retained as future planning only.
 The current `0.5.x` runtime must not expose incomplete ChatLuna configuration, ChatLuna tools, or V1 migration commands.
 
 ## Documentation maintenance rules
+
+Active document index: `docs/active-documents.md`.
+
+Historical design, V2 scaffolding, protocol research, Phase 5 stabilization, supplier settings patch, old send-failure analysis, and optional Console WebUI notes have been archived under `docs/archive/ai-image-generator/` and `plans/archive/ai-image-generator/`. Do not use archived documents as active implementation requirements unless the user explicitly asks to revive one of those lines.
 
 Before any publishable change in this plugin:
 
