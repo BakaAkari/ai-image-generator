@@ -85,8 +85,6 @@ export interface ImageGenerationHandlers {
     stylePreset?: string,
   ): Promise<string>
 
-  /** 查询额度（额度命令的核心）。 */
-  executeQueryQuota(session: Session): Promise<string>
 }
 
 const SECURITY_BLOCK_KEYWORDS = [
@@ -587,38 +585,9 @@ export function createImageGenerationHandlers(
     })
   }
 
-  async function executeQueryQuota(session: Session): Promise<string> {
-    const userId = session.userId || 'unknown'
-    const userName = session.username || session.author?.name || userId
-    try {
-      const summary = await service.getQuotaSummary(userId, userName)
-      const lines: string[] = [
-        '图像额度',
-        '',
-        `- 用户｜${summary.userName}`,
-        `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
-        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
-        `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
-        `- 已生成｜${summary.totalImagesGenerated} 张`,
-        `- 历史消耗｜${service.formatCredits(summary.totalConsumedCredits)}`,
-      ]
-      if (summary.estimatedCny !== undefined) {
-        lines.push(`- 余额估算｜约 ${summary.estimatedCny} 元`)
-      }
-      return lines.join('\n')
-    } catch (error) {
-      logger.error('查询额度失败', {
-        userId,
-        ...sanitizeForLog(error),
-      })
-      return ['查询失败', '', '- 类型｜图像额度', '- 建议｜稍后重试'].join('\n')
-    }
-  }
-
   return {
     executeTextToImage,
     executeImageToImage,
     executeComposeImage,
-    executeQueryQuota,
   }
 }

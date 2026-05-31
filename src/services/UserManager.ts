@@ -609,7 +609,7 @@ export class UserManager {
   }> {
     await this.loadUsersStore()
     const normalizedAmount = roundCredits(amount)
-    if (normalizedAmount <= 0) throw new Error('扣除积分必须大于 0')
+    if (normalizedAmount <= 0) throw new Error('调整积分必须大于 0')
 
     return await this.dataLock.acquire(async () => {
       let userData = this.usersCache!.users[userId]
@@ -634,7 +634,7 @@ export class UserManager {
       userData.balance.totalConsumedCredits = roundCredits(userData.balance.totalConsumedCredits + deduct)
       userData.updatedAt = new Date().toISOString()
 
-      const event = this.buildLedgerEvent(userData, 'adjust', deduct, before, this.snapshotBalance(userData, config), reason || '管理员扣除', { operator })
+      const event = this.buildLedgerEvent(userData, 'adjust', deduct, before, this.snapshotBalance(userData, config), reason || '管理员余额修正', { operator })
       await this.appendLedgerEvent(event)
       await this.saveUsersStoreInternal()
       return {

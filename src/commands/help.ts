@@ -41,8 +41,8 @@ function buildImageHelp(config: Config): string {
 
   lines.push(
     '',
-    `额度查询：${COMMANDS.QUERY_QUOTA}`,
-    `管理员：${COMMANDS.ADMIN_QUERY} / ${COMMANDS.ADMIN_RECHARGE} / ${COMMANDS.ADMIN_DEDUCT} / ${COMMANDS.ADMIN_BILL}`,
+    `账户：${COMMANDS.ADMIN_QUERY} / ${COMMANDS.ADMIN_BILL}`,
+    `管理员：${COMMANDS.ADMIN_RECHARGE} / ${COMMANDS.USAGE_RANKING}`,
     `参数可选项：发送 ${COMMANDS.PARAM_HELP} 查看`,
   )
   return lines.join('\n')

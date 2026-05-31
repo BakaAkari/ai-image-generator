@@ -2,8 +2,8 @@
 
 ## Current status
 
-- Current package version: `0.6.2`.
-- Current line: `0.6.x` credit billing and user data v2 is implemented for release preparation; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current package version: `0.6.3`.
+- Current line: `0.6.x` credit billing and user data v2 is implemented for release preparation; `0.6.3` simplifies fixed account commands and expands the Koishi Console top usage guide; `0.5.x` runtime stabilization is archived as stable after remote validation.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
@@ -25,9 +25,7 @@ Stable runtime direction:
    - `图像查询`
    - `图像排行榜`
    - `图像充值`
-   - `图像扣除`
    - `图像账单`
-   - `图像额度`
    - `图像指令`
    - `图像参数`
 5. Keep remote Koishi validation as the source of truth for runtime behavior.
@@ -248,8 +246,19 @@ Remote validation focus:
 4. Decimal credits: model and global credit settings accept decimal values and normalize balances to two decimal places.
 5. Admin / permanent member / platform bypass: generation records statistics but does not deduct credits, and first-time exempt user snapshots follow the current daily free credit config.
 6. Partial success: only successfully sent images are charged.
-7. Ledger traceability: generation, recharge, and deduction appear in `图像账单` and JSONL files.
-8. Admin deduction feedback: insufficient purchased balance returns partial deduction or deduction failure instead of a normal completion message.
+7. Ledger traceability: generation, recharge, and balance adjustment appear in `图像账单` and JSONL files.
+8. Admin balance adjustment feedback: negative `图像充值` values return full, partial, or failed adjustment messages instead of exposing a separate deduction command.
+
+### `0.6.3` Command simplification and Console usage guide
+
+Status: implemented for release preparation; pending user publish and remote validation.
+
+Implemented scope:
+
+- Removed the fixed `图像额度` command; `图像查询` without a mention now queries the current user's credit balance and generation statistics.
+- Removed the fixed `图像扣除` command; `图像充值 @用户 -积分 [原因]` now handles administrator balance correction through the existing safe adjustment path.
+- Expanded `图像账单` so regular users can query their own recent ledger, administrators can query `@用户`, and administrators can use `--all` for global recent ledger events.
+- Expanded the top Koishi Console read-only guide into a command quick reference covering setup order, regular commands, administrator commands, common parameters, billing, and permission rules.
 
 ## Deferred lines
 
