@@ -3,7 +3,7 @@
 ## Current status
 
 - Current package version: `0.6.3`.
-- Current line: `0.6.x` credit billing and user data v2 is implemented for release preparation; `0.6.3` simplifies fixed account commands and expands the Koishi Console top usage guide; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current line: `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.6.3` simplifies fixed account commands and expands the Koishi Console top usage guide; `0.5.x` runtime stabilization is archived as stable after remote validation.
 - Current UI model: supplier credentials + model mapping unified config.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
@@ -226,7 +226,7 @@ Completed scope:
 
 Reference: `plans/ai-image-generator-credit-billing.md`.
 
-Status: implemented for release preparation after `0.5.23` stabilization was confirmed in the remote Koishi environment; pending user publish and remote validation.
+Status: implemented and remote-validated through `0.6.3` after `0.5.23` stabilization was confirmed in the remote Koishi environment.
 
 Implemented scope:
 
@@ -251,7 +251,7 @@ Remote validation focus:
 
 ### `0.6.3` Command simplification and Console usage guide
 
-Status: implemented for release preparation; pending user publish and remote validation.
+Status: remote-validated. The target Koishi environment reported no major issues, normal feature behavior, and expected user feedback.
 
 Implemented scope:
 
