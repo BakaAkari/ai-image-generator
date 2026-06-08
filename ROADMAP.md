@@ -2,9 +2,9 @@
 
 ## Current status
 
-- Current package version: `0.7.0`.
-- Current line: `0.7.0` adds ChatLuna bridge integration; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
-- Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle.
+- Current package version: `0.8.0`.
+- Current line: `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle + YesImBot bridge toggle.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
 ## Stable scope
@@ -283,6 +283,32 @@ Remote validation focus:
 5. Context injection prepends image context and style candidates when the user mentions follow-up keywords or configured style terms.
 6. `chatluna/clear-chat-history` clears the conversation image context in the store.
 7. ChatLuna bridge toggles on/off with config hot-reload without errors.
+
+### `0.8.0` YesImBot bridge integration
+
+Status: implemented, pending remote validation.
+
+Implemented scope:
+
+- Created `bridge/yesimbot/` module with runtime loader, types, tool definitions, tool runtime, tool registration, context injection, and bridge manager.
+- Runtime loader dynamically loads `@yesimbot/agent/ai` (specifically `jsonSchema`) via `createRequire` + dynamic import fallback — no compile-time dependency on YesImBot.
+- Registered 5 YesImBot tools using AI SDK `ToolDefinition` format with Zod `jsonSchema()`: `aigc_generate_image`, `aigc_edit_image`, `aigc_apply_style_preset`, `aigc_get_quota`, `aigc_list_styles`.
+- Tools execute through the same V2 credit-based billing pipeline as ChatLuna tools, returning AI SDK `ToolResultPart[]`.
+- Implemented `context:build` event listener that injects `[AIGC_CONTEXT]` with recent image records and style candidates into YesImBot system prompts.
+- Bridge manager uses `ctx["yesimbot.extension"].registerExtension()` pattern, matching YesImBot's per-session setup() lifecycle.
+- YesImBot auto-reloads extensions on session reload — no manual disable/enable cycle needed.
+- Added Koishi Console configuration for YesImBot bridge toggle and injection settings under a collapsible drawer.
+- Wired into `index.ts` alongside ChatLuna bridge with the same sync/updateConfig/dispose pattern.
+
+Remote validation focus:
+
+1. With `yesimbotEnabled=true` and YesImBot installed, the plugin registers as an Extension.
+2. Without YesImBot installed, the plugin starts normally and logs a warning.
+3. YesImBot AI Agent can invoke `aigc_generate_image` with a natural language prompt and receive generated images.
+4. Tools return proper credit precheck, generation, recording, and creditSummary in the tool result.
+5. Context injection adds recent image references and style candidates to system prompts.
+6. YesImBot bridge toggles on/off with config hot-reload without errors.
+7. Coexistence with ChatLuna bridge: both bridges can be enabled simultaneously without interference.
 
 ## Deferred lines
 

@@ -4,6 +4,21 @@
 
 - 暂无。
 
+## 0.8.0
+
+### Added
+
+- **YesImBot Bridge 集成**：插件现在可通过 `yesimbotEnabled` 配置开关启用 YesImBot 桥接，将图像生成能力注册为 YesImBot AI Agent 工具。与 ChatLuna 桥接相同，不安装 YesImBot 时插件仍可正常工作。
+- **5 个 YesImBot 工具**：`aigc_generate_image`（文生图）、`aigc_edit_image`（图生图/编辑）、`aigc_apply_style_preset`（风格预设）、`aigc_get_quota`（积分查询）、`aigc_list_styles`（风格查询）。工具使用 AI SDK `jsonSchema()` 格式定义，与 YesImBot Extension API 完全适配。
+- **YesImBot 上下文注入**：在 `context:build` 事件中注入 `[AIGC_CONTEXT]`，包含最近生成的图像引用和风格候选推荐，与 ChatLuna 桥接共享 `ConversationImageContext` 数据。
+- **新增配置项**：`yesimbotEnabled`、`yesimbotContextInjectionEnabled`、`yesimbotExposeQuotaTool`、`yesimbotExposeStyleListTool`、`yesimbotContextHistorySize`、`yesimbotContextTtlSeconds`、`yesimbotPreferLastGeneratedInPrivateRoom`。所有配置在 Koishi Console 中分组于 "🤖 YesImBot 集成" 折叠抽屉中。
+- **配置热重载兼容**：YesImBot 桥接状态随 Koishi 配置热重载自动同步（enable/disable），无需外部重启。
+- **可选依赖模式**：通过运行时检测 `ctx["yesimbot.extension"]` 和动态加载 `@yesimbot/agent/ai` 模块，不引入编译期依赖。
+
+### Changed
+
+- `index.ts` 启动日志新增 `yesimbot` 状态字段（enabled/disabled）。
+
 ## 0.7.0
 
 ### Fixed

@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import path from 'node:path'
 
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
+import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
 import { createImageGenerationHandlers } from './orchestrators/ImageGenerationOrchestrator.js'
 import { createGeminiProvider } from './providers/gemini.js'
@@ -32,9 +33,11 @@ import { PLUGIN_NAME } from './shared/constants.js'
  */
 export const name = PLUGIN_NAME
 
-// ChatLuna 可选依赖声明（不安装 chatluna 时插件仍可正常工作）
+// ChatLuna / YesImBot 可选依赖声明（不安装对应插件时仍可正常工作）
+// 声明 optional 可让 Koishi 在加载此插件前先加载已安装的 yesimbot / chatluna，
+// 避免首次启动时 ctx["yesimbot.extension"] 尚未注册的时序问题。
 export const inject = {
-  optional: ['chatluna'],
+  optional: ['chatluna', 'yesimbot'],
 } as const
 
 // 暴露给 Koishi 的配置类型与 Schema（与 shared/config.ts 中的运行期 interface 对齐）
@@ -93,27 +96,40 @@ export function apply(ctx: Context, config: Config) {
   )
   void chatLunaBridgeManager.sync(currentConfig.chatlunaEnabled)
 
-  // 6. 配置热重载兼容
+  // 6. YesImBot 桥接管理器
+  const yesimbotBridgeManager = new YesImBotBridgeManager(
+    ctx,
+    service,
+    currentConfig,
+    logger,
+  )
+  void yesimbotBridgeManager.sync(currentConfig.yesimbotEnabled)
+
+  // 7. 配置热重载兼容
   ctx.accept((next: Config) => {
     currentConfig = next
     service.updateConfig(next)
     commands.image.refreshStyleCommands()
     chatLunaBridgeManager.updateConfig(next)
     void chatLunaBridgeManager.sync(next.chatlunaEnabled)
+    yesimbotBridgeManager.updateConfig(next)
+    void yesimbotBridgeManager.sync(next.yesimbotEnabled)
   })
 
-  // 7. 插件卸载时的清理
+  // 8. 插件卸载时的清理
   ctx.on('dispose' as any, async () => {
     await chatLunaBridgeManager.dispose()
+    await yesimbotBridgeManager.dispose()
   })
 
   const registered = providerRegistry.list()
   logger.info(
-    'plugin=%s phase=4 status=protocol-mvp-ready providers=%s count=%d commands=%s chatluna=%s',
+    'plugin=%s phase=4 status=protocol-mvp-ready providers=%s count=%d commands=%s chatluna=%s yesimbot=%s',
     name,
     registered.join(',') || '<none>',
     registered.length,
     '文生图,图生图,合成图,图像查询,图像账单,图像充值,图像排行榜',
     currentConfig.chatlunaEnabled ? 'enabled' : 'disabled',
+    currentConfig.yesimbotEnabled ? 'enabled' : 'disabled',
   )
 }

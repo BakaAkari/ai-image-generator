@@ -114,6 +114,15 @@ export interface Config {
   chatlunaContextTtlSeconds: number
   chatlunaPreferLastGeneratedInPrivateRoom: boolean
 
+  // ── ⑧ YesImBot 集成 ──────────────────────────────────────────────────────
+  yesimbotEnabled: boolean
+  yesimbotContextInjectionEnabled: boolean
+  yesimbotExposeQuotaTool: boolean
+  yesimbotExposeStyleListTool: boolean
+  yesimbotContextHistorySize: number
+  yesimbotContextTtlSeconds: number
+  yesimbotPreferLastGeneratedInPrivateRoom: boolean
+
   // ── 通用 ──────────────────────────────────────────────────────────────────
   apiTimeout: number
 }
@@ -398,6 +407,37 @@ export const Config = Schema.intersect([
       .default(true)
       .description('私有房间中自动将“上一张”等自然语言映射到最近生成的图像'),
   }).description('💬 ChatLuna 集成').collapse(),
+
+  // ⑧ YesImBot 集成（默认收起）
+  Schema.object({
+    yesimbotEnabled: Schema.boolean()
+      .default(false)
+      .description('启用后会在 YesImBot 中注册图像生成工具，支持自然语言驱动生成'),
+    yesimbotContextInjectionEnabled: Schema.boolean()
+      .default(true)
+      .description('在 YesImBot 对话构建上下文时注入最近图像上下文，支持「继续上一张」等自然语言跟进'),
+    yesimbotExposeQuotaTool: Schema.boolean()
+      .default(true)
+      .description('是否暴露积分查询工具给 YesImBot'),
+    yesimbotExposeStyleListTool: Schema.boolean()
+      .default(true)
+      .description('是否暴露风格列表工具给 YesImBot'),
+    yesimbotContextHistorySize: Schema.number()
+      .default(5)
+      .min(0)
+      .max(20)
+      .step(1)
+      .description('YesImBot 上下文注入的历史记录数量'),
+    yesimbotContextTtlSeconds: Schema.number()
+      .default(1800)
+      .min(60)
+      .max(86400)
+      .step(60)
+      .description('YesImBot 上下文记录的有效期（秒），默认 30 分钟'),
+    yesimbotPreferLastGeneratedInPrivateRoom: Schema.boolean()
+      .default(true)
+      .description('私聊时优先使用最近生成的图像作为参考'),
+  }).description('🤖 YesImBot 集成').collapse(),
 
   // ⚙️ 运行与诊断
   Schema.object({
