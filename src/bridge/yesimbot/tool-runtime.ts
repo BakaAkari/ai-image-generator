@@ -1,14 +1,16 @@
 /**
- * YesImBot 工具运行时（AI SDK 格式）。
+ * YesImBot 工具运行时（ToolService 格式）。
  *
- * 将 YESIMBOT_TOOL_DEFINITIONS 中定义的工具转换为 AI SDK ToolDefinition，
- * 提供 execute() 函数实现。关键适配点（vs ChatLuna Bridge）：
+ * 将 YESIMBOT_TOOL_DEFINITIONS 中定义的工具转换为 ToolService 可执行的
+ * ToolDefinition，提供 execute() 函数实现。
  *
- * 1. 返回 AI SDK ToolResultPart[] 而非 string
- * 2. execute(args, context) 签名，context 包含 messages、abortSignal、experimental_context
- * 3. Schema 通过 jsonSchema() 包装 Zod schema
- * 4. Session 信息从 ExtensionContextLike 提取
- * 5. 配额预检、用量记录逻辑与 ChatLuna 版本共用
+ * 与 sticker-manager 的 @Tool 装饰器产生完全相同的 execute 签名和返回值格式。
+ *
+ * 关键适配点（vs 旧的 AI SDK 格式）：
+ * 1. execute 签名：({ session, ...params }) => Promise<ToolExecuteResult>
+ * 2. 返回值：{ status: "success"|"error", result|error }
+ * 3. parameters 直接使用 Koishi Schema（非 Zod + jsonSchema 包装）
+ * 4. 工具实例存入 Map<string, ToolDefinitionForToolService>
  */
 
 import { h } from 'koishi'
@@ -23,75 +25,69 @@ import type {
 } from '../../shared/types.js'
 import type { AiImageGeneratorService } from '../../service/AiImageGeneratorService.js'
 import type {
-  ExtensionContextLike,
-  ToolDefinitionLike,
-  ToolExecutionContextLike,
+  ToolDefinitionForToolService,
+  ToolExecuteResult,
+  ToolSessionLike,
 } from './runtime.js'
 import type { YesImBotToolDefinition } from './tool-definitions.js'
-import type { YesImBotSessionLike } from './types.js'
 
 // ---------------------------------------------------------------------------
-// 工具实例工厂
+// Success / Failed 辅助函数（与 ToolService helpers.js 返回格式一致）
 // ---------------------------------------------------------------------------
 
-export function createYesImBotToolInstance(
+function Success(result: unknown, metadata?: unknown): ToolExecuteResult {
+  return { status: 'success', result, metadata }
+}
+
+function Failed(error: string | { name: string; message: string; retryable?: boolean }, metadata?: unknown): ToolExecuteResult {
+  if (typeof error === 'string') {
+    return { status: 'error', error: { name: 'ToolError', message: error }, metadata }
+  }
+  return { status: 'error', error, metadata }
+}
+
+// ---------------------------------------------------------------------------
+// 工具实例创建（构造 ToolDefinitionForToolService）
+// ---------------------------------------------------------------------------
+
+export function createYesImBotToolForToolService(
   definition: YesImBotToolDefinition,
   aiGenerator: AiImageGeneratorService,
   config: Config,
-  jsonSchema: (schema: unknown) => unknown,
   logger: (...args: any[]) => void,
-): ToolDefinitionLike {
-  // 需要 zod 来构建 schema — 通过 require 动态加载
-  let zod: any
-  try {
-    zod = require('zod')
-  } catch {
+): ToolDefinitionForToolService {
+  const execute = async (args: { session: ToolSessionLike; [key: string]: unknown }): Promise<ToolExecuteResult> => {
+    const session = args.session
+
     try {
-      zod = ((globalThis as any).__zod__)
-    } catch {
-      throw new Error('zod is required for YesImBot bridge but could not be loaded.')
+      switch (definition.name) {
+        case 'aigc_generate_image':
+          return await runGenerateImageTool(args, session, aiGenerator, config, logger)
+        case 'aigc_edit_image':
+          return await runEditImageTool(args, session, aiGenerator, config, logger)
+        case 'aigc_apply_style_preset':
+          return await runStylePresetTool(args, session, aiGenerator, config, logger)
+        case 'aigc_get_quota':
+          return await runGetQuotaTool(session, aiGenerator)
+        case 'aigc_list_styles':
+          return runListStylesTool(args, aiGenerator)
+        default:
+          return Failed(`unsupported tool: ${definition.name}`)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger('YesImBot tool execute failed: %s, error: %s', definition.name, message)
+      return Failed(message)
     }
   }
-
-  // 先检查 zod 是否可用
-  if (!zod) {
-    throw new Error('zod is required for YesImBot bridge but could not be loaded.')
-  }
-
-  const zodSchema = definition.inputSchemaBuilder(zod)
-  const aiSdkSchema = jsonSchema(zodSchema)
 
   return {
     name: definition.name,
     description: definition.description,
-    inputSchema: aiSdkSchema,
+    parameters: definition.parameters,
+    execute,
     promptSnippet: definition.promptSnippet,
     promptGuidelines: definition.promptGuidelines,
-    execute: async (params: unknown, context: ToolExecutionContextLike) => {
-      const extensionCtx = context.experimental_context
-      const session = extractSessionFromContext(extensionCtx)
-
-      try {
-        switch (definition.name) {
-          case 'aigc_generate_image':
-            return await runGenerateImageTool(params, session, aiGenerator, config, logger)
-          case 'aigc_edit_image':
-            return await runEditImageTool(params, session, aiGenerator, config, logger)
-          case 'aigc_apply_style_preset':
-            return await runStylePresetTool(params, session, aiGenerator, config, logger)
-          case 'aigc_get_quota':
-            return await runGetQuotaTool(session, aiGenerator, logger)
-          case 'aigc_list_styles':
-            return runListStylesTool(params, aiGenerator)
-          default:
-            throw new Error(`unsupported tool: ${definition.name}`)
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        logger('YesImBot tool execute failed: %s, error: %s', definition.name, message)
-        return [{ type: 'text', text: `执行失败: ${message}` }]
-      }
-    },
   }
 }
 
@@ -100,16 +96,15 @@ export function createYesImBotToolInstance(
 // ---------------------------------------------------------------------------
 
 async function runGenerateImageTool(
-  params: unknown,
-  session: YesImBotSessionLike,
+  args: Record<string, unknown>,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
   config: Config,
   logger: (...args: any[]) => void,
-): Promise<unknown[]> {
+): Promise<ToolExecuteResult> {
   return withImageTaskLock(session, aiGenerator, async () => {
-    const input = params as Record<string, unknown>
-    const prompt = expectString(input.prompt, 'prompt')
-    const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
+    const prompt = expectString(args.prompt, 'prompt')
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
     const reservation = await aiGenerator.checkAndReserveQuota(
       session.userId,
@@ -118,7 +113,7 @@ async function runGenerateImageTool(
       session.platform || undefined,
     )
     if (!reservation.allowed) {
-      return [{ type: 'text', text: reservation.message || '积分不足。' }]
+      return Failed(reservation.message || '积分不足。')
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -146,39 +141,38 @@ async function runGenerateImageTool(
       session.platform || undefined,
     )
 
-    return buildToolResult([
-      `生成完成！共生成 ${images.length} 张图像。`,
+    return Success({
+      message: `生成完成！共生成 ${images.length} 张图像。`,
+      images,
       ...(usage?.summary
-        ? [`剩余积分: ${aiGenerator.formatCredits(usage.summary.totalAvailable)}`]
-        : []),
-    ], images)
+        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
+        : {}),
+    })
   })
 }
 
 async function runEditImageTool(
-  params: unknown,
-  session: YesImBotSessionLike,
+  args: Record<string, unknown>,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
   config: Config,
   logger: (...args: any[]) => void,
-): Promise<unknown[]> {
+): Promise<ToolExecuteResult> {
   return withImageTaskLock(session, aiGenerator, async () => {
-    const input = params as Record<string, unknown>
-    const prompt = expectString(input.prompt, 'prompt')
+    const prompt = expectString(args.prompt, 'prompt')
     const referenceMode =
-      typeof input.referenceMode === 'string' ? input.referenceMode : 'explicit'
-    const conversationId = aiGenerator.buildSessionConversationId(session as any)
+      typeof args.referenceMode === 'string' ? args.referenceMode : 'explicit'
     const imageUrls = resolveReferenceImages(
       referenceMode,
-      input,
+      args,
       session,
       aiGenerator,
     )
     if (!imageUrls.length) {
-      return [{ type: 'text', text: '未能解析到参考图片。请提供图片 URL 或在消息中附带图片。' }]
+      return Failed('未能解析到参考图片。请提供图片 URL 或在消息中附带图片。')
     }
 
-    const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
     const reservation = await aiGenerator.checkAndReserveQuota(
       session.userId,
@@ -187,7 +181,7 @@ async function runEditImageTool(
       session.platform || undefined,
     )
     if (!reservation.allowed) {
-      return [{ type: 'text', text: reservation.message || '积分不足。' }]
+      return Failed(reservation.message || '积分不足。')
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -197,6 +191,7 @@ async function runEditImageTool(
       requestContext,
     )
 
+    const conversationId = aiGenerator.buildSessionConversationId(session as any)
     aiGenerator.rememberGeneratedImages({
       session: session as any,
       conversationId,
@@ -220,45 +215,45 @@ async function runEditImageTool(
       session.platform || undefined,
     )
 
-    return buildToolResult([
-      `编辑完成！共生成 ${images.length} 张图像。`,
+    return Success({
+      message: `编辑完成！共生成 ${images.length} 张图像。`,
+      images,
       ...(usage?.summary
-        ? [`剩余积分: ${aiGenerator.formatCredits(usage.summary.totalAvailable)}`]
-        : []),
-    ], images)
+        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
+        : {}),
+    })
   })
 }
 
 async function runStylePresetTool(
-  params: unknown,
-  session: YesImBotSessionLike,
+  args: Record<string, unknown>,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
   config: Config,
   logger: (...args: any[]) => void,
-): Promise<unknown[]> {
+): Promise<ToolExecuteResult> {
   return withImageTaskLock(session, aiGenerator, async () => {
-    const input = params as Record<string, unknown>
-    const resolvedStyle = resolveRequestedStylePreset(input, aiGenerator)
+    const resolvedStyle = resolveRequestedStylePreset(args, aiGenerator)
     if ('error' in resolvedStyle) {
-      return [{ type: 'text', text: resolvedStyle.error }]
+      return Failed(resolvedStyle.error)
     }
     const { preset } = resolvedStyle
 
     const promptAdditions =
-      typeof input.promptAdditions === 'string' ? input.promptAdditions.trim() : ''
+      typeof args.promptAdditions === 'string' ? args.promptAdditions.trim() : ''
     const prompt = [preset.prompt, promptAdditions].filter(Boolean).join(' - ')
     const referenceMode =
-      typeof input.referenceMode === 'string' ? input.referenceMode : 'none'
+      typeof args.referenceMode === 'string' ? args.referenceMode : 'none'
     const imageUrls =
       referenceMode === 'none'
         ? []
-        : resolveReferenceImages(referenceMode, input, session, aiGenerator)
+        : resolveReferenceImages(referenceMode, args, session, aiGenerator)
 
     if (referenceMode !== 'none' && !imageUrls.length) {
-      return [{ type: 'text', text: '未能解析到参考图片。' }]
+      return Failed('未能解析到参考图片。')
     }
 
-    const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
     const reservation = await aiGenerator.checkAndReserveQuota(
       session.userId,
@@ -267,7 +262,7 @@ async function runStylePresetTool(
       session.platform || undefined,
     )
     if (!reservation.allowed) {
-      return [{ type: 'text', text: reservation.message || '积分不足。' }]
+      return Failed(reservation.message || '积分不足。')
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -295,46 +290,40 @@ async function runStylePresetTool(
       session.platform || undefined,
     )
 
-    return buildToolResult([
-      `已应用「${preset.commandName}」风格，生成 ${images.length} 张图像。`,
+    return Success({
+      message: `已应用「${preset.commandName}」风格，生成 ${images.length} 张图像。`,
+      images,
       ...(usage?.summary
-        ? [`剩余积分: ${aiGenerator.formatCredits(usage.summary.totalAvailable)}`]
-        : []),
-    ], images)
+        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
+        : {}),
+    })
   })
 }
 
 async function runGetQuotaTool(
-  session: YesImBotSessionLike,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
-  logger: (...args: any[]) => void,
-): Promise<unknown[]> {
+): Promise<ToolExecuteResult> {
   const summary = await aiGenerator.getQuotaSummary(
     session.userId,
     session.username || session.userId,
   )
-  return [
-    {
-      type: 'text',
-      text: [
-        `用户: ${summary.userName || session.userId}`,
-        `每日免费剩余: ${aiGenerator.formatCredits(summary.dailyFreeRemaining)}`,
-        `已购积分: ${aiGenerator.formatCredits(summary.purchasedCredits)}`,
-        `总可用积分: ${aiGenerator.formatCredits(summary.totalAvailable)}`,
-        `已生成图像: ${summary.totalImagesGenerated} 张`,
-        `累计消耗: ${aiGenerator.formatCredits(summary.totalConsumedCredits)}`,
-        `累计充值: ${aiGenerator.formatCredits(summary.totalGrantedCredits)}`,
-      ].join('\n'),
-    },
-  ]
+  return Success({
+    userName: summary.userName || session.userId,
+    dailyFreeRemaining: aiGenerator.formatCredits(summary.dailyFreeRemaining),
+    purchasedCredits: aiGenerator.formatCredits(summary.purchasedCredits),
+    totalAvailable: aiGenerator.formatCredits(summary.totalAvailable),
+    totalImagesGenerated: summary.totalImagesGenerated,
+    totalConsumedCredits: aiGenerator.formatCredits(summary.totalConsumedCredits),
+    totalGrantedCredits: aiGenerator.formatCredits(summary.totalGrantedCredits),
+  })
 }
 
 function runListStylesTool(
-  params: unknown,
+  args: Record<string, unknown>,
   aiGenerator: AiImageGeneratorService,
-): unknown[] {
-  const input = params as Record<string, unknown>
-  const query = typeof input.query === 'string' ? input.query.trim() : ''
+): ToolExecuteResult {
+  const query = typeof args.query === 'string' ? args.query.trim() : ''
   const allStyles = aiGenerator.listStylePresets()
 
   let styles = allStyles
@@ -344,30 +333,26 @@ function runListStylesTool(
   }
 
   if (!styles.length) {
-    return [{ type: 'text', text: query ? `未找到匹配「${query}」的风格预设。` : '暂无可用风格预设。' }]
+    return Success({
+      styles: [],
+      message: query ? `未找到匹配「${query}」的风格预设。` : '暂无可用风格预设。',
+    })
   }
 
-  const lines = styles.map(
-    (s) =>
-      `- **${s.commandName}**${s.description ? `: ${s.description}` : ''}${s.category ? ` [${s.category}]` : ''}`,
-  )
-
-  return [
-    {
-      type: 'text',
-      text: [
-        query ? `匹配「${query}」的风格预设 (${lines.length} 个):` : `可用风格预设 (${lines.length} 个):`,
-        '',
-        ...lines,
-        '',
-        '使用 aigc_apply_style_preset 工具并传入 stylePreset 参数来应用风格。',
-      ].join('\n'),
-    },
-  ]
+  return Success({
+    styles: styles.map((s) => ({
+      commandName: s.commandName,
+      description: s.description || '',
+      category: s.category || '',
+    })),
+    message: query
+      ? `找到 ${styles.length} 个匹配「${query}」的风格预设`
+      : `共 ${styles.length} 个可用风格预设`,
+  })
 }
 
 // ---------------------------------------------------------------------------
-// 请求上下文 & 费用构建（与 ChatLuna 共用逻辑）
+// 请求上下文 & 费用构建
 // ---------------------------------------------------------------------------
 
 const VALID_ASPECT_RATIOS = new Set(['1:1', '4:3', '16:9', '9:16', '3:2', '2:3'])
@@ -375,28 +360,28 @@ const VALID_RESOLUTIONS = new Set(['1k', '2k', '4k'])
 const CUSTOM_RESOLUTION_RE = /^\d{3,5}x\d{3,5}$/
 
 function buildRequestContextAndCost(
-  input: Record<string, unknown>,
+  args: Record<string, unknown>,
   config: Config,
 ): { requestContext: ImageRequestContext; generationCost: ReturnType<typeof calculateGenerationCost> } {
   let numImages = config.defaultNumImages || 1
-  if (typeof input.numImages === 'number' && Number.isFinite(input.numImages)) {
-    numImages = Math.max(1, Math.min(4, Math.round(input.numImages)))
+  if (typeof args.numImages === 'number' && Number.isFinite(args.numImages)) {
+    numImages = Math.max(1, Math.min(4, Math.round(args.numImages)))
   }
 
   const requestContext: ImageRequestContext = { numImages }
 
-  if (typeof input.aspectRatio === 'string' && VALID_ASPECT_RATIOS.has(input.aspectRatio)) {
-    requestContext.aspectRatio = input.aspectRatio as ImageRequestContext['aspectRatio']
+  if (typeof args.aspectRatio === 'string' && VALID_ASPECT_RATIOS.has(args.aspectRatio)) {
+    requestContext.aspectRatio = args.aspectRatio as ImageRequestContext['aspectRatio']
   }
 
-  if (typeof input.resolution === 'string') {
-    const res = input.resolution.trim()
+  if (typeof args.resolution === 'string') {
+    const res = args.resolution.trim()
     if (VALID_RESOLUTIONS.has(res) || CUSTOM_RESOLUTION_RE.test(res)) {
       requestContext.resolution = res as ImageRequestContext['resolution']
     }
   }
 
-  const modelSuffix = typeof input.modelSuffix === 'string' ? input.modelSuffix.trim() : ''
+  const modelSuffix = typeof args.modelSuffix === 'string' ? args.modelSuffix.trim() : ''
   let modelMapping: ModelMappingConfig | undefined
   if (modelSuffix) {
     modelMapping = (config.modelMappings || []).find((item) => item.suffix === modelSuffix)
@@ -424,13 +409,13 @@ function buildRequestContextAndCost(
 // ---------------------------------------------------------------------------
 
 function resolveRequestedStylePreset(
-  input: Record<string, unknown>,
+  args: Record<string, unknown>,
   aiGenerator: AiImageGeneratorService,
 ):
   | { preset: ResolvedStyleConfig; matches: StyleMatchCandidate[] }
   | { error: string } {
   const explicitStylePreset =
-    typeof input.stylePreset === 'string' ? input.stylePreset.trim() : ''
+    typeof args.stylePreset === 'string' ? args.stylePreset.trim() : ''
   if (explicitStylePreset) {
     const preset = aiGenerator.getStylePreset(explicitStylePreset)
     if (!preset) {
@@ -442,7 +427,7 @@ function resolveRequestedStylePreset(
     }
   }
 
-  const styleQuery = typeof input.styleQuery === 'string' ? input.styleQuery.trim() : ''
+  const styleQuery = typeof args.styleQuery === 'string' ? args.styleQuery.trim() : ''
   if (!styleQuery) {
     return { error: 'stylePreset 或 styleQuery 至少需要提供一个。' }
   }
@@ -465,14 +450,14 @@ function resolveRequestedStylePreset(
 
 function resolveReferenceImages(
   referenceMode: string,
-  input: Record<string, unknown>,
-  session: YesImBotSessionLike,
+  args: Record<string, unknown>,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
 ): string[] {
   if (referenceMode === 'explicit') {
     return normalizeImageUrls(
-      Array.isArray(input.imageUrls)
-        ? input.imageUrls.filter(
+      Array.isArray(args.imageUrls)
+        ? args.imageUrls.filter(
             (item): item is string => typeof item === 'string' && item.trim().length > 0,
           )
         : [],
@@ -510,55 +495,8 @@ function parseImagesFromMessageContent(content: unknown): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Session 信息提取
-// ---------------------------------------------------------------------------
-
-function extractSessionFromContext(ctx: ExtensionContextLike): YesImBotSessionLike {
-  // 从 ExtensionContext 提取 session 信息
-  // YesImBot 的 ExtensionContext 包含 sessionManager
-  let userId = 'unknown'
-  let channelId = 'unknown'
-  let platform = 'yesimbot'
-  let isDirect = false
-  let username: string | undefined
-  let guildId: string | undefined
-  let content = ''
-  let timestamp = Date.now()
-
-  try {
-    const sessionManager = ctx.sessionManager as Record<string, unknown> | undefined
-    if (sessionManager) {
-      // 尝试从 sessionManager 获取 session 信息
-      const currentSession = (sessionManager as any).currentSession || (sessionManager as any).session
-      if (currentSession) {
-        userId = (currentSession.userId as string) || userId
-        channelId = (currentSession.channelId as string) || channelId
-        platform = (currentSession.platform as string) || platform
-        isDirect = (currentSession.isDirect as boolean) || false
-        username = currentSession.username as string | undefined
-        guildId = currentSession.guildId as string | undefined
-        content = (currentSession.content as string) || ''
-        timestamp = (currentSession.timestamp as number) || Date.now()
-      }
-    }
-  } catch {
-    // 防御性处理: 如果 sessionManager 结构不同，使用默认值
-  }
-
-  return { userId, username, channelId, guildId, platform, isDirect, content, timestamp }
-}
-
-// ---------------------------------------------------------------------------
 // 工具函数
 // ---------------------------------------------------------------------------
-
-function buildToolResult(texts: string[], images: string[]): unknown[] {
-  const result: unknown[] = [{ type: 'text', text: texts.join('\n') }]
-  for (const imageUrl of images) {
-    result.push({ type: 'image', image: imageUrl })
-  }
-  return result
-}
 
 function expectString(value: unknown, key: string): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -574,13 +512,13 @@ function normalizeImageUrls(items: unknown[]): string[] {
 }
 
 async function withImageTaskLock(
-  session: YesImBotSessionLike,
+  session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
-  work: () => Promise<unknown[]>,
-): Promise<unknown[]> {
+  work: () => Promise<ToolExecuteResult>,
+): Promise<ToolExecuteResult> {
   const requestId = aiGenerator.userManager.startTask(session.userId)
   if (!requestId) {
-    return [{ type: 'text', text: '您有一个图像处理任务正在进行中，请等待完成。' }]
+    return Failed('您有一个图像处理任务正在进行中，请等待完成。')
   }
 
   try {

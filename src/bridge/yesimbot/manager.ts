@@ -1,16 +1,22 @@
 /**
- * YesImBot 桥接管理器。
+ * YesImBot 桥接管理器（ToolService 路径）。
  *
  * 负责：
- * - 动态加载 YesImBot 运行时（@yesimbot/agent/ai 的 jsonSchema）
- * - 注册 / 注销 YesImBot Extension（工具 + 上下文注入）
+ * - 获取 ctx["yesimbot.tool"] (ToolService)
+ * - 构造扩展实例（含 metadata + tools Map）
+ * - 通过 toolService.register(instance, enabled, config) 注册工具
  * - 同步 enabled/disabled 状态并处理热重载
  *
- * 与 ChatLuna Bridge 的差异：
- * - 通过 ctx["yesimbot.extension"].registerExtension() 注册
- * - 工具在 setup() 中通过 api.registerTool() 注册
- * - 上下文注入通过 api.on("context:build", ...) 实现
- * - YesImBot 自动处理 session reload，无需手动 disable/enable
+ * 改造说明（0.8.5）：
+ *   之前的实现错误地使用了 "yesimbot.extension" (ExtensionService) —
+ *   该服务仅存在于 monorepo 的 core 中，npm 发布的 koishi-plugin-yesimbot@3.x
+ *   根本不包含此服务。正确路径是 "yesimbot.tool" (ToolService)，
+ *   与 sticker-manager 使用完全相同的注册方式。
+ *
+ * 与 sticker-manager 的差异：
+ *   - sticker-manager 使用 @Extension/@Tool 装饰器自动注册
+ *   - 本 bridge 手动构造 ExtensionInstanceLike 并调用 register()
+ *   - 结果完全一致：extension.list 可见，LLM 可调用
  */
 
 import type { Context } from 'koishi'
@@ -18,20 +24,19 @@ import type { Context } from 'koishi'
 import type { AiImageGeneratorService } from '../../service/AiImageGeneratorService.js'
 import type { Config } from '../../shared/config.js'
 import { YESIMBOT_BRIDGE_EXTENSION_ID } from '../../shared/constants.js'
-import { installYesImBotContextInjection } from './context-injection.js'
-import { loadYesImBotRuntime } from './runtime.js'
 import type {
-  ExtensionCleanupLike,
-  ExtensionDefinitionLike,
-  ExtensionServiceLike,
+  ExtensionInstanceLike,
+  ToolServiceLike,
 } from './runtime.js'
-import { registerYesImBotTools } from './tools.js'
+import { createYesImBotExtensionInstance } from './tools.js'
 
 export class YesImBotBridgeManager {
-  private extensionService: ExtensionServiceLike | null = null
+  private toolService: ToolServiceLike | null = null
+  private extensionInstance: ExtensionInstanceLike | null = null
   private isRegistered = false
   private warnedUnavailable = false
   private syncQueue: Promise<void> = Promise.resolve()
+  private readyDispose: (() => void) | null = null
 
   constructor(
     private readonly ctx: Context,
@@ -49,13 +54,10 @@ export class YesImBotBridgeManager {
       .catch(() => {})
       .then(async () => {
         if (enabled) {
-          // YesImBot 的 ExtensionRunner 会在每次 session reload 时
-          // 重新调用 setup()，所以即使已注册，新增的 style 工具也会自动加载。
-          // 但为了确保首次启用时正确注册，这里始终调用 enable()
           this.logger.info('YesImBot bridge sync: enabled=true, starting enable()')
           await this.enable()
         } else {
-          this.logger.info('YesImBot bridge sync: enabled=false (config yesimbotEnabled is off), skipping registration')
+          this.logger.info('YesImBot bridge sync: enabled=false, skipping registration')
           await this.disable()
         }
       })
@@ -63,117 +65,133 @@ export class YesImBotBridgeManager {
   }
 
   async dispose() {
+    if (this.readyDispose) {
+      this.readyDispose()
+      this.readyDispose = null
+    }
     await this.disable()
   }
 
   private async enable() {
-    // 每次 enable() 调用都重置诊断状态，确保热重载后重试时能看到日志
+    // 先清理之前的 ready 监听器（避免重入时重复注册）
+    if (this.readyDispose) {
+      this.readyDispose()
+      this.readyDispose = null
+    }
     this.warnedUnavailable = false
 
-    // 检查 YesImBot Extension Service 是否存在
-    const extensionService = this.getExtensionService()
-    if (!extensionService) {
-      this.logger.warn(
-        'YesImBot bridge enabled in config, but ctx["yesimbot.extension"] service is not available. ' +
-        'Make sure koishi-plugin-yesimbot is installed, enabled, and loaded before this plugin. ' +
-        'If you just installed yesimbot, restart Koishi so both plugins load in the correct order.',
-      )
-      this.warnedUnavailable = true
+    // 1. 获取 ToolService（此时 YesImBot 的 start() 可能尚未完成，ToolService 可能为 null）
+    const toolService = this.getToolService()
+    if (toolService) {
+      this.logger.info('YesImBot ToolService found immediately, proceeding with registration')
+      await this.doRegister(toolService)
       return
     }
-    this.logger.info('YesImBot extension service found, proceeding with registration')
 
-    // 如果已注册，跳过（YesImBot 会在 reload 时自动重新 setup）
+    // 2. ToolService 尚未就绪 —— 通过 ctx.on("ready") 等待所有插件初始化完毕后再重试。
+    //    这与 sticker-manager 的 @Extension 装饰器使用相同的 ctx.on("ready", ...) 策略。
+    this.logger.info(
+      'YesImBot ToolService not ready yet (ctx["yesimbot.tool"] is null). ' +
+      'Waiting for "ready" event (all plugins initialized) before retrying registration.',
+    )
+    this.readyDispose = this.ctx.on('ready', () => {
+      this.readyDispose = null
+      // ready 事件在同步回调中触发 —— 此时所有 Service.start() 已完成
+      const service = this.getToolService()
+      if (!service) {
+        this.logger.warn(
+          'YesImBot bridge: "ready" event fired but "yesimbot.tool" service still not available. ' +
+          'Make sure koishi-plugin-yesimbot is installed and enabled.',
+        )
+        this.warnedUnavailable = true
+        return
+      }
+      void this.doRegister(service)
+    })
+  }
+
+  private async doRegister(toolService: ToolServiceLike) {
+    // 如果已注册，跳过
     if (this.isRegistered) {
       this.logger.info('YesImBot bridge already registered, skipping re-registration')
       return
     }
 
-    // 加载 YesImBot 运行时（jsonSchema）
-    this.logger.info('Loading @yesimbot/agent/ai runtime module...')
-    const runtime = await loadYesImBotRuntime().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error)
-      this.logger.warn(
-        'YesImBot bridge failed to load @yesimbot/agent/ai runtime: %s. ' +
-        'Make sure koishi-plugin-yesimbot (or yesimbot-core) is installed and its dependencies are resolved.',
-        message,
-      )
-      this.warnedUnavailable = true
-      return null
-    })
-    if (!runtime) return
-
-    this.logger.info('runtime module loaded, creating ExtensionDefinition')
-
-    // 创建 ExtensionDefinition
-    const extensionDefinition: ExtensionDefinitionLike = {
-      id: YESIMBOT_BRIDGE_EXTENSION_ID,
-      order: 100,
-      setup: (api) => {
-        const logFn = (...args: any[]) => {
-          this.logger.info(`[yesimbot-bridge] ${args[0]}`, ...args.slice(1))
-        }
-
-        logFn('setup() called, registering tools')
-
-        // 注册工具（基础工具 + 风格预设工具）
-        registerYesImBotTools(api, this.aiGenerator, this.config, runtime.jsonSchema, logFn)
-
-        // 安装上下文注入
-        installYesImBotContextInjection(api, this.aiGenerator, this.config, logFn)
-
-        // 返回清理函数
-        const cleanup: ExtensionCleanupLike = {
-          dispose: () => {
-            logFn('YesImBot bridge cleanup called')
-          },
-        }
-
-        return cleanup
+    // 创建扩展实例（以获取最新 config 和 style 列表）
+    this.logger.info('Creating YesImBot extension instance with %d tools configured',
+      this.config.yesimbotExposeQuotaTool !== false ? 'all' : 'filtered')
+    this.extensionInstance = createYesImBotExtensionInstance(
+      this.aiGenerator,
+      this.config,
+      (...args: any[]) => {
+        this.logger.info(`[yesimbot-bridge] ${args[0]}`, ...args.slice(1))
       },
-    }
+    )
+    this.logger.info('Extension instance created with %d tools in tools Map',
+      this.extensionInstance.tools.size)
 
-    // 注册 Extension
-    this.logger.info('Calling extensionService.registerExtension()')
-    extensionService.registerExtension(extensionDefinition)
-    this.extensionService = extensionService
+    // 注册到 ToolService
+    this.logger.info(
+      'Calling toolService.register() for extension "%s" (display: "%s")',
+      this.extensionInstance.metadata.name,
+      this.extensionInstance.metadata.display,
+    )
+    toolService.register(this.extensionInstance, true)
+    this.toolService = toolService
     this.isRegistered = true
 
     this.logger.info(
-      'YesImBot bridge enabled. Extension "%s" registered successfully.',
+      'YesImBot bridge enabled. Extension "%s" registered in ToolService. ' +
+      'Run "extension.list" to verify.',
       YESIMBOT_BRIDGE_EXTENSION_ID,
     )
   }
 
   private async disable() {
-    if (!this.isRegistered || !this.extensionService) {
+    if (!this.isRegistered || !this.toolService) {
       return
     }
 
-    this.extensionService.unregisterExtension(YESIMBOT_BRIDGE_EXTENSION_ID)
-    this.extensionService = null
+    this.toolService.unregister(YESIMBOT_BRIDGE_EXTENSION_ID)
+    this.toolService = null
+    this.extensionInstance = null
     this.isRegistered = false
 
     this.logger.info('YesImBot bridge disabled.')
   }
 
-  private getExtensionService(): ExtensionServiceLike | null {
-    try {
-      // 使用 ctx.get() 而非 ctx["yesimbot.extension"]，因为 Koishi Context Proxy
-      // 对点号 key 会触发属性校验（require inject declaration），
-      // 而 inject 不支持嵌套 service 名。ctx.get() 则直接走内部 service 查找。
-      const ctx = this.ctx as { get(name: string): unknown }
-      const service = ctx.get('yesimbot.extension') as ExtensionServiceLike | undefined
-      if (
-        service &&
-        typeof service.registerExtension === 'function' &&
-        typeof service.unregisterExtension === 'function'
-      ) {
-        return service
-      }
-      return null
-    } catch {
+  private getToolService(): ToolServiceLike | null {
+    // "yesimbot.tool" 是 YesImBot 的 ToolService (services/extension/service.js)，
+    // 通过 super(ctx, "yesimbot.tool") 注册为 Koishi Service。
+    //
+    // inject.optional 中已声明 'yesimbot.tool'，Koishi Proxy 会放行此访问路径。
+    //
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = (this.ctx as any)['yesimbot.tool']
+    if (!raw) {
+      this.logger.info(
+        'getToolService: ctx["yesimbot.tool"] is null/undefined. ' +
+        'Is koishi-plugin-yesimbot installed and loaded before this plugin?',
+      )
       return null
     }
+
+    const service = raw as ToolServiceLike
+    if (
+      typeof service.register === 'function' &&
+      typeof service.unregister === 'function'
+    ) {
+      this.logger.info('getToolService: ctx["yesimbot.tool"] found and verified (has register/unregister)')
+      return service
+    }
+
+    // 诊断：服务存在但 API 不匹配
+    this.logger.info(
+      'getToolService: ctx["yesimbot.tool"] exists but lacks register/unregister. ' +
+      'typeof=%s keys=%s',
+      typeof raw,
+      Object.keys(raw).join(','),
+    )
+    return null
   }
 }

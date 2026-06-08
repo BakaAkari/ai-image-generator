@@ -284,9 +284,44 @@ Remote validation focus:
 6. `chatluna/clear-chat-history` clears the conversation image context in the store.
 7. ChatLuna bridge toggles on/off with config hot-reload without errors.
 
-### `0.8.0` YesImBot bridge integration
+### `0.8.5` YesImBot bridge ToolService rewrite
 
 Status: implemented, pending remote validation.
+
+Root cause and fix:
+
+- **0.8.0–0.8.4 使用了错误的服务**：`ctx["yesimbot.extension"]`（`ExtensionService`）仅存在于 YesImBot monorepo 的 core 中，npm 发布的 `koishi-plugin-yesimbot@3.x` 不包含此服务。
+- **正确路径**：`ctx["yesimbot.tool"]`（`ToolService`），与 sticker-manager 使用完全相同的 `register(instance, enabled)` API。
+- LLM 工具调用链路：`AgentCore → HeartbeatProcessor → toolService.invoke()`。
+- `extension.list` 命令读取 `ToolService.extensions` Map。
+
+Changed scope:
+
+- **runtime.ts** — 类型从 AI SDK 格式替换为 ToolService 格式。
+- **tool-definitions.ts** — 工具参数从 Zod `inputSchemaBuilder` → Koishi `Schema`。
+- **tool-runtime.ts** — execute 签名从 `(params, context) → ToolResultPart[]` → `({ session, ...params }) → { status, result|error }`。
+- **tools.ts** — 从 `registerYesImBotTools(api)` → `createYesImBotExtensionInstance()` 工厂函数。
+- **manager.ts** — `getExtensionService()` → `getToolService()`，调用 `toolService.register(instance, true)`。
+- **index.ts** — `inject.optional` 中 `'yesimbot.extension'` → `'yesimbot.tool'`。
+
+Removed scope:
+
+- **context-injection.ts** — 删除。ToolService 不支持 `context:build` 事件系统。
+- **types.ts** — 删除。仅被 context-injection.ts 引用，成为死代码。
+- **config.ts** — 清理 4 个已无效的上下文注入配置字段。
+
+Remote validation focus:
+
+1. With `yesimbotEnabled=true` and YesImBot installed, `extension.list` shows `aka-ai-image-generator`.
+2. Without YesImBot installed, the plugin starts normally and logs a warning.
+3. YesImBot AI Agent can invoke tools via `toolService.invoke()` → our tool's `execute({ session, ...params })`.
+4. Tools return `{ status: "success", result: {...} }` / `{ status: "error", error: {...} }` matching ToolService format.
+5. YesImBot bridge toggles on/off with config hot-reload without errors.
+6. Coexistence with ChatLuna bridge: both bridges can be enabled simultaneously without interference.
+
+### `0.8.0` YesImBot bridge integration
+
+Status: superseded by 0.8.5.
 
 Implemented scope:
 
@@ -294,21 +329,9 @@ Implemented scope:
 - Runtime loader dynamically loads `@yesimbot/agent/ai` (specifically `jsonSchema`) via `createRequire` + dynamic import fallback — no compile-time dependency on YesImBot.
 - Registered 5 YesImBot tools using AI SDK `ToolDefinition` format with Zod `jsonSchema()`: `aigc_generate_image`, `aigc_edit_image`, `aigc_apply_style_preset`, `aigc_get_quota`, `aigc_list_styles`.
 - Tools execute through the same V2 credit-based billing pipeline as ChatLuna tools, returning AI SDK `ToolResultPart[]`.
-- Implemented `context:build` event listener that injects `[AIGC_CONTEXT]` with recent image records and style candidates into YesImBot system prompts.
-- Bridge manager uses `ctx["yesimbot.extension"].registerExtension()` pattern, matching YesImBot's per-session setup() lifecycle.
-- YesImBot auto-reloads extensions on session reload — no manual disable/enable cycle needed.
-- Added Koishi Console configuration for YesImBot bridge toggle and injection settings under a collapsible drawer.
-- Wired into `index.ts` alongside ChatLuna bridge with the same sync/updateConfig/dispose pattern.
 
-Remote validation focus:
-
-1. With `yesimbotEnabled=true` and YesImBot installed, the plugin registers as an Extension.
-2. Without YesImBot installed, the plugin starts normally and logs a warning.
-3. YesImBot AI Agent can invoke `aigc_generate_image` with a natural language prompt and receive generated images.
-4. Tools return proper credit precheck, generation, recording, and creditSummary in the tool result.
-5. Context injection adds recent image references and style candidates to system prompts.
-6. YesImBot bridge toggles on/off with config hot-reload without errors.
-7. Coexistence with ChatLuna bridge: both bridges can be enabled simultaneously without interference.
+Known issue (fixed in 0.8.5):
+- 0.8.0–0.8.4 used `ctx["yesimbot.extension"]` which does not exist in npm-published `koishi-plugin-yesimbot@3.x`. This was a fundamental misrouting error — the correct service is `"yesimbot.tool"` (ToolService).
 
 ## Deferred lines
 

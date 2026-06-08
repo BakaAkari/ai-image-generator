@@ -35,9 +35,12 @@ export const name = PLUGIN_NAME
 
 // ChatLuna / YesImBot 可选依赖声明（不安装对应插件时仍可正常工作）
 // 声明 optional 可让 Koishi 在加载此插件前先加载已安装的 yesimbot / chatluna，
-// 避免首次启动时 ctx["yesimbot.extension"] 尚未注册的时序问题。
+// 避免首次启动时 ctx["yesimbot.tool"] 尚未注册的时序问题。
+//
+// "yesimbot": yesimbot 插件根上下文（提供 ctx.yesimbot 命名空间，帮助加载时序）
+// "yesimbot.tool": YesImBot ToolService（register/unregister API，extensions/tools Map）
 export const inject = {
-  optional: ['chatluna', 'yesimbot'],
+  optional: ['chatluna', 'yesimbot', 'yesimbot.tool'],
 } as const
 
 // 暴露给 Koishi 的配置类型与 Schema（与 shared/config.ts 中的运行期 interface 对齐）
@@ -94,7 +97,10 @@ export function apply(ctx: Context, config: Config) {
     currentConfig,
     logger,
   )
-  void chatLunaBridgeManager.sync(currentConfig.chatlunaEnabled)
+  // 等待 chatluna 服务可用后再同步（避免在 chatluna 尚未加载时过早调用导致工具无法注册）
+  ctx.inject(['chatluna'], async (ctx) => {
+    await chatLunaBridgeManager.sync(currentConfig.chatlunaEnabled)
+  })
 
   // 6. YesImBot 桥接管理器
   const yesimbotBridgeManager = new YesImBotBridgeManager(
@@ -111,7 +117,10 @@ export function apply(ctx: Context, config: Config) {
     service.updateConfig(next)
     commands.image.refreshStyleCommands()
     chatLunaBridgeManager.updateConfig(next)
-    void chatLunaBridgeManager.sync(next.chatlunaEnabled)
+    // 只在 chatluna 服务可用时同步（热重载场景）
+    if ((ctx as Context & { chatluna?: unknown }).chatluna) {
+      void chatLunaBridgeManager.sync(next.chatlunaEnabled)
+    }
     yesimbotBridgeManager.updateConfig(next)
     void yesimbotBridgeManager.sync(next.yesimbotEnabled)
   })

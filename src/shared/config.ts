@@ -116,12 +116,8 @@ export interface Config {
 
   // ── ⑧ YesImBot 集成 ──────────────────────────────────────────────────────
   yesimbotEnabled: boolean
-  yesimbotContextInjectionEnabled: boolean
   yesimbotExposeQuotaTool: boolean
   yesimbotExposeStyleListTool: boolean
-  yesimbotContextHistorySize: number
-  yesimbotContextTtlSeconds: number
-  yesimbotPreferLastGeneratedInPrivateRoom: boolean
 
   // ── 通用 ──────────────────────────────────────────────────────────────────
   apiTimeout: number
@@ -412,31 +408,13 @@ export const Config = Schema.intersect([
   Schema.object({
     yesimbotEnabled: Schema.boolean()
       .default(false)
-      .description('启用后会在 YesImBot 中注册图像生成工具，支持自然语言驱动生成'),
-    yesimbotContextInjectionEnabled: Schema.boolean()
-      .default(true)
-      .description('在 YesImBot 对话构建上下文时注入最近图像上下文，支持「继续上一张」等自然语言跟进'),
+      .description('启用后会在 YesImBot 中注册 AI 图像生成工具，让 YesImBot 可以调用本插件的图像生成能力'),
     yesimbotExposeQuotaTool: Schema.boolean()
       .default(true)
-      .description('是否暴露积分查询工具给 YesImBot'),
+      .description('是否向 YesImBot 暴露积分查询工具'),
     yesimbotExposeStyleListTool: Schema.boolean()
       .default(true)
-      .description('是否暴露风格列表工具给 YesImBot'),
-    yesimbotContextHistorySize: Schema.number()
-      .default(5)
-      .min(0)
-      .max(20)
-      .step(1)
-      .description('YesImBot 上下文注入的历史记录数量'),
-    yesimbotContextTtlSeconds: Schema.number()
-      .default(1800)
-      .min(60)
-      .max(86400)
-      .step(60)
-      .description('YesImBot 上下文记录的有效期（秒），默认 30 分钟'),
-    yesimbotPreferLastGeneratedInPrivateRoom: Schema.boolean()
-      .default(true)
-      .description('私聊时优先使用最近生成的图像作为参考'),
+      .description('是否向 YesImBot 暴露风格列表工具'),
   }).description('🤖 YesImBot 集成').collapse(),
 
   // ⚙️ 运行与诊断

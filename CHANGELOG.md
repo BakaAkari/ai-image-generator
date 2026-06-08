@@ -4,6 +4,37 @@
 
 - 暂无。
 
+## 0.8.6
+
+### Fixed
+
+- **ChatLuna 桥接工具注册时序修复**：修复 V2 中 ChatLuna 工具列表始终为空的问题。根因是 `index.ts` 中 `chatLunaBridgeManager.sync()` 在 `apply()` 阶段直接调用，此时 ChatLuna 服务尚未加载，导致 `enable()` 检测到 service 为 null 后直接返回且不再重试。V1 (`aka-ai-generator`) 使用了 `ctx.inject(['chatluna'], async (ctx) => { await chatLunaBridge.sync(...) })` 正确等待 ChatLuna 就绪。修复方式：将 V2 的直接 `sync()` 调用替换为相同的 `ctx.inject(['chatluna'], ...)` 延迟注册机制，同时在 `accept` 热重载 handler 中添加 `chatluna` 服务可用性检查。
+
+## 0.8.5
+
+### Changed
+
+- **YesImBot 桥接完全重写：ExtensionService → ToolService**。0.8.0–0.8.4 版本错误地使用了 `"yesimbot.extension"`（`ExtensionService`），该服务仅存在于 YesImBot monorepo 的 core 中，npm 发布的 `koishi-plugin-yesimbot@3.x` 根本不包含此服务。正确路径是 `"yesimbot.tool"`（`ToolService`），与 sticker-manager 使用完全相同的注册方式。
+  - **root cause**：npm 版 yesimbot 只有 `ToolService`（`services/extension/service.js`），通过 `ctx["yesimbot.tool"].register(instance, enabled)` 注册扩展，`@Extension`/`@Tool` 装饰器也是基于 ToolService 构建的。LLM 工具调用链路为 `AgentCore → HeartbeatProcessor → toolService.invoke()`，`extension.list` 命令读取 `ToolService.extensions` Map。
+  - **改造成果**：
+    - [`runtime.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/runtime.ts) — 类型从 AI SDK 格式替换为 ToolService 格式（`ToolServiceLike`、`ExtensionInstanceLike`、`ToolDefinitionForToolService`、`ToolExecuteResult`）
+    - [`tool-definitions.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/tool-definitions.ts) — 工具参数从 Zod `inputSchemaBuilder` → Koishi `Schema` 对象
+    - [`tool-runtime.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/tool-runtime.ts) — execute 签名从 `(params, context) → ToolResultPart[]` → `({ session, ...params }) → { status, result|error }`
+    - [`tools.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/tools.ts) — 从 `registerYesImBotTools(api)` → `createYesImBotExtensionInstance()` 工厂函数
+    - [`manager.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/manager.ts) — `getExtensionService()` → `getToolService()`，调用 `toolService.register(instance, true)`
+    - [`index.ts`](plugins/aka-ai-image-generator/src/index.ts) — `inject.optional` 中 `'yesimbot.extension'` → `'yesimbot.tool'`
+  - **删除不再需要的文件**：[`context-injection.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/context-injection.ts)（ToolService 没有 `context:build` 事件系统）、[`types.ts`](plugins/aka-ai-image-generator/src/bridge/yesimbot/types.ts)（仅被 context-injection.ts 引用，成为死代码）。
+
+### Removed
+
+- **YesImBot 上下文注入功能移除**。ToolService 不支持 ExtensionService 的 `context:build` 事件机制，因此上下文注入（`[AIGC_CONTEXT]`）在本次重写中被移除。相关配置字段从 [`config.ts`](plugins/aka-ai-image-generator/src/shared/config.ts) 清理：`yesimbotContextInjectionEnabled`、`yesimbotContextHistorySize`、`yesimbotContextTtlSeconds`、`yesimbotPreferLastGeneratedInPrivateRoom`。
+
+## 0.8.4
+
+### Fixed
+
+- **YesImBot 桥接服务访问修复**：修复 `getExtensionService()` 无法访问 `ctx["yesimbot.extension"]` 服务的问题。根因是 `inject.optional` 中缺少 `"yesimbot.extension"` 声明（之前只有 `"yesimbot"`），导致 Koishi Context Proxy 拦截了所有对该服务的访问路径。
+
 ## 0.8.0
 
 ### Added
