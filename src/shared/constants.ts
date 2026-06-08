@@ -1,4 +1,5 @@
 export const PLUGIN_NAME = 'aka-ai-image-generator'
+export const CHATLUNA_BRIDGE_PLATFORM_NAME = 'aka-ai-image-generator-chatluna-bridge'
 export const COMMAND_TIMEOUT_SECONDS = 300
 
 export const COMMANDS = {

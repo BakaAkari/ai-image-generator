@@ -105,6 +105,15 @@ export interface Config {
   modelWhitelistUsers: string[]
   logLevel: LogLevel
 
+  // ── ⑦ ChatLuna 集成 ───────────────────────────────────────────────────────
+  chatlunaEnabled: boolean
+  chatlunaContextInjectionEnabled: boolean
+  chatlunaExposeQuotaTool: boolean
+  chatlunaExposeStyleListTool: boolean
+  chatlunaContextHistorySize: number
+  chatlunaContextTtlSeconds: number
+  chatlunaPreferLastGeneratedInPrivateRoom: boolean
+
   // ── 通用 ──────────────────────────────────────────────────────────────────
   apiTimeout: number
 }
@@ -358,6 +367,37 @@ export const Config = Schema.intersect([
       .step(1)
       .description('窗口内触发多少次拦截后给出警示'),
   }).description('🛡️ 安全策略').collapse(),
+
+  // ⑦ ChatLuna 集成（默认收起）
+  Schema.object({
+    chatlunaEnabled: Schema.boolean()
+      .default(false)
+      .description('启用后会在 ChatLuna 中注册图像生成工具，支持自然语言驱动生成'),
+    chatlunaContextInjectionEnabled: Schema.boolean()
+      .default(true)
+      .description('在 ChatLuna 对话开始前注入最近图像上下文，支持“继续上一张”等自然语言跟进'),
+    chatlunaExposeQuotaTool: Schema.boolean()
+      .default(true)
+      .description('是否暴露积分查询工具给 ChatLuna'),
+    chatlunaExposeStyleListTool: Schema.boolean()
+      .default(true)
+      .description('是否暴露风格列表工具给 ChatLuna'),
+    chatlunaContextHistorySize: Schema.number()
+      .default(20)
+      .min(1)
+      .max(100)
+      .step(1)
+      .description('每个 ChatLuna 会话保留的图像上下文条数'),
+    chatlunaContextTtlSeconds: Schema.number()
+      .default(86400)
+      .min(3600)
+      .max(604800)
+      .step(3600)
+      .description('图像上下文过期时间，单位秒；默认 24 小时'),
+    chatlunaPreferLastGeneratedInPrivateRoom: Schema.boolean()
+      .default(true)
+      .description('私有房间中自动将“上一张”等自然语言映射到最近生成的图像'),
+  }).description('💬 ChatLuna 集成').collapse(),
 
   // ⚙️ 运行与诊断
   Schema.object({

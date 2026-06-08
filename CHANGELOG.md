@@ -4,6 +4,26 @@
 
 - 暂无。
 
+## 0.7.0
+
+### Fixed
+
+- **ChatLuna 热重载工具刷新**：修复 `sync()` 在已启用时跳过重新注册的问题。管理员通过 Koishi Console 重载配置后新增的 style 预设现在会正确注册为 ChatLuna 动态工具（`aigc_style_{name}`），无需外部重启。
+
+### Added
+
+- **ChatLuna 桥接集成**：插件现在声明 ChatLuna 为可选依赖（`inject: { optional: ['chatluna'] }`），在 Koishi Console 中提供 `chatlunaEnabled` 开关控制是否启用桥接。
+- **5 个基础 ChatLuna 工具**：`aigc_generate_image`（文生图）、`aigc_edit_image`（图生图/编辑）、`aigc_apply_style_preset`（风格预设匹配）、`aigc_get_quota`（积分查询）、`aigc_list_styles`（风格列表）。
+- **动态风格工具**：每个已配置的 style 自动注册为独立 ChatLuna 工具（`aigc_style_{name}`），支持 ChatLuna 模型直接按名称或语义匹配调用预设风格。
+- **ChatLuna 上下文注入**：在 `chatluna/before-chat` 时注入 `[AIGC_CONTEXT]`（上一张图像引用）和 `[AIGC_STYLE_CANDIDATES]`（风格候选推荐），在 `chatluna/clear-chat-history` 时清除对应会话的图像上下文。
+- **积分制 API 适配**：所有 ChatLuna 工具调用完全适配 V2 积分计费体系（`calculateGenerationCost`、`checkAndReserveQuota`、`scaleGenerationCost`、`recordUsage`），返回 `creditSummary` 供 ChatLuna 展示。
+- **新增配置项**：`chatlunaEnabled`、`chatlunaContextInjectionEnabled`、`chatlunaExposeQuotaTool`、`chatlunaExposeStyleListTool`、`chatlunaContextHistorySize`、`chatlunaContextTtlSeconds`、`chatlunaPreferLastGeneratedInPrivateRoom`。
+- **配置热重载兼容**：ChatLuna 桥接状态随 Koishi 配置热重载自动同步（enable/disable），无需外部重启。
+
+### Changed
+
+- `index.ts` 启动日志新增 `chatluna` 状态字段（enabled/disabled）。
+
 ## 0.6.3
 
 ### Changed

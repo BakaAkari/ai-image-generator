@@ -1,6 +1,7 @@
 import { Context } from 'koishi'
 import path from 'node:path'
 
+import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
 import { registerAllCommands } from './commands/index.js'
 import { createImageGenerationHandlers } from './orchestrators/ImageGenerationOrchestrator.js'
 import { createGeminiProvider } from './providers/gemini.js'
@@ -30,6 +31,11 @@ import { PLUGIN_NAME } from './shared/constants.js'
  * 注：本插件**不包含视频生成**功能，相关代码 / 配置 / 文档全部不在 v2 范围内。
  */
 export const name = PLUGIN_NAME
+
+// ChatLuna 可选依赖声明（不安装 chatluna 时插件仍可正常工作）
+export const inject = {
+  optional: ['chatluna'],
+} as const
 
 // 暴露给 Koishi 的配置类型与 Schema（与 shared/config.ts 中的运行期 interface 对齐）
 export type Config = PluginConfig
@@ -78,19 +84,36 @@ export function apply(ctx: Context, config: Config) {
     getConfig: () => currentConfig,
   })
 
-  // 5. 配置热重载兼容（7.11.6 节）
+  // 5. ChatLuna 桥接管理器
+  const chatLunaBridgeManager = new ChatLunaBridgeManager(
+    ctx,
+    service,
+    currentConfig,
+    logger,
+  )
+  void chatLunaBridgeManager.sync(currentConfig.chatlunaEnabled)
+
+  // 6. 配置热重载兼容
   ctx.accept((next: Config) => {
     currentConfig = next
     service.updateConfig(next)
     commands.image.refreshStyleCommands()
+    chatLunaBridgeManager.updateConfig(next)
+    void chatLunaBridgeManager.sync(next.chatlunaEnabled)
+  })
+
+  // 7. 插件卸载时的清理
+  ctx.on('dispose' as any, async () => {
+    await chatLunaBridgeManager.dispose()
   })
 
   const registered = providerRegistry.list()
   logger.info(
-    'plugin=%s phase=4 status=protocol-mvp-ready providers=%s count=%d commands=%s',
+    'plugin=%s phase=4 status=protocol-mvp-ready providers=%s count=%d commands=%s chatluna=%s',
     name,
     registered.join(',') || '<none>',
     registered.length,
     '文生图,图生图,合成图,图像查询,图像账单,图像充值,图像排行榜',
+    currentConfig.chatlunaEnabled ? 'enabled' : 'disabled',
   )
 }

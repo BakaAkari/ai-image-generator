@@ -2,9 +2,9 @@
 
 ## Current status
 
-- Current package version: `0.6.3`.
-- Current line: `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.6.3` simplifies fixed account commands and expands the Koishi Console top usage guide; `0.5.x` runtime stabilization is archived as stable after remote validation.
-- Current UI model: supplier credentials + model mapping unified config.
+- Current package version: `0.7.0`.
+- Current line: `0.7.0` adds ChatLuna bridge integration; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
 ## Stable scope
@@ -260,6 +260,30 @@ Implemented scope:
 - Expanded `图像账单` so regular users can query their own recent ledger, administrators can query `@用户`, and administrators can use `--all` for global recent ledger events.
 - Expanded the top Koishi Console read-only guide into a command quick reference covering setup order, regular commands, administrator commands, common parameters, billing, and permission rules.
 
+### `0.7.0` ChatLuna bridge integration
+
+Status: implemented, pending remote validation.
+
+Implemented scope:
+
+- Declared ChatLuna as optional dependency (`inject: { optional: ['chatluna'] }`).
+- Created `bridge/chatluna/` module with runtime loader, types, tool definitions, tool runtime, tool registration, context injection, and bridge manager.
+- Registered 5 base ChatLuna tools (`aigc_generate_image`, `aigc_edit_image`, `aigc_apply_style_preset`, `aigc_get_quota`, `aigc_list_styles`) plus dynamic `aigc_style_{name}` tools for each configured style preset.
+- Implemented `chatluna/before-chat` context injection (`[AIGC_CONTEXT]` + `[AIGC_STYLE_CANDIDATES]`) and `chatluna/clear-chat-history` context cleanup.
+- All tool calls use V2 credit-based billing API (no count-based V1 compatibility layer).
+- Added Koishi Console configuration for ChatLuna bridge toggle and injection settings under a collapsible drawer.
+- ChatLuna bridge state synchronizes with Koishi config hot-reload; disposes cleanly on plugin unload.
+
+Remote validation focus:
+
+1. With `chatlunaEnabled=true` and ChatLuna installed, the plugin registers tools in ChatLuna.
+2. Without ChatLuna installed, the plugin starts normally and logs a warning.
+3. Base tools respond correctly to ChatLuna model calls with proper credit precheck, generation, recording, and creditSummary output.
+4. Dynamic style tools are registered per configured style presets and respond to calls.
+5. Context injection prepends image context and style candidates when the user mentions follow-up keywords or configured style terms.
+6. `chatluna/clear-chat-history` clears the conversation image context in the store.
+7. ChatLuna bridge toggles on/off with config hot-reload without errors.
+
 ## Deferred lines
 
 ### Console WebUI
@@ -270,11 +294,9 @@ Status: low-priority optional future direction.
 
 Do not use the Console WebUI document as implementation input for the current runtime plugin.
 
-### ChatLuna bridge and migration tooling
+### V1 migration tooling
 
 Status: retained as future planning only.
-
-The current `0.6.x` runtime must not expose incomplete ChatLuna configuration, ChatLuna tools, or V1 migration commands.
 
 ## Documentation maintenance rules
 
