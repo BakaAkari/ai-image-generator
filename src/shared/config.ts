@@ -427,7 +427,7 @@ export const Config = Schema.intersect([
       .description('日志级别；simple 记录关键流程，detail 增加脱敏请求诊断'),
     showQuotaInImageCommands: Schema.boolean()
       .default(true)
-      .description('生成完成后是否显示剩余积分'),
+      .description('生成完成后额外显示剩余积分明细（需先开启"显示本次消耗"）'),
     defaultNumImages: Schema.number()
       .default(1)
       .min(1)

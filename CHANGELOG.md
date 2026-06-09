@@ -4,6 +4,12 @@
 
 - 暂无。
 
+## 0.8.7
+
+### Fixed
+
+- **`showCreditCostInResult` 开关失效修复**：关闭"生成完成后显示本次消耗和剩余积分"后，生成图像仍会回复积分消耗信息。根因是 `ImageGenerationOrchestrator` 中使用 `config.showQuotaInImageCommands || config.showCreditCostInResult` 作为整体判断条件，`showQuotaInImageCommands`（默认 `true`，位于"运行与诊断"分组）会绕过用户对 `showCreditCostInResult` 的关闭。修复后 `showCreditCostInResult` 作为积分结果展示的总开关，关闭时不再显示任何积分相关结果消息；`showQuotaInImageCommands` 降级为子开关，仅在总开关开启时控制是否额外显示剩余积分明细。
+
 ## 0.8.6
 
 ### Fixed

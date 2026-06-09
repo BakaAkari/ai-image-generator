@@ -434,17 +434,17 @@ export function createImageGenerationHandlers(
         }
 
         // 可选：附带积分提示
-        if (config.showQuotaInImageCommands || config.showCreditCostInResult) {
+        // showCreditCostInResult 是总开关（"生成完成后显示本次消耗和剩余积分"）
+        // showQuotaInImageCommands 是子开关，在总开关开启时额外控制是否显示剩余积分明细
+        if (config.showCreditCostInResult) {
           try {
             const summary = usageResult?.summary || await service.getQuotaSummary(userId, userName)
             const lines = [
               '生成完成',
               '',
               `- 图片｜${generatedImages.length} 张`,
+              `- 本次消耗｜${service.formatCredits(usageResult?.consumedCredits ?? 0)}`,
             ]
-            if (config.showCreditCostInResult) {
-              lines.push(`- 本次消耗｜${service.formatCredits(usageResult?.consumedCredits ?? 0)}`)
-            }
             if (config.showQuotaInImageCommands) {
               lines.push(
                 `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
