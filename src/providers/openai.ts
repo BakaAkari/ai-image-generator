@@ -127,8 +127,8 @@ export class OpenAIProvider extends BaseImageProvider {
         normalized.code,
         normalized.statusCode ?? '-',
         normalized.retryable,
-        normalized.message,
-        JSON.stringify(normalized.context),
+        sanitizeString(normalized.message),
+        JSON.stringify(sanitizeError(normalized.context)),
       )
       throw normalized
     }
@@ -426,7 +426,7 @@ export class OpenAIProvider extends BaseImageProvider {
           this.modelId,
           size,
           imageDataList.length,
-          JSON.stringify(redactHeaders({ Authorization: `Bearer ${this.apiKey}` })),
+          JSON.stringify(redactHeaders(this.buildHeaders())),
         )
       }
       return await http.post(editUrl, formData, {

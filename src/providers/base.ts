@@ -9,6 +9,7 @@ import {
   TimeoutError,
   normalizeProviderError,
 } from './errors.js'
+import { sanitizeError } from './utils.js'
 import type {
   BaseProviderOptions,
   ImageGeneratedCallback,
@@ -174,7 +175,7 @@ export abstract class BaseImageProvider implements ImageProvider {
     try {
       await onImageGenerated(imageUrl, index, total)
     } catch (err) {
-      this.logger.error('provider=%s event=callback_failed index=%d total=%d error=%s', this.name, index, total, describeError(err))
+      this.logger.error('provider=%s event=callback_failed index=%d total=%d error=%s', this.name, index, total, describeError(sanitizeError(err)))
       throw err
     }
   }

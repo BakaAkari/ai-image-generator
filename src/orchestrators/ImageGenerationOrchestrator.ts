@@ -12,6 +12,7 @@
 
 import { h } from 'koishi'
 import type { Context, Session } from 'koishi'
+import { sanitizeString } from '../providers/utils.js'
 
 import type { Config } from '../shared/config.js'
 import { COMMAND_TIMEOUT_SECONDS } from '../shared/constants.js'
@@ -115,10 +116,10 @@ export function createImageGenerationHandlers(
     if (error instanceof Error) {
       return {
         name: error.name,
-        message: error.message,
+        message: sanitizeString(error.message),
       }
     }
-    return { value: String(error ?? '') }
+    return { value: sanitizeString(String(error ?? '')) }
   }
 
   async function sendFinalText(
@@ -493,7 +494,8 @@ export function createImageGenerationHandlers(
         }
       }
 
-      const message = error instanceof Error ? error.message : String(error)
+      const raw = error instanceof Error ? error.message : String(error)
+      const message = sanitizeString(raw)
       return sendFinalText(
         session,
         ['生成失败', '', `- 原因｜${message}`].join('\n'),

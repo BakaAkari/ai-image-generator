@@ -186,11 +186,12 @@ export class GeminiProvider extends BaseImageProvider {
 
         if (allImages.length > 0 && normalized.retryable === false) {
           this.logger.warn(
-            'provider=%s event=partial_failed generated=%d requested=%d code=%s',
+            'provider=%s event=partial_failed generated=%d requested=%d code=%s message=%s',
             this.name,
             allImages.length,
             numImages,
-            normalized.code
+            normalized.code,
+            sanitizeString(normalized.message),
           )
           break
         }
