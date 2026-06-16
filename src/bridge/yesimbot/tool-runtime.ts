@@ -143,7 +143,7 @@ async function runGenerateImageTool(
 
     return Success({
       message: `生成完成！共生成 ${images.length} 张图像。`,
-      images,
+      images: images.map(summarizeImageUrl),
       ...(usage?.summary
         ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
         : {}),
@@ -217,7 +217,7 @@ async function runEditImageTool(
 
     return Success({
       message: `编辑完成！共生成 ${images.length} 张图像。`,
-      images,
+      images: images.map(summarizeImageUrl),
       ...(usage?.summary
         ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
         : {}),
@@ -292,7 +292,7 @@ async function runStylePresetTool(
 
     return Success({
       message: `已应用「${preset.commandName}」风格，生成 ${images.length} 张图像。`,
-      images,
+      images: images.map(summarizeImageUrl),
       ...(usage?.summary
         ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
         : {}),
@@ -492,6 +492,13 @@ function parseImagesFromMessageContent(content: unknown): string[] {
   }
 
   return []
+}
+
+function summarizeImageUrl(url: string): string {
+  if (url.startsWith('data:')) {
+    return '[base64_image]'
+  }
+  return url
 }
 
 // ---------------------------------------------------------------------------

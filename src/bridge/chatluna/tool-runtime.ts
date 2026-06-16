@@ -143,7 +143,7 @@ async function runGenerateImageTool(
     return formatToolJson({
       ok: true,
       imagesCount: images.length,
-      images,
+      images: images.map(summarizeImageUrl),
       creditSummary: usage?.summary
         ? {
             totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
@@ -216,7 +216,7 @@ async function runEditImageTool(
     return formatToolJson({
       ok: true,
       imagesCount: images.length,
-      images,
+      images: images.map(summarizeImageUrl),
       referenceMode,
       creditSummary: usage?.summary
         ? {
@@ -297,7 +297,7 @@ async function runStylePresetTool(
       ok: true,
       stylePreset: preset.commandName,
       imagesCount: images.length,
-      images,
+      images: images.map(summarizeImageUrl),
       creditSummary: usage?.summary
         ? {
             totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
@@ -482,7 +482,7 @@ async function runDynamicStyleTool(
       ok: true,
       stylePreset: style.commandName,
       imagesCount: images.length,
-      images,
+      images: images.map(summarizeImageUrl),
       creditSummary: usage?.summary
         ? {
             totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
@@ -676,6 +676,13 @@ function formatToolError(message: string): string {
 
 function formatToolJson(value: unknown): string {
   return JSON.stringify(value, null, 2)
+}
+
+function summarizeImageUrl(url: string): string {
+  if (url.startsWith('data:')) {
+    return '[base64_image]'
+  }
+  return url
 }
 
 function normalizeImageUrls(items: unknown[]): string[] {

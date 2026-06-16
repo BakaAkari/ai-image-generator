@@ -4,6 +4,15 @@
 
 - 暂无。
 
+## 0.8.9
+
+### Fixed
+
+- **ChatLuna / YesImBot 工具返回结果中 base64 图片数据导致上下文爆炸**：
+  - 根因：`runGenerateImageTool`、`runEditImageTool`、`runStylePresetTool` 等工具在返回结果中直接包含 `images` 数组，当 Provider 返回 `data:image/...;base64,...` 内嵌格式时，整个 base64 字符串（单张图可达数十万 token）被 ChatLuna / YesImBot 作为工具结果写入 LLM 对话上下文，导致后续请求超过模型上限（131072 token）并进入无限重试。
+  - 修复：在两个桥接的 `tool-runtime.ts` 中引入 `summarizeImageUrl(url)` 辅助函数，将 `data:` 开头的 base64 URL 替换为占位符 `[base64_image]`，仅保留远程 URL。工具结果中仍保留 `imagesCount` 和积分摘要，LLM 仍可感知生成数量与状态，但不会被图片数据撑爆上下文。
+  - 影响范围：`plugins/aka-ai-image-generator/src/bridge/chatluna/tool-runtime.ts`（4 处返回） + `plugins/aka-ai-image-generator/src/bridge/yesimbot/tool-runtime.ts`（3 处返回）。
+
 ## 0.8.7
 
 ### Fixed
