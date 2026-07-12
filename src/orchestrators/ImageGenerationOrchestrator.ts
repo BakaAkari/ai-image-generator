@@ -122,14 +122,27 @@ export function createImageGenerationHandlers(
     return { value: sanitizeString(String(error ?? '')) }
   }
 
+  function isGroupSession(session: Session): boolean {
+    return (session as Session & { isDirect?: boolean }).isDirect !== true && Boolean(session.guildId)
+  }
+
+  function formatUserScopedText(session: Session, message: string, userId: string, userName?: string): string {
+    if (!isGroupSession(session) || !userId || userId === 'unknown') return message
+    const displayName = sanitizeString((userName || userId).trim()) || userId
+    const [firstLine = '', ...restLines] = message.split('\n')
+    const scopedFirstLine = `[${displayName}] ${firstLine}`.trimEnd()
+    return [scopedFirstLine, ...restLines].join('\n')
+  }
+
   async function sendFinalText(
     session: Session,
     message: string,
     userId: string,
     logLabel: string,
+    userName?: string,
   ): Promise<string> {
     try {
-      await session.send(message)
+      await session.send(formatUserScopedText(session, message, userId, userName))
     } catch (sendError) {
       logger.error(logLabel, {
         userId,
@@ -282,7 +295,7 @@ export function createImageGenerationHandlers(
     const taskTtlMs = Math.max(COMMAND_TIMEOUT_SECONDS * 1000 + 60_000, (config.apiTimeout || 60) * 1000 * 4)
     const requestId = userManager.startTask(userId, taskTtlMs)
     if (!requestId) {
-      return '任务进行中，请完成后再试'
+      return formatUserScopedText(session, '任务进行中，请完成后再试', userId, userName)
     }
 
     const startedAt = Date.now()
@@ -309,7 +322,7 @@ export function createImageGenerationHandlers(
         platform,
       )
       if (!reservation.allowed) {
-        return reservation.message || '额度不足｜无法继续生成'
+        return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
       }
 
       // 2. 状态提示
@@ -324,9 +337,10 @@ export function createImageGenerationHandlers(
       if (config.showCreditCostInResult) {
         statusParts.push(`- 预计消耗｜${service.formatCredits(estimatedCost.totalCredits)}`)
       }
-      await session.send(statusParts.length
+      const startMessage = statusParts.length
         ? ['开始生成', '', `- 类型｜${options.styleName}`, ...statusParts].join('\n')
-        : `开始生成｜${options.styleName}`)
+        : `开始生成｜${options.styleName}`
+      await session.send(formatUserScopedText(session, startMessage, userId, userName))
 
       // 3. 流式回调：每生成一张就发送
       const generatedImages: string[] = []
@@ -408,6 +422,7 @@ export function createImageGenerationHandlers(
             ['生成已完成但扣费记录失败', '', '- 建议｜联系管理员核对账单'].join('\n'),
             userId,
             '发送扣费失败提示失败',
+            userName,
           )
         }
       }
@@ -453,7 +468,7 @@ export function createImageGenerationHandlers(
                 `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
               )
             }
-            return lines.join('\n')
+            return formatUserScopedText(session, lines.join('\n'), userId, userName)
           } catch {
             return ''
           }
@@ -466,6 +481,7 @@ export function createImageGenerationHandlers(
         ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n'),
         userId,
         '发送生成失败提示失败',
+        userName,
       )
     } catch (error) {
       logger.error('图像生成流程异常', {
@@ -484,6 +500,7 @@ export function createImageGenerationHandlers(
               ['内容安全拦截', '', '请调整描述后再试；多次触发会影响后续使用'].join('\n'),
               userId,
               '发送内容安全拦截提示失败',
+              userName,
             )
           }
         } catch (recordErr) {
@@ -501,6 +518,7 @@ export function createImageGenerationHandlers(
         ['生成失败', '', `- 原因｜${message}`].join('\n'),
         userId,
         '发送生成失败提示失败',
+        userName,
       )
     } finally {
       userManager.endTask(userId, requestId)
