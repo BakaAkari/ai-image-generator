@@ -164,6 +164,8 @@ export class UserManager {
   private rateLimitMap = new Map<string, number[]>()
   private securityBlockMap = new Map<string, number[]>()
   private securityWarningMap = new Map<string, boolean>()
+  /** 定时清理 volatile map 的 timer handle */
+  private pruneTimer: ReturnType<typeof setInterval> | undefined
 
   constructor(baseDir: string, logger: any) {
     this.logger = logger
@@ -176,6 +178,17 @@ export class UserManager {
 
     if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true })
     if (!existsSync(this.snapshotsDir)) mkdirSync(this.snapshotsDir, { recursive: true })
+
+    // 每 5 分钟清理一次过期数据，防止内存泄漏
+    this.pruneTimer = setInterval(() => this.pruneStaleMaps(), 5 * 60 * 1000)
+    this.pruneTimer.unref()
+  }
+
+  dispose() {
+    if (this.pruneTimer !== undefined) {
+      clearInterval(this.pruneTimer)
+      this.pruneTimer = undefined
+    }
   }
 
   startTask(userId: string, ttlMs = 10 * 60 * 1000): string | undefined {
@@ -216,6 +229,40 @@ export class UserManager {
         this.activeTasks.delete(userId)
       }
     }
+  }
+
+  /** 清理 volatile map 中长期不活跃的条目 */
+  private pruneStaleMaps() {
+    const now = Date.now()
+    // 限频窗口（取 2 倍 rateLimitWindow 或 10 分钟兜底）
+    const rateLimitWindowMs = Math.max(10 * 60 * 1000, this.defaultPruneWindowMs)
+
+    for (const [userId, timestamps] of this.rateLimitMap) {
+      const valid = timestamps.filter(t => t > now - rateLimitWindowMs)
+      if (valid.length === 0) {
+        this.rateLimitMap.delete(userId)
+      } else {
+        this.rateLimitMap.set(userId, valid)
+      }
+    }
+
+    for (const [userId] of this.securityBlockMap) {
+      // securityBlockWindow 由 config 控制但运行时拿不到，使用 1 小时兜底
+      if (!this.securityBlockMap.has(userId)) continue
+      const timestamps = this.securityBlockMap.get(userId)!
+      const valid = timestamps.filter(t => t > now - 3600_000)
+      if (valid.length === 0) {
+        this.securityBlockMap.delete(userId)
+        this.securityWarningMap.delete(userId)
+      } else {
+        this.securityBlockMap.set(userId, valid)
+      }
+    }
+  }
+
+  /** 默认清理窗口，pruneStaleMaps 使用 */
+  private get defaultPruneWindowMs(): number {
+    return 10 * 60 * 1000
   }
 
   isAdmin(userId: string, config: Config): boolean {
@@ -420,12 +467,12 @@ export class UserManager {
 
     const rateLimitCheck = this.checkRateLimit(userId, config)
     if (!rateLimitCheck.allowed) return { ...rateLimitCheck }
-    this.updateRateLimit(userId)
 
+    // 在确认积分充足前不计入限频窗口，避免余额不足的失败请求消耗限频配额
     await this.loadUsersStore()
     const userData = await this.getUserData(userId, userName, config)
 
-    return await this.dataLock.acquire(async () => {
+    const checkResult = await this.dataLock.acquire(async () => {
       const cachedUserData = this.usersCache!.users[userId] || userData
       const reset = this.ensureDailyReset(cachedUserData, config)
       if (reset) await this.saveUsersStoreInternal()
@@ -444,10 +491,16 @@ export class UserManager {
           ].join('\n'),
         }
       }
-
-      const reservationId = `${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      return { allowed: true, reservationId }
+      return { allowed: true }
     })
+
+    if (!checkResult.allowed) return checkResult
+
+    // 积分充足后才计入限频
+    this.updateRateLimit(userId)
+
+    const reservationId = `${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    return { allowed: true, reservationId }
   }
 
   async recordUsageOnly(

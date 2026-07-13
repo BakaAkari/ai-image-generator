@@ -4,6 +4,17 @@
 
 - 暂无。
 
+## 0.8.13
+
+### Fixed
+
+- 限频更新延迟到积分确认后才计入窗口，避免余额不足的失败请求消耗限频配额。
+- 任务锁 TTL 上限以命令超时 + 120s 兜底，不再随 `apiTimeout` 配置线性增长。
+- 新增 volatile 内存映射（`rateLimitMap`、`securityBlockMap`、`securityWarningMap`）每 5 分钟全局清理，防止内存泄漏。
+- `session.userId` 缺失时拒绝执行并返回 "无法识别用户身份" 消息，不再使用 `unknown` 兜底。
+- ChatLuna bridge `sendGeneratedImages()` 单张发送失败不影响后续图片发送，并返回成功发送的 URL 列表。
+- `downloadImageAsBase64()` 新增魔数校验，拒绝非图片内容（如 HTML 错误页）被当作有效图片向后传递。
+
 ## 0.8.12
 
 ### Fixed

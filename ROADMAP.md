@@ -2,8 +2,8 @@
 
 ## Current status
 
-- Current package version: `0.8.12`.
-- Current line: `0.8.12` fixes command-timeout stale Provider callbacks so an older timed-out generation cannot send images during a later request; `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current package version: `0.8.13`.
+- Current line: `0.8.13` hardens runtime reliability: rate-limit ordering fix, volatile map pruning, task TTL cap, userId guard, ChatLuna bridge send isolation, and download-image magic-byte validation; `0.8.12` fixes command-timeout stale Provider callbacks; `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
 - Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle + YesImBot bridge toggle.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 

@@ -94,6 +94,26 @@ export function sanitizeString(str: string): string {
 }
 
 /**
+ * 校验 Buffer 是否为已知图片格式的魔数
+ */
+function isValidImageMagic(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true
+  // PNG: 89 50 4E 47
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true
+  // GIF: 47 49 46 38 (GIF8)
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true
+  // WEBP: 52 49 46 46 xxxx 57 45 42 50
+  if (buffer.length >= 12 &&
+    buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+    buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) return true
+  // BMP: 42 4D
+  if (buffer[0] === 0x42 && buffer[1] === 0x4D) return true
+  return false
+}
+
+/**
  * 下载图片并转换为 Base64
  * 包含 MIME 类型检测和大小限制
  * 支持 Koishi 内部协议 URL (如 internal:lark/... internal:onebot/... 等)
@@ -140,6 +160,11 @@ export async function downloadImageAsBase64(
         }
       })
       buffer = Buffer.from(response)
+    }
+
+    // 校验 buffer 是否为有效图片数据（魔数检测），防止 Provider 返回非图片内容（如 HTML 错误页）时 200 状态码绕过校验
+    if (buffer.length < 4 || !isValidImageMagic(buffer)) {
+      throw new Error(`下载的内容不是有效图片（魔数不匹配，buffer=${buffer.length}B, head=${Array.from(buffer.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')})`)
     }
     if (buffer.length > maxSize) {
       throw new Error(`图片大小超过限制 (${(maxSize / 1024 / 1024).toFixed(1)}MB)`)
@@ -204,7 +229,7 @@ export async function downloadImageAsBase64(
   } catch (error: any) {
     logger.error('下载图片失败', { url, error: sanitizeError(error) })
 
-    if (error?.message?.includes('图片大小超过限制')) {
+    if (error?.message?.includes('图片大小超过限制') || error?.message?.includes('不是有效图片')) {
       throw error
     }
     throw new Error('下载图片失败，请检查图片链接是否有效')

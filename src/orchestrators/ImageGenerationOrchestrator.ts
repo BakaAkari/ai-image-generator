@@ -288,11 +288,19 @@ export function createImageGenerationHandlers(
     options: ExecuteGenerationOptions,
   ): Promise<string> {
     const config = getConfig()
-    const userId = session.userId || 'unknown'
+    const userId = session.userId
+    if (!userId) {
+      return formatUserScopedText(session, '无法识别用户身份，请稍后重试', '', userId || '')
+    }
     const userName = session.username || session.author?.name || userId
     const platform = session.platform
 
-    const taskTtlMs = Math.max(COMMAND_TIMEOUT_SECONDS * 1000 + 60_000, (config.apiTimeout || 60) * 1000 * 4)
+    // 任务锁 TTL 上限为命令超时 + 2 分钟兜底，避免长时间卡锁
+    const graceMs = 120_000
+    const taskTtlMs = Math.min(
+      COMMAND_TIMEOUT_SECONDS * 1000 + graceMs,
+      Math.max(COMMAND_TIMEOUT_SECONDS * 1000 + 60_000, (config.apiTimeout || 60) * 1000 * 4),
+    )
     const requestId = userManager.startTask(userId, taskTtlMs)
     if (!requestId) {
       return formatUserScopedText(session, '任务进行中，请完成后再试', userId, userName)

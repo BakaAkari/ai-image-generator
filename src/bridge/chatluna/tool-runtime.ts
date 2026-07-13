@@ -656,11 +656,19 @@ function parseImagesFromMessageContent(content: unknown): string[] {
 // 工具函数
 // ---------------------------------------------------------------------------
 
-async function sendGeneratedImages(session: ChatLunaSessionLike, images: string[]) {
-  if (typeof session.send !== 'function') return
+async function sendGeneratedImages(session: ChatLunaSessionLike, images: string[]): Promise<string[]> {
+  if (typeof session.send !== 'function') return []
+  const sent: string[] = []
   for (const imageUrl of images) {
-    await Promise.resolve(session.send(h.image(imageUrl)))
+    try {
+      await Promise.resolve(session.send(h.image(imageUrl)))
+      sent.push(imageUrl)
+    } catch (err) {
+      // 单张发送失败不影响后续图片
+      continue
+    }
   }
+  return sent
 }
 
 function expectString(value: unknown, key: string): string {
