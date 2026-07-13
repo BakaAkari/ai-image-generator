@@ -301,12 +301,18 @@ export function createImageGenerationHandlers(
     const startedAt = Date.now()
     const timeoutMs = COMMAND_TIMEOUT_SECONDS * 1000
 
-    // 顶层超时控制（命令级，与单次 HTTP 超时区分）
+    // 顶层超时控制（命令级，与单次 HTTP 超时区分）。
+    // Promise.race 不能取消底层 Provider Promise，因此必须让后续回调显式失效，
+    // 防止旧请求在命令超时后继续向会话发送图片。
+    let generationActive = true
     let timeoutFired = false
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined
     const checkTimeout = () => timeoutFired || Date.now() - startedAt > timeoutMs
+    const isGenerationStale = () => !generationActive || checkTimeout()
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutTimer = setTimeout(() => {
         timeoutFired = true
+        generationActive = false
         reject(new Error(`命令执行超时（${COMMAND_TIMEOUT_SECONDS}秒）`))
       }, timeoutMs)
     })
@@ -349,13 +355,29 @@ export function createImageGenerationHandlers(
         index: number,
         total: number,
       ) => {
-        if (checkTimeout()) {
-          throw new Error('命令执行超时')
+        if (isGenerationStale()) {
+          logger.warn('忽略已失效的图像生成回调', {
+            userId,
+            requestId,
+            index: index + 1,
+            total,
+            timeoutFired,
+          })
+          return
         }
-        generatedImages.push(imageUrl)
-
         try {
+          if (isGenerationStale()) {
+            logger.warn('跳过已失效的图片发送', {
+              userId,
+              requestId,
+              index: index + 1,
+              total,
+              timeoutFired,
+            })
+            return
+          }
           await session.send(h.image(imageUrl))
+          generatedImages.push(imageUrl)
         } catch (sendError) {
           logger.error('发送图片失败', {
             userId,
@@ -381,12 +403,18 @@ export function createImageGenerationHandlers(
       )
 
       const allImages = await Promise.race([generationPromise, timeoutPromise])
+      generationActive = false
+      if (timeoutTimer !== undefined) {
+        clearTimeout(timeoutTimer)
+        timeoutTimer = undefined
+      }
 
       // 5. 兜底：流式回调没触发时，统一发送
-      if (allImages && allImages.length > 0) {
+      if (allImages && allImages.length > 0 && !checkTimeout()) {
         for (const imageUrl of allImages) {
           if (!generatedImages.includes(imageUrl)) {
             try {
+              if (checkTimeout()) break
               await session.send(h.image(imageUrl))
               generatedImages.push(imageUrl)
             } catch (sendError) {
@@ -521,6 +549,8 @@ export function createImageGenerationHandlers(
         userName,
       )
     } finally {
+      generationActive = false
+      if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
       userManager.endTask(userId, requestId)
     }
   }
