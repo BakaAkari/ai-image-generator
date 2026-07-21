@@ -1,4 +1,4 @@
-import { Context } from 'koishi'
+import { Context, Schema } from 'koishi'
 import path from 'node:path'
 
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
@@ -87,6 +87,43 @@ export function apply(ctx: Context, config: Config) {
   // 3b. 动态模型目录 —— 按激活供应商拉取模型清单 + 计价
   const catalog = new ImageCatalogService(ctx, logger, dataDir)
 
+  // 目录 → service：计价自动换算 + 映射校验
+  service.catalogPricingLookup = (modelId: string) => {
+    const model = catalog.current?.models.find(m => m.id === modelId)
+    return model?.pricing
+  }
+
+  // Schema.dynamic 选项源：模型映射的 modelId 下拉来自动态目录。
+  // 机制同 chatluna：ctx.schema.set(name, Schema.union(...))，目录刷新后重建。
+  const updateModelOptions = () => {
+    const models = catalog.current?.models ?? []
+    if (!models.length || !ctx.scope.isActive) return
+    ctx.schema.set(
+      'image-generator.models',
+      Schema.union(models.map(m =>
+        Schema.const(m.id).description(
+          m.pricing.type === 'per-call' && m.pricing.pricePerCall != null
+            ? `${m.id}（$${m.pricing.pricePerCall.toFixed(3)}/次）`
+            : m.pricing.type === 'per-token'
+              ? `${m.id}（token 计费 ×${m.pricing.tokenRatio ?? '?'}）`
+              : m.id,
+        )
+      )),
+    )
+  }
+
+  // 目录刷新后：重校验映射，失效时告警
+  const revalidate = () => {
+    const models = catalog.current?.models ?? []
+    if (!models.length) return
+    const invalid = service.revalidateMappings(models)
+    if (invalid.length) {
+      logger.warn('模型映射校验：%d 个映射在当前供应商目录中不可用：%s', invalid.length, invalid.join('、'))
+    } else {
+      logger.info('模型映射校验通过：全部映射在当前供应商目录中可用')
+    }
+  }
+
   const resolveCredentials = (config: Config) => {
     const supplier: ActiveSupplier = config.activeSupplier ?? 'yunwu'
     const s = config.providerSettings
@@ -118,6 +155,12 @@ export function apply(ctx: Context, config: Config) {
     // gemini-official：目录拉取协议不同（/v1beta/models），M1 暂不支持
     return null
   }
+
+  // 包装 refresh：每次刷新完成后重校验映射
+  const origRefresh = catalog.refresh.bind(catalog)
+  catalog.refresh = (cfg) => origRefresh(cfg).then((snap) => { revalidate(); updateModelOptions(); return snap })
+
+  updateModelOptions()
 
   catalog.start(() => {
     const cred = resolveCredentials(currentConfig)

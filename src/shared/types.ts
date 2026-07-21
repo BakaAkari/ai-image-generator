@@ -23,9 +23,9 @@ export type ApiFormat = ProviderType
 export interface ModelMappingConfig {
   suffix: string
   modelId: string
-  /** 供应商凭证入口：openai-compatible / gemini-official / gpt-official */
+  /** @deprecated 0.9.0 起供应商由全局 activeSupplier 统一决定；保留字段以兼容旧配置反序列化 */
   supplier?: ImageProvider
-  /** 运行时协议：openai / gemini */
+  /** @deprecated 0.9.0 起协议由模型 ID 自动推断（gemini 系 → gemini 协议）；保留字段以兼容旧配置 */
   protocol?: ProviderType
   /** @deprecated 0.5.10 起改名为 protocol；保留读取以兼容 0.5.9 配置 */
   provider?: ProviderType

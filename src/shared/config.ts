@@ -67,6 +67,10 @@ export interface Config {
   activeSupplier?: 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
   /** 模型目录自动刷新间隔（小时） */
   catalogRefreshHours?: number
+  /** 积分汇率：1 美元 = N 积分（目录计价自动换算用） */
+  creditExchangeRate?: number
+  /** 定价加成倍率（成本 × N = 用户积分价） */
+  costMarkup?: number
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
@@ -205,6 +209,16 @@ const ActiveSupplierSchema = Schema.object({
     .max(72)
     .step(1)
     .description('模型目录自动刷新间隔（小时）；聊天命令"图像模型"可手动刷新'),
+  creditExchangeRate: Schema.number()
+    .default(1000)
+    .min(0)
+    .step(1)
+    .description('积分汇率：1 美元 = N 积分；模型映射积分价留空时按目录计价自动换算'),
+  costMarkup: Schema.number()
+    .default(1.3)
+    .min(0.1)
+    .step(0.05)
+    .description('定价加成倍率：目录成本 × N = 向用户收取的积分价'),
 }).description('🛰️ 激活供应商 / 动态模型目录')
 
 // ----------------------------------------------------------------------------
@@ -231,52 +245,29 @@ export const Config = Schema.intersect([
   Schema.object({
     modelMappings: Schema.array(
       Schema.object({
-        suffix: Schema.string().required().description('命令名'),
-        modelId: Schema.string().required().description('模型 ID'),
-        supplier: Schema.union([
-          Schema.const('openai-compatible').description('第三方'),
-          Schema.const('gpt-official').description('OpenAI'),
-          Schema.const('gemini-official').description('Gemini'),
-        ])
-          .default('openai-compatible')
-          .description('供应商'),
-        protocol: Schema.union([
-          Schema.const('openai').description('OpenAI'),
-          Schema.const('gemini').description('Gemini'),
-        ])
-          .default('openai')
-          .description('接口格式'),
+        suffix: Schema.string().required().description('命令名').role('table-cell', { width: 12 }),
+        modelId: Schema.dynamic('image-generator.models')
+          .required()
+          .description('模型（来自动态目录）')
+          .role('table-cell', { width: 32 }),
         restricted: Schema.boolean()
           .default(false)
-          .description('限制项'),
+          .description('限制项')
+          .role('table-cell', { width: 10 }),
         creditCostPerImage: Schema.number()
-          .default(1)
           .min(0)
           .max(100000)
           .step(0.01)
-          .description('每张积分，支持小数'),
+          .description('每张积分；留空 = 按目录计价自动换算')
+          .default(undefined as unknown as number),
       }).collapse()
     )
       .role('table')
       .default([
-        {
-          suffix: 'gpt',
-          modelId: 'gpt-image-2',
-          supplier: 'gpt-official',
-          protocol: 'openai',
-          restricted: false,
-          creditCostPerImage: 1,
-        },
-        {
-          suffix: 'gemini',
-          modelId: 'gemini-3-pro-image-preview',
-          supplier: 'openai-compatible',
-          protocol: 'gemini',
-          restricted: false,
-          creditCostPerImage: 1,
-        },
+        { suffix: 'gpt', modelId: 'gpt-image-2', restricted: false, creditCostPerImage: undefined as unknown as number },
+        { suffix: 'gemini', modelId: 'gemini-3-pro-image-preview', restricted: false, creditCostPerImage: undefined as unknown as number },
       ])
-      .description('模型路由；第一条为默认模型，快捷命令可通过模型后缀引用'),
+      .description('模型路由；第一条为默认模型。供应商与协议由激活供应商统一决定，不在此配置'),
   }).description('🔀 模型映射').collapse(),
 
   // ③ Prompt 预设 / 快捷命令

@@ -400,6 +400,9 @@ export class AiImageGeneratorService extends Service {
     )
   }
 
+  /** 目录计价查询函数（由 index.ts 注入；未注入时自动换算不生效） */
+  public catalogPricingLookup: ((modelId: string) => { type: string; pricePerCall?: number; tokenRatio?: number } | undefined) | undefined
+
   buildGenerationSetup(numImages: number, modifiers?: ImageGenerationModifiers) {
     const requestContext: ImageRequestContext = { numImages }
     const modelMapping = modifiers?.modelMapping
@@ -407,6 +410,7 @@ export class AiImageGeneratorService extends Service {
       numImages,
       modelMapping,
       config: this.pluginConfig,
+      catalogPricingLookup: this.catalogPricingLookup,
     })
 
     if (modelMapping) {
@@ -444,6 +448,7 @@ export class AiImageGeneratorService extends Service {
       numImages,
       modelMapping,
       config: this.pluginConfig,
+      catalogPricingLookup: this.catalogPricingLookup,
     })
   }
 
@@ -578,10 +583,24 @@ export class AiImageGeneratorService extends Service {
   }
 
   private resolveModelRoute(mapping: ModelMappingConfig): { supplier: ImageProvider; protocol: ProviderType } {
-    const protocol = mapping.protocol || mapping.provider || 'openai'
-    const supplier = mapping.supplier || this.inferLegacySupplier(protocol)
+    // 0.9.0：供应商与协议不再逐映射配置。
+    // - 供应商：由全局 activeSupplier 统一决定凭证入口
+    // - 协议：由模型 ID 自动推断（gemini 系走 gemini 协议，其余走 openai 协议）
+    const protocol: ProviderType = /gemini/i.test(mapping.modelId) ? 'gemini' : 'openai'
+    const supplier = this.resolveActiveSupplierRoute(protocol, mapping)
     this.assertRouteSupported(supplier, protocol, mapping)
     return { supplier, protocol }
+  }
+
+  /** activeSupplier → 运行时凭证入口（ImageProvider） */
+  private resolveActiveSupplierRoute(protocol: ProviderType, mapping?: ModelMappingConfig): ImageProvider {
+    const active = this.pluginConfig.activeSupplier
+    if (active === 'gptgod' || active === 'yunwu') return 'openai-compatible'
+    if (active === 'openai-official') return 'gpt-official'
+    if (active === 'gemini-official') return 'gemini-official'
+    // 未配置 activeSupplier（旧配置升级）：沿用 mapping 上的 legacy 字段，保证行为不变
+    if (mapping?.supplier) return mapping.supplier
+    return this.inferLegacySupplier(mapping?.protocol || mapping?.provider || protocol)
   }
 
   private inferLegacySupplier(protocol: ProviderType): ImageProvider {
@@ -609,8 +628,33 @@ export class AiImageGeneratorService extends Service {
 
   private getFirstModelMapping(): ModelMappingConfig | undefined {
     const mappings = this.pluginConfig.modelMappings
-    if (Array.isArray(mappings) && mappings.length > 0) return mappings[0]
-    return undefined
+    if (!Array.isArray(mappings) || mappings.length === 0) return undefined
+    // 目录校验后，跳过失效映射（modelId 不在当前供应商目录中）
+    const available = mappings.filter(m => !this.unavailableModelIds.has(m.modelId))
+    return available[0] ?? mappings[0]
+  }
+
+  /** 目录校验：不在当前供应商目录中的 modelId 集合（目录为空时不校验，避免误伤） */
+  private unavailableModelIds = new Set<string>()
+
+  /** 由 index.ts 在目录刷新后调用：重校验映射，返回失效列表用于告警 */
+  public revalidateMappings(models: Array<{ id: string }>): string[] {
+    this.unavailableModelIds.clear()
+    if (!models.length) return []
+    const catalogIds = new Set(models.map(m => m.id))
+    const invalid: string[] = []
+    for (const mapping of this.pluginConfig.modelMappings ?? []) {
+      if (!catalogIds.has(mapping.modelId)) {
+        this.unavailableModelIds.add(mapping.modelId)
+        invalid.push(`${mapping.suffix} → ${mapping.modelId}`)
+      }
+    }
+    return invalid
+  }
+
+  /** 映射是否在目录中有效（供计费/命令层查询） */
+  public isMappingAvailable(mapping: ModelMappingConfig): boolean {
+    return !this.unavailableModelIds.has(mapping.modelId)
   }
 
   private buildProviderFactoryConfig(
