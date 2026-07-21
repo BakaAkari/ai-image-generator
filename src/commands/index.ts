@@ -10,6 +10,7 @@ import type { Config } from '../shared/config.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 
+import { registerCatalogCommands, type RegisterCatalogCommandsParams } from './catalog.js'
 import { registerHelpCommands } from './help.js'
 import { registerImageCommands } from './image.js'
 import type { RegisteredImageCommands } from './image.js'
@@ -25,8 +26,11 @@ export interface RegisteredAllCommands {
   image: RegisteredImageCommands
 }
 
-export function registerAllCommands(params: RegisterAllCommandsParams): RegisteredAllCommands {
+export function registerAllCommands(
+  params: RegisterAllCommandsParams & { catalogParams?: RegisterCatalogCommandsParams },
+): RegisteredAllCommands {
   const image = registerImageCommands(params)
   registerHelpCommands(params)
+  if (params.catalogParams) registerCatalogCommands(params.catalogParams)
   return { image }
 }

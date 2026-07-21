@@ -2,6 +2,8 @@ import { Context } from 'koishi'
 import path from 'node:path'
 
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
+import { ImageCatalogService } from './catalog/image-catalog.js'
+import type { ActiveSupplier } from './catalog/types.js'
 import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
 import { createImageGenerationHandlers } from './orchestrators/ImageGenerationOrchestrator.js'
@@ -82,12 +84,69 @@ export function apply(ctx: Context, config: Config) {
     getConfig: () => currentConfig,
   })
 
+  // 3b. 动态模型目录 —— 按激活供应商拉取模型清单 + 计价
+  const catalog = new ImageCatalogService(ctx, logger, dataDir)
+
+  const resolveCredentials = (config: Config) => {
+    const supplier: ActiveSupplier = config.activeSupplier ?? 'yunwu'
+    const s = config.providerSettings
+    if (supplier === 'yunwu' || supplier === 'gptgod') {
+      const apiKey = s?.openaiCompatibleApiKey || config.openaiCompatibleApiKey || ''
+      const defaultBase = supplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'
+      const apiBase = s?.openaiCompatibleApiBase || config.openaiCompatibleApiBase || defaultBase
+      if (!apiKey) return null
+      return {
+        supplier,
+        apiBase,
+        apiKey,
+        timeoutSec: config.apiTimeout ?? 60,
+        refreshHours: config.catalogRefreshHours ?? 6,
+        extraHeaders: s?.openaiCompatibleExtraHeaders || config.openaiCompatibleExtraHeaders,
+      }
+    }
+    if (supplier === 'openai-official') {
+      const apiKey = s?.gptOfficialApiKey || config.gptOfficialApiKey || ''
+      if (!apiKey) return null
+      return {
+        supplier,
+        apiBase: 'https://api.openai.com',
+        apiKey,
+        timeoutSec: config.apiTimeout ?? 60,
+        refreshHours: config.catalogRefreshHours ?? 6,
+      }
+    }
+    // gemini-official：目录拉取协议不同（/v1beta/models），M1 暂不支持
+    return null
+  }
+
+  catalog.start(() => {
+    const cred = resolveCredentials(currentConfig)
+    if (!cred) {
+      logger.debug('model catalog: no credentials for active supplier, skip refresh')
+      return {
+        supplier: currentConfig.activeSupplier ?? 'yunwu',
+        apiBase: '',
+        apiKey: '',
+        timeoutSec: 60,
+        refreshHours: currentConfig.catalogRefreshHours ?? 6,
+      }
+    }
+    return cred
+  })
+
   // 4. 命令族
   const commands = registerAllCommands({
     ctx,
     service,
     handlers,
     getConfig: () => currentConfig,
+    catalogParams: {
+      ctx,
+      catalog,
+      userManager,
+      getConfig: () => currentConfig,
+      resolveCredentials,
+    },
   })
 
   // 5. ChatLuna 桥接管理器
@@ -113,8 +172,14 @@ export function apply(ctx: Context, config: Config) {
 
   // 7. 配置热重载兼容
   ctx.accept((next: Config) => {
+    const prevCred = resolveCredentials(currentConfig)
+    const nextCred = resolveCredentials(next)
     currentConfig = next
     service.updateConfig(next)
+    // 供应商或凭证变化时立即刷新目录
+    if (nextCred && JSON.stringify(prevCred) !== JSON.stringify(nextCred)) {
+      void catalog.refresh(nextCred)
+    }
     commands.image.refreshStyleCommands()
     chatLunaBridgeManager.updateConfig(next)
     // 只在 chatluna 服务可用时同步（热重载场景）

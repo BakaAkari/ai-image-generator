@@ -62,6 +62,12 @@ export interface Config {
   // ── ⓪ 初始化说明 ──────────────────────────────────────────────────────────
   setupGuide?: string
 
+  // ── ①b 激活供应商（互斥单选）与动态模型目录 ────────────────────────────────
+  /** 互斥单选：模型目录与默认凭证来源 */
+  activeSupplier?: 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
+  /** 模型目录自动刷新间隔（小时） */
+  catalogRefreshHours?: number
+
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
   provider?: ImageProvider
@@ -183,6 +189,24 @@ const SupplierSchema = Schema.object({
     .collapse(),
 }).description('🎨 供应商')
 
+// ①b 激活供应商（互斥单选）+ 动态模型目录
+const ActiveSupplierSchema = Schema.object({
+  activeSupplier: Schema.union([
+    Schema.const('yunwu').description('云雾 yunwu.ai（使用上方"第三方"凭证）'),
+    Schema.const('gptgod').description('GPTGod（使用上方"第三方"凭证，改 Base 为 gptgod.cloud）'),
+    Schema.const('openai-official').description('OpenAI 官方（使用上方 OpenAI 凭证）'),
+    Schema.const('gemini-official').description('Gemini 官方（使用上方 Gemini 凭证）'),
+  ])
+    .default('yunwu')
+    .description('激活供应商（互斥）：模型目录从该供应商动态获取'),
+  catalogRefreshHours: Schema.number()
+    .default(6)
+    .min(1)
+    .max(72)
+    .step(1)
+    .description('模型目录自动刷新间隔（小时）；聊天命令"图像模型"可手动刷新'),
+}).description('🛰️ 激活供应商 / 动态模型目录')
+
 // ----------------------------------------------------------------------------
 // 顶层 Schema
 // ----------------------------------------------------------------------------
@@ -199,6 +223,9 @@ export const Config = Schema.intersect([
 
   // ① 供应商（直接展示凭证，无单选）
   SupplierSchema,
+
+  // ①b 激活供应商 / 动态模型目录
+  ActiveSupplierSchema,
 
   // ② 模型映射（先定义可用模型后缀，再供命令参数与 prompt 预设引用）
   Schema.object({
