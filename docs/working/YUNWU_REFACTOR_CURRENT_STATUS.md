@@ -114,3 +114,31 @@ Task 6 提交前的完整验证：
 - 需要 `mita_koishi` 测试容器部署分支构建产物
 - 需要真实文生图 / 图生图 / 预授权结算 smoke
 - 需要确认旧 Koishi 配置无损迁移（chargePolicy、mapping）
+
+## 最终状态（2026-07-22）
+
+### 已完成
+
+| 阶段 | 提交 | 状态 |
+|---|---|---|
+| Task 1 | d16d164 | ✅ |
+| Task 2 | e25125c | ✅ |
+| Task 3 | 62dfafa + 78e3f4c | ✅ |
+| Task 4 | 34ce373 + 309b333 | ✅ |
+| Task 5 | 8c9dd25 + e6f7b7b | ✅ |
+| Task 6 | 7b623d0 | ✅ |
+| Task 7 | 037fd8a | ✅ |
+| Task 8 | 4bceb45 | ✅ |
+| 自审修复 | 209b466 + 47cb084 | ✅ |
+
+### 当前 HEAD
+
+- 分支：`refactor/yunwu-no-hardcoding`
+- 远端：`47cb084`（已验证匹配）
+- PR：https://github.com/BakaAkari/ai-image-generator/pull/new/refactor/yunwu-no-hardcoding
+
+### 阻塞
+
+- Yunwu API Key 缺失：无法执行 `npm run probe:yunwu`（认证模式）
+- 容器部署未完成：`mita_koishi` 未部署 0.9.0 构建产物
+- 真实生成/预授权/结算 smoke 未执行
