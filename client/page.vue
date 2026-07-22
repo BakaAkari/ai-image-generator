@@ -7,7 +7,8 @@
       <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
     </template>
 
-    <!-- 顶层浮动工具按钮：图像 / 视频 / 存储 -->
+    <!-- 顶层浮动工具按钮：图像 / 视频 / 存储（Teleport 到 body，避免祖先 transform 使 fixed 失效） -->
+    <Teleport to="body">
     <div class="floating-tools">
       <div class="tool-btn active" title="图像生成设置">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
@@ -19,6 +20,7 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
       </div>
     </div>
+    </Teleport>
 
     <div v-if="!state" class="loading">正在加载…</div>
     <div v-else class="page-scroll">
@@ -376,7 +378,10 @@ async function saveAll() {
 
 .save-btn { flex-shrink: 0; width: auto; }
 
-/* 顶层浮动工具按钮组：固定定位，不占用布局区域 */
+</style>
+
+<style lang="scss">
+/* 顶层浮动工具按钮组：固定定位，不占用布局区域（全局样式，Teleport 目标在组件外） */
 .floating-tools { position: fixed; top: 3.5rem; right: 1rem; z-index: 2000;
   display: flex; flex-direction: column; gap: 0.5rem; }
 .tool-btn { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
