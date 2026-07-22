@@ -24,7 +24,7 @@ describe('PricingEngine', () => {
     expect(quote.kind).toBe('catalog-quote')
   })
 
-  test('per-token model uses model_ratio + image_ratio', () => {
+  test('per-token model without an explicit formula is unknown and not chargeable', () => {
     const info: SupplierPriceInfo = {
       quotaType: 0,
       modelRatio: 0.875,
@@ -34,9 +34,12 @@ describe('PricingEngine', () => {
     }
     const quote = engine.quote({ modelId: 'gpt-image-2', numImages: 1 }, info)
     expect(quote.pricingMode).toBe('per-token')
-    expect(quote.creditsPerImage).toBeGreaterThan(0)
-    expect(quote.kind).toBe('catalog-quote')
-    expect(quote.evidence.explanation).toContain('per-token')
+    expect(quote.kind).toBe('estimate')
+    expect(quote.chargeable).toBe(false)
+    expect(quote.costUsdPerImage).toBeUndefined()
+    expect(quote.creditsPerImage).toBeUndefined()
+    expect(quote.totalCredits).toBeUndefined()
+    expect(quote.evidence.explanation).toContain('formula unavailable')
   })
 
   test('model mapping credit cost override bypasses catalog', () => {

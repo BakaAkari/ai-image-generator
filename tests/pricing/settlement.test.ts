@@ -5,6 +5,7 @@ import type { LedgerEntry } from '../../src/pricing/settlement.js'
 describe('settlement types', () => {
   test('LedgerEntry has status and evidence fields', () => {
     const quote: CostQuote = {
+      chargeable: true,
       costUsdPerImage: 0.01,
       creditsPerImage: 13,
       totalCostUsd: 0.01,

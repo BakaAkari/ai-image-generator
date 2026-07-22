@@ -151,10 +151,10 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 反例：识别、上传、视频、数字人模型不进入 executable projection。
 
 ### Task 3：Pricing、CostQuote、ChargePolicy、Settlement
-- 状态：基础类型与测试已提交（commit `62dfafa`），但不满足最终验收，后续必须返修。
+- 状态：硬编码返修完成，真实预授权/结算接线仍属于 Task 6。
 - 已完成：`PricingEngine`、`CostQuote`、`ChargePolicy`、Settlement/Ledger 类型。
-- 未完成：当前 per-token 路径仍含 `$2/M token` 基准和简化倍率公式；违反“无业务硬编码”，必须改成“无显式 formula 时 unknown”，不得静默收费。
-- 未完成：领域层尚未按正式计划拆分到 `src/billing/*`，也尚未接入真实预授权/结算。
+- 已修复：per-token 路径不再使用 `$2/M token` 或隐式 token 数；无显式 request formula 时返回 `estimate + chargeable=false`，不产生美元/积分数值。
+- 未完成：领域层尚未接入真实预授权/结算。
 
 ### Task 4：旧配置迁移与删除隐式默认
 - 状态：部分完成（commit `34ce373`），不得视为验收完成。
