@@ -16,8 +16,9 @@ pnpm-debug.log*
 data/
 *.log
 
-# isolated development worktrees
+# isolated development scratch
 .worktrees/
+.superpowers/
 
 # editors / OS
 .eslintcache
