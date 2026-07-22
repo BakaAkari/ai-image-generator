@@ -90,8 +90,13 @@
           </div>
         </template>
         <el-table :data="filteredCatalog" max-height="360" size="small" class="dark-table">
-          <el-table-column prop="id" label="模型" min-width="220" sortable />
-          <el-table-column label="模式" width="150">
+          <el-table-column prop="id" label="模型" min-width="200" sortable />
+          <el-table-column label="yunwu 成本" width="130">
+            <template #default="{ row }">
+              <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)' }">{{ row.yunwuCost?.label ?? '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="模式" width="140">
             <template #default="{ row }">
               <el-tag v-for="m in row.modes" :key="m" size="small" class="mode-tag">{{ modeLabel(m) }}</el-tag>
             </template>
@@ -177,6 +182,7 @@
           <el-form-item label="每日免费积分"><el-input-number v-model="cfg.dailyFreeCredits" :min="0" :step="1" /></el-form-item>
           <el-form-item label="积分汇率（1 美元 = N 积分）"><el-input-number v-model="cfg.creditExchangeRate" :min="0" :step="100" /></el-form-item>
           <el-form-item label="定价加成倍率"><el-input-number v-model="cfg.costMarkup" :min="0.1" :step="0.05" /></el-form-item>
+          <el-form-item label="USD→RMB 汇率"><el-input-number v-model="cfg.usdToRmbRate" :min="1" :max="100" :step="0.01" /></el-form-item>
           <el-form-item label="1 元 = N 积分（经营参考）"><el-input-number v-model="cfg.creditsPerCny" :min="0" :step="10" /></el-form-item>
           <el-form-item label="生成结果中显示消耗"><el-switch v-model="cfg.showCreditCostInResult" /></el-form-item>
           <el-form-item label="限流窗口（秒）"><el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" /></el-form-item>
@@ -315,6 +321,7 @@ function normalizeConfig(raw: any) {
   c.catalogRefreshHours ??= 6
   c.creditExchangeRate ??= 1000
   c.costMarkup ??= 1.3
+  c.usdToRmbRate ??= 7.2
   c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m, chargePolicy: m.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' } }))
   c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
   for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]

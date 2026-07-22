@@ -30,6 +30,8 @@ export interface ConsoleCatalogRow extends CatalogModelInput {
     label: string
   }
   chargePolicy: { type: string; label: string; source: string }
+  /** yunwu 供应商人民币等值成本（仅供定价参考） */
+  yunwuCost: { type: string; label: string }
 }
 
 export interface ImageGeneratorConsoleState {
@@ -74,7 +76,8 @@ function buildRow(model: CatalogModelInput, mapping: ModelMappingConfig | undefi
   const catalogPrice = formatCatalogPrice(model)
   const costQuote = quoteCost(model, config)
   const chargePolicy = formatChargePolicy(mapping)
-  return { ...model, selectable, catalogPrice, costQuote, chargePolicy }
+  const yunwuCost = formatYunwuCost(model, config)
+  return { ...model, selectable, catalogPrice, costQuote, chargePolicy, yunwuCost }
 }
 
 function formatCatalogPrice(model: CatalogModelInput) {
@@ -105,6 +108,19 @@ function quoteCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow[
     }
   }
   return { kind: 'unknown', chargeable: false, label: '无法计算每图成本' }
+}
+
+function formatYunwuCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow['yunwuCost'] {
+  const pricing = model.pricing
+  const rmbRate = config.usdToRmbRate ?? 7.2
+  if (pricing?.type === 'per-call' && typeof pricing.pricePerCall === 'number') {
+    const rmb = Math.round(pricing.pricePerCall * rmbRate * 100) / 100
+    return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张` }
+  }
+  if (pricing?.type === 'per-token') {
+    return { type: 'per-token', label: `token 倍率 ×${pricing.tokenRatio ?? '?'}（按量计费）` }
+  }
+  return { type: 'unknown', label: '未知' }
 }
 
 function formatChargePolicy(mapping: ModelMappingConfig | undefined): ConsoleCatalogRow['chargePolicy'] {
