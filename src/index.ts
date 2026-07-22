@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
 import { ImageCatalogService } from './catalog/image-catalog.js'
+import { registerConsoleService } from './console/service.js'
 import type { ActiveSupplier } from './catalog/types.js'
 import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
@@ -97,19 +98,32 @@ export function apply(ctx: Context, config: Config) {
   // 机制同 chatluna：ctx.schema.set(name, Schema.union(...))，目录刷新后重建。
   const updateModelOptions = () => {
     const models = catalog.current?.models ?? []
-    if (!models.length || !ctx.scope.isActive) return
-    ctx.schema.set(
-      'image-generator.models',
-      Schema.union(models.map(m =>
-        Schema.const(m.id).description(
-          m.pricing.type === 'per-call' && m.pricing.pricePerCall != null
-            ? `${m.id}（$${m.pricing.pricePerCall.toFixed(3)}/次）`
-            : m.pricing.type === 'per-token'
-              ? `${m.id}（token 计费 ×${m.pricing.tokenRatio ?? '?'}）`
-              : m.id,
-        )
-      )),
-    )
+    if (!models.length) {
+      logger.info('schema dynamic source: skip (empty catalog)')
+      return
+    }
+    if (!(ctx as any).schema) {
+      logger.warn('schema dynamic source: ctx.schema service unavailable')
+      return
+    }
+    try {
+      ctx.schema.set(
+        'image-generator.models',
+        Schema.union(models.map(m =>
+          Schema.const(m.id).description(
+            m.pricing.type === 'per-call' && m.pricing.pricePerCall != null
+              ? `${m.id}（$${m.pricing.pricePerCall.toFixed(3)}/次）`
+              : m.pricing.type === 'per-token'
+                ? `${m.id}（token 计费 ×${m.pricing.tokenRatio ?? '?'}）`
+                : m.id,
+          )
+        )),
+      )
+      logger.info('schema dynamic source registered: image-generator.models (%d options, store keys: %s)',
+        models.length, Object.keys((ctx as any).schema._data ?? {}).join(','))
+    } catch (err) {
+      logger.warn('schema dynamic source register failed: %s', err)
+    }
   }
 
   // 目录刷新后：重校验映射，失效时告警
@@ -161,6 +175,20 @@ export function apply(ctx: Context, config: Config) {
   catalog.refresh = (cfg) => origRefresh(cfg).then((snap) => { revalidate(); updateModelOptions(); return snap })
 
   updateModelOptions()
+
+  // aka-tools 面板后端服务（console 可用时注册）
+  ctx.inject(['console'], (ctx) => {
+    registerConsoleService({
+      ctx,
+      logger,
+      catalog,
+      getConfig: () => currentConfig,
+      refreshCatalog: async () => {
+        const cred = resolveCredentials(currentConfig)
+        if (cred) await catalog.refresh(cred)
+      },
+    })
+  })
 
   catalog.start(() => {
     const cred = resolveCredentials(currentConfig)

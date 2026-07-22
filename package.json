@@ -3,42 +3,46 @@
   "version": "0.8.13",
   "description": "AI image generator for Koishi (V2: semantic supplier UI, image protocols, credit billing).",
   "license": "MIT",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "main": "lib/index.js",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.ts",
   "files": [
     "dist",
+    "lib",
     "README.md",
     "CHANGELOG.md"
   ],
   "exports": {
     ".": {
       "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
+        "types": "./lib/index.d.mts",
+        "default": "./lib/index.mjs"
       },
       "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
       }
     },
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "koishi": "^4.18.9"
+    "koishi": "^4.18.9",
+    "@koishijs/plugin-console": "^5.30.11"
   },
   "dependencies": {
-    "jimp": "^0.22.10"
+    "jimp": "^0.22.10",
+    "@koishijs/console": "^5.30.11"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "koishi": "^4.18.9",
     "rimraf": "^6.0.1",
     "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@koishijs/client": "^5.30.11"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap",
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --out-dir lib && koishi-console build .",
     "clean": "rimraf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --project tsconfig.json --noEmit"

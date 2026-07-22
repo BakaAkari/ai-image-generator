@@ -34,7 +34,7 @@ export interface ProviderSettingsConfig {
 }
 
 const SETUP_GUIDE = [
-  '首次配置：先填供应商凭证 → 检查模型映射与每张积分 → 按需配置快捷命令。',
+  '首次配置：先填供应商凭证 → 前往左侧 aka-tools 面板管理模型目录、映射、预设与积分。',
   '模型规则：模型映射第一条是默认模型；聊天命令可用 -后缀 临时切换模型。',
   '计费规则：生成前按请求张数预检积分，生成后按成功发送图片数扣费。',
   '',
@@ -248,8 +248,7 @@ export const Config = Schema.intersect([
         suffix: Schema.string().required().description('命令名').role('table-cell', { width: 12 }),
         modelId: Schema.dynamic('image-generator.models')
           .required()
-          .description('模型（来自动态目录）')
-          .role('table-cell', { width: 32 }),
+          .description('模型（来自动态目录）'),
         restricted: Schema.boolean()
           .default(false)
           .description('限制项')
@@ -268,7 +267,7 @@ export const Config = Schema.intersect([
         { suffix: 'gemini', modelId: 'gemini-3-pro-image-preview', restricted: false, creditCostPerImage: undefined as unknown as number },
       ])
       .description('模型路由；第一条为默认模型。供应商与协议由激活供应商统一决定，不在此配置'),
-  }).description('🔀 模型映射').collapse(),
+  }).description('🔀 模型映射（请前往 aka-tools 面板管理）').collapse().hidden(),
 
   // ③ Prompt 预设 / 快捷命令
   Schema.object({
@@ -304,14 +303,14 @@ export const Config = Schema.intersect([
       .role('table')
       .default({})
       .description('按分组管理快捷命令；重载配置后自动刷新'),
-  }).description('🧩 Prompt 预设 / 快捷命令'),
+  }).description('🧩 Prompt 预设（aka-tools 面板管理）').hidden(),
 
   // ④ 管理员与运营
   Schema.object({
     adminUsers: Schema.array(Schema.string())
       .default([])
       .description('管理员用户 ID；可查询他人、充值或余额修正、查账并使用受限模型'),
-  }).description('👑 管理员与运营'),
+  }).description('👑 管理员与运营（aka-tools 面板管理）').hidden(),
 
   // ⑤ 用户豁免与白名单
   Schema.object({
@@ -321,7 +320,7 @@ export const Config = Schema.intersect([
     modelWhitelistUsers: Schema.array(Schema.string())
       .default([])
       .description('允许使用受限模型；不代表免费或管理员权限'),
-  }).description('🪪 用户豁免与白名单').collapse(),
+  }).description('🪪 用户豁免与白名单（aka-tools 面板管理）').collapse().hidden(),
 
   // ⑥ 积分计费与限流
   Schema.object({
@@ -373,7 +372,7 @@ export const Config = Schema.intersect([
       .max(20)
       .step(1)
       .description('每个窗口内允许的请求次数'),
-  }).description('💳 积分计费与限流').collapse(),
+  }).description('💳 积分计费与限流（aka-tools 面板管理）').collapse().hidden(),
 
   // ⑥ 安全策略
   Schema.object({
@@ -389,7 +388,7 @@ export const Config = Schema.intersect([
       .max(10)
       .step(1)
       .description('窗口内触发多少次拦截后给出警示'),
-  }).description('🛡️ 安全策略').collapse(),
+  }).description('🛡️ 安全策略（aka-tools 面板管理）').collapse().hidden(),
 
   // ⑦ ChatLuna 集成（默认收起）
   Schema.object({
@@ -420,7 +419,7 @@ export const Config = Schema.intersect([
     chatlunaPreferLastGeneratedInPrivateRoom: Schema.boolean()
       .default(true)
       .description('私有房间中自动将“上一张”等自然语言映射到最近生成的图像'),
-  }).description('💬 ChatLuna 集成').collapse(),
+  }).description('💬 ChatLuna 集成（aka-tools 面板管理）').collapse().hidden(),
 
   // ⑧ YesImBot 集成（默认收起）
   Schema.object({
@@ -433,7 +432,7 @@ export const Config = Schema.intersect([
     yesimbotExposeStyleListTool: Schema.boolean()
       .default(true)
       .description('是否向 YesImBot 暴露风格列表工具'),
-  }).description('🤖 YesImBot 集成').collapse(),
+  }).description('🤖 YesImBot 集成（aka-tools 面板管理）').collapse().hidden(),
 
   // ⚙️ 运行与诊断
   Schema.object({

@@ -1,0 +1,377 @@
+<template>
+  <k-layout>
+    <template #header>
+      <span>aka-tools · 图像生成</span>
+    </template>
+    <template #right>
+      <el-button type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
+    </template>
+
+    <div v-if="!state" class="loading">正在加载…</div>
+    <template v-else>
+
+      <!-- ══ 状态总览 ══ -->
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-value">{{ state.catalog?.models?.length ?? 0 }}</div>
+          <div class="stat-label">目录模型</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ catalogAge }}</div>
+          <div class="stat-label">目录更新</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ billingUsage }}</div>
+          <div class="stat-label">平台累计消耗</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ billingLimit }}</div>
+          <div class="stat-label">Key 限额</div>
+        </div>
+      </div>
+
+      <!-- ══ ① 供应商与凭证 ══ -->
+      <k-card title="供应商与凭证" class="section">
+        <div class="supplier-picker">
+          <div
+            v-for="s in supplierOptions" :key="s.value"
+            class="supplier-option" :class="{ active: cfg.activeSupplier === s.value }"
+            @click="cfg.activeSupplier = s.value"
+          >
+            <div class="supplier-name">{{ s.label }}</div>
+            <div class="supplier-desc">{{ s.desc }}</div>
+          </div>
+        </div>
+        <el-form label-width="180px" class="cred-form">
+          <template v-if="cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
+            <el-form-item :label="cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'">
+              <el-input v-model="cfg.providerSettings.openaiCompatibleApiKey" type="password" show-password placeholder="sk-..." />
+            </el-form-item>
+            <el-form-item label="Base URL">
+              <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'" />
+            </el-form-item>
+          </template>
+          <template v-else-if="cfg.activeSupplier === 'openai-official'">
+            <el-form-item label="OpenAI API Key">
+              <el-input v-model="cfg.providerSettings.gptOfficialApiKey" type="password" show-password placeholder="sk-..." />
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-form-item label="Gemini API Key">
+              <el-input v-model="cfg.providerSettings.geminiOfficialApiKey" type="password" show-password />
+            </el-form-item>
+          </template>
+          <el-form-item label="目录刷新间隔（小时）">
+            <el-input-number v-model="cfg.catalogRefreshHours" :min="1" :max="72" />
+          </el-form-item>
+        </el-form>
+      </k-card>
+
+      <!-- ══ ② 模型目录 ══ -->
+      <k-card class="section">
+        <template #header>
+          <div class="card-header">
+            <span>模型目录（{{ filteredCatalog.length }} / {{ state.catalog?.models?.length ?? 0 }}）</span>
+            <div class="header-actions">
+              <el-input v-model="catalogFilter" placeholder="搜索模型" clearable style="width: 200px" />
+              <el-button :loading="refreshing" @click="refreshCatalog">刷新目录</el-button>
+            </div>
+          </div>
+        </template>
+        <el-table :data="filteredCatalog" max-height="360" size="small" stripe>
+          <el-table-column prop="id" label="模型" min-width="220" sortable />
+          <el-table-column label="模式" width="150">
+            <template #default="{ row }">
+              <el-tag v-for="m in row.modes" :key="m" size="small" class="mode-tag">{{ modeLabel(m) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="计价" width="160">
+            <template #default="{ row }">{{ priceLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="约积分/张" width="110">
+            <template #default="{ row }">{{ autoCredits(row) }}</template>
+          </el-table-column>
+        </el-table>
+        <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
+      </k-card>
+
+      <!-- ══ ③ 模型映射 ══ -->
+      <k-card title="模型映射" class="section">
+        <template #header>
+          <div class="card-header">
+            <span>模型映射（第一条为默认模型）</span>
+            <el-button size="small" @click="addMapping">添加映射</el-button>
+          </div>
+        </template>
+        <div class="hint">命令后缀用于聊天中 -后缀 切换模型；每张积分留空 = 按目录计价自动换算（成本 × 汇率 × 加成）</div>
+        <el-table :data="cfg.modelMappings" size="small">
+          <el-table-column label="排序" width="70">
+            <template #default="{ $index }">
+              <el-button link size="small" :disabled="$index === 0" @click="moveMapping($index, -1)">↑</el-button>
+              <el-button link size="small" :disabled="$index === cfg.modelMappings.length - 1" @click="moveMapping($index, 1)">↓</el-button>
+            </template>
+          </el-table-column>
+          <el-table-column label="命令后缀" width="130">
+            <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
+          </el-table-column>
+          <el-table-column label="模型" min-width="260">
+            <template #default="{ row }">
+              <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
+                <el-option v-for="m in catalogModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="每张积分" width="130">
+            <template #default="{ row }">
+              <el-input-number v-model="row.creditCostPerImage" size="small" :min="0" :step="0.5" :placeholder="'自动'" style="width: 110px" />
+            </template>
+          </el-table-column>
+          <el-table-column label="受限" width="70">
+            <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag :type="mappingValid(row) ? 'success' : 'danger'" size="small">{{ mappingValid(row) ? '可用' : '失效' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="60">
+            <template #default="{ $index }">
+              <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </k-card>
+
+      <!-- ══ ④ 积分与运营 ══ -->
+      <k-card title="积分与运营" class="section">
+        <el-form label-width="200px">
+          <el-form-item label="积分单位名称"><el-input v-model="cfg.creditUnitName" style="width: 160px" /></el-form-item>
+          <el-form-item label="默认每张积分（无单价时）"><el-input-number v-model="cfg.defaultCreditCostPerImage" :min="0" :step="0.5" /></el-form-item>
+          <el-form-item label="每日免费积分"><el-input-number v-model="cfg.dailyFreeCredits" :min="0" :step="1" /></el-form-item>
+          <el-form-item label="积分汇率（1 美元 = N 积分）"><el-input-number v-model="cfg.creditExchangeRate" :min="0" :step="100" /></el-form-item>
+          <el-form-item label="定价加成倍率"><el-input-number v-model="cfg.costMarkup" :min="0.1" :step="0.05" /></el-form-item>
+          <el-form-item label="1 元 = N 积分（经营参考）"><el-input-number v-model="cfg.creditsPerCny" :min="0" :step="10" /></el-form-item>
+          <el-form-item label="生成结果中显示消耗"><el-switch v-model="cfg.showCreditCostInResult" /></el-form-item>
+          <el-form-item label="限流窗口（秒）"><el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" /></el-form-item>
+          <el-form-item label="窗口内最大请求数"><el-input-number v-model="cfg.rateLimitMax" :min="1" :max="20" /></el-form-item>
+        </el-form>
+      </k-card>
+
+      <!-- ══ ⑤ Prompt 预设 / 快捷命令 ══ -->
+      <k-card class="section">
+        <template #header>
+          <div class="card-header">
+            <span>Prompt 预设 / 快捷命令</span>
+            <el-button size="small" @click="addStyle">添加预设</el-button>
+          </div>
+        </template>
+        <el-collapse>
+          <el-collapse-item v-for="(style, i) in cfg.styles" :key="i" :title="style.commandName || `预设 ${i + 1}`">
+            <el-form label-width="110px">
+              <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
+              <el-form-item label="生成模式">
+                <el-radio-group v-model="style.mode">
+                  <el-radio-button value="text-to-image">文生图</el-radio-button>
+                  <el-radio-button value="image-to-image">图生图</el-radio-button>
+                  <el-radio-button value="compose-image">合成图</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="模型后缀">
+                <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
+                  <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
+              <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
+              <el-form-item><el-button type="danger" size="small" @click="cfg.styles.splice(i, 1)">删除此预设</el-button></el-form-item>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
+      </k-card>
+
+      <!-- ══ ⑥ 用户与权限 ══ -->
+      <k-card title="用户与权限" class="section">
+        <el-form label-width="200px">
+          <el-form-item label="管理员用户 ID">
+            <el-select v-model="cfg.adminUsers" multiple filterable allow-create default-first-option placeholder="输入 ID 后回车" style="width: 420px" />
+          </el-form-item>
+          <el-form-item label="永久会员（免扣费）">
+            <el-select v-model="cfg.permanentMembers" multiple filterable allow-create default-first-option style="width: 420px" />
+          </el-form-item>
+          <el-form-item label="受限模型白名单">
+            <el-select v-model="cfg.modelWhitelistUsers" multiple filterable allow-create default-first-option style="width: 420px" />
+          </el-form-item>
+          <el-form-item label="豁免平台（跳过扣费限流）">
+            <el-select v-model="cfg.unlimitedPlatforms" multiple filterable allow-create default-first-option style="width: 420px" />
+          </el-form-item>
+        </el-form>
+      </k-card>
+
+      <!-- ══ ⑦ 集成 ══ -->
+      <k-card title="集成" class="section">
+        <el-form label-width="240px">
+          <el-divider content-position="left">ChatLuna</el-divider>
+          <el-form-item label="启用 ChatLuna 工具"><el-switch v-model="cfg.chatlunaEnabled" /></el-form-item>
+          <template v-if="cfg.chatlunaEnabled">
+            <el-form-item label="注入最近图像上下文"><el-switch v-model="cfg.chatlunaContextInjectionEnabled" /></el-form-item>
+            <el-form-item label="暴露积分查询工具"><el-switch v-model="cfg.chatlunaExposeQuotaTool" /></el-form-item>
+            <el-form-item label="暴露风格列表工具"><el-switch v-model="cfg.chatlunaExposeStyleListTool" /></el-form-item>
+          </template>
+          <el-divider content-position="left">YesImBot</el-divider>
+          <el-form-item label="启用 YesImBot 工具"><el-switch v-model="cfg.yesimbotEnabled" /></el-form-item>
+          <template v-if="cfg.yesimbotEnabled">
+            <el-form-item label="暴露积分查询工具"><el-switch v-model="cfg.yesimbotExposeQuotaTool" /></el-form-item>
+            <el-form-item label="暴露风格列表工具"><el-switch v-model="cfg.yesimbotExposeStyleListTool" /></el-form-item>
+          </template>
+        </el-form>
+      </k-card>
+
+      <!-- ══ ⑧ 运行与诊断 ══ -->
+      <k-card title="运行与诊断" class="section">
+        <el-form label-width="200px">
+          <el-form-item label="日志级别">
+            <el-radio-group v-model="cfg.logLevel">
+              <el-radio-button value="simple">simple</el-radio-button>
+              <el-radio-button value="detail">detail</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="默认生成张数"><el-input-number v-model="cfg.defaultNumImages" :min="1" :max="4" /></el-form-item>
+          <el-form-item label="上游超时（秒）"><el-input-number v-model="cfg.apiTimeout" :min="10" :max="600" :step="10" /></el-form-item>
+        </el-form>
+      </k-card>
+
+    </template>
+  </k-layout>
+</template>
+
+<script lang="ts" setup>
+import { computed, onMounted, ref } from 'vue'
+import { send, store } from '@koishijs/client'
+import { ElMessage } from 'element-plus'
+
+const state = ref<any>(null)
+const cfg = ref<any>(null)
+const saving = ref(false)
+const refreshing = ref(false)
+const catalogFilter = ref('')
+
+const supplierOptions = [
+  { value: 'yunwu', label: '云雾 yunwu.ai', desc: 'new-api 中转，模型全、计价透明' },
+  { value: 'gptgod', label: 'GPTGod', desc: 'Shell API 中转站' },
+  { value: 'openai-official', label: 'OpenAI 官方', desc: 'gpt-image 系列' },
+  { value: 'gemini-official', label: 'Gemini 官方', desc: 'Imagen / gemini-image' },
+]
+
+onMounted(async () => {
+  state.value = await send('image-generator/get-state')
+  cfg.value = normalizeConfig(state.value.config)
+})
+
+function normalizeConfig(raw: any) {
+  const c = { ...raw }
+  c.providerSettings = { openaiCompatibleApiKey: '', openaiCompatibleApiBase: '', gptOfficialApiKey: '', geminiOfficialApiKey: '', ...(raw.providerSettings ?? {}) }
+  c.activeSupplier ??= 'yunwu'
+  c.catalogRefreshHours ??= 6
+  c.creditExchangeRate ??= 1000
+  c.costMarkup ??= 1.3
+  c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m }))
+  c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
+  for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]
+  return c
+}
+
+const catalogModels = computed(() => state.value?.catalog?.models ?? [])
+const filteredCatalog = computed(() => {
+  const kw = catalogFilter.value.trim().toLowerCase()
+  if (!kw) return catalogModels.value
+  return catalogModels.value.filter((m: any) => m.id.toLowerCase().includes(kw))
+})
+
+const catalogAge = computed(() => {
+  const t = state.value?.catalog?.fetchedAt
+  if (!t) return '—'
+  const min = Math.round((Date.now() - t) / 60000)
+  return min < 60 ? `${min} 分钟前` : `${Math.round(min / 60)} 小时前`
+})
+const billingUsage = computed(() => state.value?.billing?.totalUsageUsd != null ? `$${state.value.billing.totalUsageUsd.toFixed(2)}` : '—')
+const billingLimit = computed(() => state.value?.billing?.hardLimitUsd != null ? `$${state.value.billing.hardLimitUsd.toFixed(0)}` : '—')
+
+function modeLabel(m: string) {
+  return { 'text-to-image': '文生图', 'image-to-image': '图生图', 'compose-image': '合成图' }[m] ?? m
+}
+function priceLabel(m: any) {
+  const p = m.pricing
+  if (p?.type === 'per-call' && p.pricePerCall != null) return `$${p.pricePerCall.toFixed(4)}/次`
+  if (p?.type === 'per-token' && p.tokenRatio != null) return `token ×${p.tokenRatio}`
+  return '未知'
+}
+function autoCredits(m: any) {
+  const p = m.pricing
+  const rate = cfg.value?.creditExchangeRate ?? 1000
+  const markup = cfg.value?.costMarkup ?? 1.3
+  if (p?.type === 'per-call' && p.pricePerCall != null) return Math.ceil(p.pricePerCall * rate * markup * 100) / 100
+  if (p?.type === 'per-token' && p.tokenRatio != null) return Math.ceil(0.004 * p.tokenRatio * rate * markup * 100) / 100
+  return '—'
+}
+function modelOptionLabel(m: any) {
+  return `${m.id}（${priceLabel(m)}）`
+}
+function mappingValid(row: any) {
+  return catalogModels.value.some((m: any) => m.id === row.modelId)
+}
+
+function addMapping() {
+  cfg.value.modelMappings.push({ suffix: '', modelId: catalogModels.value[0]?.id ?? '', restricted: false, creditCostPerImage: undefined })
+}
+function moveMapping(i: number, dir: number) {
+  const arr = cfg.value.modelMappings
+  const [item] = arr.splice(i, 1)
+  arr.splice(i + dir, 0, item)
+}
+function addStyle() {
+  cfg.value.styles.push({ commandName: '', mode: 'image-to-image', modelSuffix: '', description: '', prompt: '' })
+}
+
+async function refreshCatalog() {
+  refreshing.value = true
+  try {
+    const res: any = await send('image-generator/refresh-catalog')
+    state.value = await send('image-generator/get-state')
+    ElMessage[res.success ? 'success' : 'warning'](res.success ? `目录已刷新：${res.modelCount} 个模型` : `刷新失败：${res.error ?? '未知错误'}`)
+  } finally {
+    refreshing.value = false
+  }
+}
+
+async function saveAll() {
+  saving.value = true
+  try {
+    const res: any = await send('image-generator/save-config', cfg.value)
+    if (res.success) ElMessage.success('设置已保存并热重载')
+    else ElMessage.error(`保存失败：${res.error}`)
+  } finally {
+    saving.value = false
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+.loading { padding: 2rem; text-align: center; color: var(--fg3); }
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+.stat-value { font-size: 1.4rem; font-weight: 600; }
+.stat-label { font-size: 0.8rem; color: var(--fg3); margin-top: 0.25rem; }
+.section { margin-bottom: 1rem; }
+.card-header { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 1rem; }
+.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+.supplier-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+.supplier-option { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s; }
+.supplier-option:hover { border-color: var(--primary); }
+.supplier-option.active { border-color: var(--primary); background: rgba(var(--primary-rgb, 64 158 255), 0.08); }
+.supplier-name { font-weight: 600; }
+.supplier-desc { font-size: 0.75rem; color: var(--fg3); margin-top: 0.25rem; }
+.cred-form { max-width: 640px; }
+.mode-tag { margin-right: 4px; }
+.hint { font-size: 0.8rem; color: var(--fg3); margin-bottom: 0.5rem; }
+.error-line { color: var(--el-color-danger); font-size: 0.8rem; margin-top: 0.5rem; }
+</style>
