@@ -264,13 +264,15 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, ref } from 'vue'
-import { send, store, useRouter } from '@koishijs/client'
+import { computed, onActivated, onDeactivated, onMounted, ref } from 'vue'
+import { send, store } from '@koishijs/client'
 import { ElMessage } from 'element-plus'
 
-// 浮动按钮仅在本页面路由下显示（Teleport 到 body 后脱离了页面容器，需手动绑定路由生命周期）
-const router = useRouter()
-const isAkaToolsRoute = computed(() => router.currentRoute.value.path.startsWith('/aka-tools'))
+// 浮动元素仅在本页面激活时显示：koishi console 对页面组件做 keep-alive，
+// Teleport 到 body 的节点脱离页面容器，靠 activated/deactivated 生命周期控制显隐。
+const isAkaToolsRoute = ref(true)
+onActivated(() => { isAkaToolsRoute.value = true })
+onDeactivated(() => { isAkaToolsRoute.value = false })
 
 const state = ref<any>(null)
 const cfg = ref<any>(null)
