@@ -44,6 +44,7 @@ export interface ImageGeneratorConsoleState {
     models: ConsoleCatalogRow[]
     selectableModels: ConsoleCatalogRow[]
     unsupportedModels: ConsoleCatalogRow[]
+    groupRatio?: Record<string, number>
   }
   billing: BillingInfo | null
 }

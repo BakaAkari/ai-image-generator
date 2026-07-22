@@ -33,6 +33,7 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
       error: snapshot.error,
       models: snapshot.models,
       unsupportedModels: snapshot.unsupportedModels,
+      groupRatio: snapshot.groupRatio,
     } : null, billing)
   })
 

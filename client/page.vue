@@ -75,9 +75,9 @@
           <el-form-item label="目录刷新间隔（小时）">
             <el-input-number v-model="cfg.catalogRefreshHours" :min="1" :max="72" />
           </el-form-item>
-          <el-form-item label="yunwu 分组">
+          <el-form-item label="yunwu 分组（渠道倍率）">
             <el-input v-model="cfg.yunwuGroup" placeholder="default" style="width: 200px" />
-            <div style="font-size:0.75rem;color:var(--fg3)">在 yunwu 后台 API 令牌页面查看。影响成本计算的倍率。留空=default(×1)</div>
+            <div style="font-size:0.75rem;color:var(--fg3)">计算公式：<b>目录价 × 分组倍率 × 积分→人民币({{ cfg.yunwuCreditToRmb || 0.5 }}) = ¥成本/张</b>。在 yunwu 后台 API 令牌页面查看分组名。</div>
           </el-form-item>
         </el-form>
       </k-card>
@@ -93,6 +93,9 @@
             </div>
           </div>
         </template>
+        <div class="cost-formula" style="font-size:0.75rem;color:var(--fg3);margin-bottom:0.5rem;line-height:1.6">
+          💰 yunwu 成本 = 目录价 × <b>{{ cfg.yunwuGroup || 'default' }} 分组倍率({{ groupRatioStr }})</b> × 积分→人民币({{ cfg.yunwuCreditToRmb || 0.5 }})
+        </div>
         <el-table :data="filteredCatalog" max-height="360" size="small" class="dark-table">
           <el-table-column prop="id" label="模型" min-width="200" sortable />
           <el-table-column label="yunwu 成本" width="130">
@@ -335,6 +338,11 @@ function normalizeConfig(raw: any) {
 
 const catalogModels = computed(() => state.value?.catalog?.models ?? [])
 const selectableModels = computed(() => state.value?.catalog?.selectableModels ?? [])
+const groupRatioStr = computed(() => {
+  const gr = state.value?.catalog?.groupRatio
+  const g = cfg.value.yunwuGroup || 'default'
+  return gr?.[g] ? '×' + gr[g] : '×1 (未获取)'
+})
 const filteredCatalog = computed(() => {
   const kw = catalogFilter.value.trim().toLowerCase()
   if (!kw) return catalogModels.value
