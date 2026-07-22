@@ -2,15 +2,14 @@
  * ChatLuna 工具运行时（V2 积分制适配版）。
  *
  * 关键适配点（vs V1）：
- * - 配额预检从次数制改为积分制：checkAndReserveQuota(userId, userName, cost: GenerationCost)
- * - 用量记录改为积分制：recordUsage(userId, userName, cmd, cost, platform, requestId)
+ * - 生成前执行真实积分预授权，结束后按实际交付 settle 或失败 release
  * - 模型路由从 provider/apiFormat 改为 supplier/protocol
  * - 配额消息术语从「次数」改为「积分」
  */
 
 import { h } from 'koishi'
 
-import { calculateGenerationCost, scaleGenerationCost } from '../../shared/billing.js'
+import { calculateGenerationCost } from '../../shared/billing.js'
 import { AI_GENERATOR_TOOL_DEFINITIONS } from '../../shared/chatluna-tool-definitions.js'
 import type { Config } from '../../shared/config.js'
 import type {
@@ -100,17 +99,12 @@ async function runGenerateImageTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(input.prompt, 'prompt')
     const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId!,
-      session.username || session.userId!,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return formatToolError(reservation.message || '积分不足。')
     }
@@ -130,27 +124,13 @@ async function runGenerateImageTool(
       stylePreset: 'aigc_generate_image',
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId!,
-      session.username || session.userId!,
-      'aigc_generate_image',
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,
       imagesCount: images.length,
       images: images.map(summarizeImageUrl),
-      creditSummary: usage?.summary
-        ? {
-            totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
-            dailyFreeRemaining: aiGenerator.formatCredits(usage.summary.dailyFreeRemaining),
-            purchasedCredits: aiGenerator.formatCredits(usage.summary.purchasedCredits),
-          }
-        : undefined,
+      creditSummary: await formatQuotaSummary(aiGenerator, session.userId!, session.username || session.userId!),
     })
   })
 }
@@ -161,7 +141,7 @@ async function runEditImageTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(input.prompt, 'prompt')
     const referenceMode = expectString(input.referenceMode, 'referenceMode')
     const conversationId = resolveSessionConversationId(session, aiGenerator)
@@ -173,12 +153,7 @@ async function runEditImageTool(
     const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId!,
-      session.username || session.userId!,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return formatToolError(reservation.message || '积分不足。')
     }
@@ -203,27 +178,14 @@ async function runEditImageTool(
           : undefined,
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId!,
-      session.username || session.userId!,
-      'aigc_edit_image',
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,
       imagesCount: images.length,
       images: images.map(summarizeImageUrl),
       referenceMode,
-      creditSummary: usage?.summary
-        ? {
-            totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
-            dailyFreeRemaining: aiGenerator.formatCredits(usage.summary.dailyFreeRemaining),
-          }
-        : undefined,
+      creditSummary: await formatQuotaSummary(aiGenerator, session.userId!, session.username || session.userId!),
     })
   })
 }
@@ -234,7 +196,7 @@ async function runStylePresetTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const resolvedStyle = resolveRequestedStylePreset(input, aiGenerator)
     if ('error' in resolvedStyle) {
       return formatToolError(resolvedStyle.error)
@@ -258,12 +220,7 @@ async function runStylePresetTool(
     const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId!,
-      session.username || session.userId!,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return formatToolError(reservation.message || '积分不足。')
     }
@@ -283,27 +240,14 @@ async function runStylePresetTool(
       stylePreset: preset.commandName,
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId!,
-      session.username || session.userId!,
-      preset.commandName,
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, preset.commandName, { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,
       stylePreset: preset.commandName,
       imagesCount: images.length,
       images: images.map(summarizeImageUrl),
-      creditSummary: usage?.summary
-        ? {
-            totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
-            dailyFreeRemaining: aiGenerator.formatCredits(usage.summary.dailyFreeRemaining),
-          }
-        : undefined,
+      creditSummary: await formatQuotaSummary(aiGenerator, session.userId!, session.username || session.userId!),
       styleMatches: matches.map((item) => ({
         commandName: item.style.commandName,
         score: item.score,
@@ -425,7 +369,7 @@ async function runDynamicStyleTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const promptAdditions =
       typeof input.promptAdditions === 'string' ? input.promptAdditions.trim() : ''
     const prompt = [style.prompt, promptAdditions].filter(Boolean).join(' - ')
@@ -443,12 +387,7 @@ async function runDynamicStyleTool(
     const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId!,
-      session.username || session.userId!,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return formatToolError(reservation.message || '积分不足。')
     }
@@ -468,26 +407,14 @@ async function runDynamicStyleTool(
       stylePreset: style.commandName,
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId!,
-      session.username || session.userId!,
-      style.commandName,
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, style.commandName, { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,
       stylePreset: style.commandName,
       imagesCount: images.length,
       images: images.map(summarizeImageUrl),
-      creditSummary: usage?.summary
-        ? {
-            totalAvailable: aiGenerator.formatCredits(usage.summary.totalAvailable),
-          }
-        : undefined,
+      creditSummary: await formatQuotaSummary(aiGenerator, session.userId!, session.username || session.userId!),
     })
   })
 }
@@ -706,10 +633,19 @@ function resolveSessionConversationId(
   return aiGenerator.buildSessionConversationId(session as any)
 }
 
+async function formatQuotaSummary(aiGenerator: AiImageGeneratorService, userId: string, userName: string) {
+  const summary = await aiGenerator.getQuotaSummary(userId, userName)
+  return {
+    totalAvailable: aiGenerator.formatCredits(summary.totalAvailable),
+    dailyFreeRemaining: aiGenerator.formatCredits(summary.dailyFreeRemaining),
+    purchasedCredits: aiGenerator.formatCredits(summary.purchasedCredits),
+  }
+}
+
 async function withImageTaskLock(
   session: ChatLunaSessionLike,
   aiGenerator: AiImageGeneratorService,
-  work: () => Promise<string>,
+  work: (requestId: string) => Promise<string>,
 ): Promise<string> {
   const userId = session.userId
   if (!userId) {
@@ -722,7 +658,10 @@ async function withImageTaskLock(
   }
 
   try {
-    return await work()
+    return await work(requestId)
+  } catch (error) {
+    try { await aiGenerator.releaseReservation(requestId, error instanceof Error ? error.message : String(error)) } catch { /* reservation may not exist */ }
+    throw error
   } finally {
     aiGenerator.userManager.endTask(userId, requestId)
   }

@@ -148,12 +148,37 @@ export interface CreditConsumeResult {
   isExempt: boolean
 }
 
+export interface CreditReservation {
+  reservationId: string
+  userId: string
+  userName: string
+  cost: GenerationCost
+  reservedCredits: number
+  reservedFreeCredits: number
+  reservedPurchasedCredits: number
+  status: 'active' | 'settled' | 'released'
+  createdAt: number
+  expiresAt: number
+  exempt: boolean
+  result?: CreditReservationResult
+}
+
+export interface CreditReservationResult {
+  reservationId: string
+  reservedCredits: number
+  settledCredits: number
+  releasedCredits: number
+  actualImages: number
+  status: 'settled' | 'released'
+}
+
 export class UserManager {
   private dataDir: string
   private usersFile: string
   private usersBackupFile: string
   private ledgerFile: string
   private rechargeRecordsFile: string
+  private reservationsFile: string
   private snapshotsDir: string
   private logger: any
   private dataLock = new AsyncLock()
@@ -164,6 +189,8 @@ export class UserManager {
   private rateLimitMap = new Map<string, number[]>()
   private securityBlockMap = new Map<string, number[]>()
   private securityWarningMap = new Map<string, boolean>()
+  private creditReservations = new Map<string, CreditReservation>()
+  private reservationsLoaded = false
   /** 定时清理 volatile map 的 timer handle */
   private pruneTimer: ReturnType<typeof setInterval> | undefined
 
@@ -174,6 +201,7 @@ export class UserManager {
     this.usersBackupFile = join(this.dataDir, 'users.v2.json.backup')
     this.ledgerFile = join(this.dataDir, 'credit-ledger.v2.jsonl')
     this.rechargeRecordsFile = join(this.dataDir, 'recharge-records.v2.jsonl')
+    this.reservationsFile = join(this.dataDir, 'credit-reservations.v1.json')
     this.snapshotsDir = join(this.dataDir, 'snapshots')
 
     if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true })
@@ -454,54 +482,202 @@ export class UserManager {
     this.rateLimitMap.set(userId, userTimestamps)
   }
 
-  async checkAndReserveQuota(
+  private async loadReservations(): Promise<void> {
+    if (this.reservationsLoaded) return
+    try {
+      const parsed = JSON.parse(await fs.readFile(this.reservationsFile, 'utf8')) as { reservations?: CreditReservation[] }
+      for (const reservation of parsed.reservations ?? []) {
+        this.creditReservations.set(reservation.reservationId, reservation)
+      }
+    } catch { /* first run or corrupt reservation file: leave empty and log on access */ }
+    this.reservationsLoaded = true
+  }
+
+  private async saveReservationsInternal(): Promise<void> {
+    await this.atomicWriteFile(this.reservationsFile, JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: new Date().toISOString(),
+      reservations: [...this.creditReservations.values()],
+    }, null, 2))
+  }
+
+  async reconcileExpiredReservations(config: Config, now = Date.now()): Promise<number> {
+    await this.loadUsersStore()
+    await this.loadReservations()
+    return await this.dataLock.acquire(async () => {
+      let released = 0
+      for (const reservation of this.creditReservations.values()) {
+        if (reservation.status !== 'active' || reservation.expiresAt > now) continue
+        const user = this.usersCache!.users[reservation.userId]
+        if (!user) continue
+        user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - reservation.reservedFreeCredits)
+        user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedPurchasedCredits)
+        const result: CreditReservationResult = {
+          reservationId: reservation.reservationId,
+          reservedCredits: reservation.reservedCredits,
+          settledCredits: 0,
+          releasedCredits: reservation.reservedCredits,
+          actualImages: 0,
+          status: 'released',
+        }
+        reservation.status = 'released'
+        reservation.result = result
+        user.updatedAt = new Date(now).toISOString()
+        released += 1
+      }
+      if (released > 0) {
+        await this.saveUsersStoreInternal()
+        await this.saveReservationsInternal()
+        this.logger.warn('已释放过期图像积分预授权', { released })
+      }
+      return released
+    })
+  }
+
+  async reserveCredits(
     userId: string,
     userName: string,
+    reservationId: string,
     cost: GenerationCost,
     config: Config,
     platform?: string,
+    ttlMs = 15 * 60 * 1000,
   ): Promise<{ allowed: boolean; message?: string; reservationId?: string }> {
-    if (this.isAdmin(userId, config)) return { allowed: true, reservationId: 'admin' }
-    if (this.isPermanentMember(userId, config)) return { allowed: true, reservationId: 'permanent_member' }
-    if (platform && config.unlimitedPlatforms?.includes(platform)) return { allowed: true, reservationId: 'platform_exempt' }
-
-    const rateLimitCheck = this.checkRateLimit(userId, config)
-    if (!rateLimitCheck.allowed) return { ...rateLimitCheck }
-
-    // 在确认积分充足前不计入限频窗口，避免余额不足的失败请求消耗限频配额
     await this.loadUsersStore()
-    const userData = await this.getUserData(userId, userName, config)
-
-    const checkResult = await this.dataLock.acquire(async () => {
-      const cachedUserData = this.usersCache!.users[userId] || userData
-      const reset = this.ensureDailyReset(cachedUserData, config)
-      if (reset) await this.saveUsersStoreInternal()
-
-      const summary = this.buildCreditSummary(cachedUserData, config)
-      if (summary.totalAvailable < cost.totalCredits) {
-        return {
-          allowed: false,
-          message: [
-            '积分不足',
-            '',
-            `- 本次需要｜${cost.totalCredits} ${config.creditUnitName}`,
-            `- 今日免费｜${summary.dailyFreeRemaining} ${config.creditUnitName}`,
-            `- 已购余额｜${summary.purchasedCredits} ${config.creditUnitName}`,
-            `- 合计可用｜${summary.totalAvailable} ${config.creditUnitName}`,
-          ].join('\n'),
-        }
+    await this.loadReservations()
+    return await this.dataLock.acquire(async () => {
+      const existing = this.creditReservations.get(reservationId)
+      if (existing) return { allowed: existing.status === 'active', reservationId }
+      const exempt = this.isAdmin(userId, config) || this.isPermanentMember(userId, config) || Boolean(platform && config.unlimitedPlatforms?.includes(platform))
+      let user = this.usersCache!.users[userId]
+      if (!user) {
+        user = this.createUserAccount(userId, userName, config)
+        this.usersCache!.users[userId] = user
       }
-      return { allowed: true }
+      this.ensureDailyReset(user, config)
+      const total = exempt ? 0 : roundCredits(cost.totalCredits)
+      const freeAvailable = this.getDailyFreeRemaining(user, config)
+      const purchasedAvailable = roundCredits(user.balance.purchasedCredits)
+      if (roundCredits(freeAvailable + purchasedAvailable) < total) {
+        return { allowed: false, message: `积分不足｜本次需要 ${total} ${config.creditUnitName}` }
+      }
+      let remaining = total
+      const reservedFreeCredits = Math.min(freeAvailable, remaining)
+      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed + reservedFreeCredits)
+      remaining = roundCredits(remaining - reservedFreeCredits)
+      const reservedPurchasedCredits = Math.min(purchasedAvailable, remaining)
+      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits - reservedPurchasedCredits)
+      this.creditReservations.set(reservationId, {
+        reservationId, userId, userName, cost,
+        reservedCredits: total,
+        reservedFreeCredits,
+        reservedPurchasedCredits,
+        status: 'active',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + Math.max(60_000, ttlMs),
+        exempt,
+      })
+      await this.saveUsersStoreInternal()
+      await this.saveReservationsInternal()
+      this.updateRateLimit(userId)
+      return { allowed: true, reservationId }
     })
-
-    if (!checkResult.allowed) return checkResult
-
-    // 积分充足后才计入限频
-    this.updateRateLimit(userId)
-
-    const reservationId = `${userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    return { allowed: true, reservationId }
   }
+
+  async settleReservation(
+    reservationId: string,
+    actualImages: number,
+    commandName: string,
+    config: Config,
+    evidence: Record<string, unknown> | null,
+  ): Promise<CreditReservationResult> {
+    await this.loadUsersStore()
+    await this.loadReservations()
+    return await this.dataLock.acquire(async () => {
+      const reservation = this.creditReservations.get(reservationId)
+      if (!reservation) throw new Error(`预授权不存在：${reservationId}`)
+      if (reservation.result) return reservation.result
+      const user = this.usersCache!.users[reservation.userId]
+      if (!user) throw new Error(`预授权用户不存在：${reservation.userId}`)
+      const delivered = Math.max(0, Math.min(reservation.cost.numImages, Math.floor(actualImages || 0)))
+      const settledCredits = reservation.exempt ? 0 : roundCredits(reservation.cost.creditCostPerImage * delivered)
+      const releasedCredits = roundCredits(reservation.reservedCredits - settledCredits)
+      const usedFree = Math.min(reservation.reservedFreeCredits, settledCredits)
+      const usedPurchased = roundCredits(settledCredits - usedFree)
+      const releaseFree = roundCredits(reservation.reservedFreeCredits - usedFree)
+      const releasePurchased = roundCredits(reservation.reservedPurchasedCredits - usedPurchased)
+      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - releaseFree)
+      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + releasePurchased)
+      user.balance.totalConsumedCredits = roundCredits(user.balance.totalConsumedCredits + settledCredits)
+      user.statistics.totalImagesGenerated += delivered
+      user.statistics.totalGenerationRequests += 1
+      if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
+      user.updatedAt = new Date().toISOString()
+      const result: CreditReservationResult = {
+        reservationId,
+        reservedCredits: reservation.reservedCredits,
+        settledCredits,
+        releasedCredits,
+        actualImages: delivered,
+        status: 'settled',
+      }
+      reservation.status = 'settled'
+      reservation.result = result
+      const before = this.snapshotBalance(user, config)
+      const event = this.buildLedgerEvent(user, 'consume', settledCredits, before, this.snapshotBalance(user, config), '图像生成预授权结算', {
+        generation: {
+          commandName,
+          modelId: reservation.cost.modelId,
+          modelSuffix: reservation.cost.modelSuffix,
+          numImages: delivered,
+          creditCostPerImage: reservation.cost.creditCostPerImage,
+          totalCredits: settledCredits,
+          requestId: reservationId,
+        },
+        metadata: {
+          reservationId,
+          reservedCredits: reservation.reservedCredits,
+          settledCredits,
+          releasedCredits,
+          evidence,
+        },
+      })
+      await this.appendLedgerEvent(event)
+      await this.saveUsersStoreInternal()
+      await this.saveReservationsInternal()
+      return result
+    })
+  }
+
+  async releaseReservation(reservationId: string, config: Config, reason: string): Promise<CreditReservationResult> {
+    await this.loadUsersStore()
+    await this.loadReservations()
+    return await this.dataLock.acquire(async () => {
+      const reservation = this.creditReservations.get(reservationId)
+      if (!reservation) throw new Error(`预授权不存在：${reservationId}`)
+      if (reservation.result) return reservation.result
+      const user = this.usersCache!.users[reservation.userId]
+      if (!user) throw new Error(`预授权用户不存在：${reservation.userId}`)
+      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - reservation.reservedFreeCredits)
+      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedPurchasedCredits)
+      user.updatedAt = new Date().toISOString()
+      const result: CreditReservationResult = {
+        reservationId,
+        reservedCredits: reservation.reservedCredits,
+        settledCredits: 0,
+        releasedCredits: reservation.reservedCredits,
+        actualImages: 0,
+        status: 'released',
+      }
+      reservation.status = 'released'
+      reservation.result = result
+      this.logger.info('释放图像积分预授权', { reservationId, reason })
+      await this.saveUsersStoreInternal()
+      await this.saveReservationsInternal()
+      return result
+    })
+  }
+
 
   async recordUsageOnly(
     userId: string,
@@ -531,74 +707,6 @@ export class UserManager {
     })
   }
 
-  async consumeCredits(
-    userId: string,
-    userName: string,
-    commandName: string,
-    cost: GenerationCost,
-    config: Config,
-    requestId?: string,
-  ): Promise<CreditConsumeResult> {
-    await this.loadUsersStore()
-
-    return await this.dataLock.acquire(async () => {
-      let userData = this.usersCache!.users[userId]
-      if (!userData) {
-        userData = this.createUserAccount(userId, userName, config)
-        this.usersCache!.users[userId] = userData
-      }
-
-      this.ensureDailyReset(userData, config)
-      const before = this.snapshotBalance(userData, config)
-      const now = new Date().toISOString()
-      const totalCredits = roundCredits(cost.totalCredits)
-
-      let remaining = totalCredits
-      const freeAvailable = this.getDailyFreeRemaining(userData, config)
-      const freeUsed = Math.min(freeAvailable, remaining)
-      if (freeUsed > 0) {
-        userData.balance.dailyFreeCreditsUsed = roundCredits(userData.balance.dailyFreeCreditsUsed + freeUsed)
-        remaining = roundCredits(remaining - freeUsed)
-      }
-
-      const purchasedUsed = Math.min(userData.balance.purchasedCredits, remaining)
-      if (purchasedUsed > 0) {
-        userData.balance.purchasedCredits = roundCredits(userData.balance.purchasedCredits - purchasedUsed)
-        remaining = roundCredits(remaining - purchasedUsed)
-      }
-
-      if (remaining > 0) {
-        throw new Error(`积分扣费失败｜余额不足｜缺少 ${remaining} ${config.creditUnitName}`)
-      }
-
-      userData.userName = userName || userData.userName
-      userData.updatedAt = now
-      userData.lastUsedAt = now
-      userData.balance.totalConsumedCredits = roundCredits(userData.balance.totalConsumedCredits + totalCredits)
-      userData.statistics.totalImagesGenerated += cost.numImages
-      userData.statistics.totalGenerationRequests += 1
-      if (cost.modelId) userData.statistics.lastModelId = cost.modelId
-
-      const event = this.buildLedgerEvent(userData, 'consume', totalCredits, before, this.snapshotBalance(userData, config), '图像生成扣费', {
-        generation: {
-          commandName,
-          modelId: cost.modelId,
-          modelSuffix: cost.modelSuffix,
-          numImages: cost.numImages,
-          creditCostPerImage: cost.creditCostPerImage,
-          totalCredits,
-          requestId,
-        },
-        metadata: {
-          costSource: cost.costSource,
-        },
-      })
-
-      await this.appendLedgerEvent(event)
-      await this.saveUsersStoreInternal()
-      return { userData, ledgerEvent: event, freeUsed, purchasedUsed, isExempt: false }
-    })
-  }
 
   async grantCredits(
     userId: string,

@@ -15,7 +15,7 @@
 
 import { h } from 'koishi'
 
-import { calculateGenerationCost, scaleGenerationCost } from '../../shared/billing.js'
+import { calculateGenerationCost } from '../../shared/billing.js'
 import type { Config } from '../../shared/config.js'
 import type {
   ImageRequestContext,
@@ -102,16 +102,11 @@ async function runGenerateImageTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(args.prompt, 'prompt')
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId,
-      session.username || session.userId,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return Failed(reservation.message || '积分不足。')
     }
@@ -131,22 +126,12 @@ async function runGenerateImageTool(
       stylePreset: 'aigc_generate_image',
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId,
-      session.username || session.userId,
-      'aigc_generate_image',
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `生成完成！共生成 ${images.length} 张图像。`,
       images: images.map(summarizeImageUrl),
-      ...(usage?.summary
-        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
-        : {}),
+      remainingCredits: aiGenerator.formatCredits((await aiGenerator.getQuotaSummary(session.userId, session.username || session.userId)).totalAvailable),
     })
   })
 }
@@ -158,7 +143,7 @@ async function runEditImageTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(args.prompt, 'prompt')
     const referenceMode =
       typeof args.referenceMode === 'string' ? args.referenceMode : 'explicit'
@@ -174,12 +159,7 @@ async function runEditImageTool(
 
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId,
-      session.username || session.userId,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return Failed(reservation.message || '积分不足。')
     }
@@ -205,22 +185,12 @@ async function runEditImageTool(
           : undefined,
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId,
-      session.username || session.userId,
-      'aigc_edit_image',
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `编辑完成！共生成 ${images.length} 张图像。`,
       images: images.map(summarizeImageUrl),
-      ...(usage?.summary
-        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
-        : {}),
+      remainingCredits: aiGenerator.formatCredits((await aiGenerator.getQuotaSummary(session.userId, session.username || session.userId)).totalAvailable),
     })
   })
 }
@@ -232,7 +202,7 @@ async function runStylePresetTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
-  return withImageTaskLock(session, aiGenerator, async () => {
+  return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const resolvedStyle = resolveRequestedStylePreset(args, aiGenerator)
     if ('error' in resolvedStyle) {
       return Failed(resolvedStyle.error)
@@ -255,12 +225,7 @@ async function runStylePresetTool(
 
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.checkAndReserveQuota(
-      session.userId,
-      session.username || session.userId,
-      generationCost,
-      session.platform || undefined,
-    )
+    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
     if (!reservation.allowed) {
       return Failed(reservation.message || '积分不足。')
     }
@@ -280,22 +245,12 @@ async function runStylePresetTool(
       stylePreset: preset.commandName,
     })
 
-    const actualCost =
-      images.length > 0 ? scaleGenerationCost(generationCost, images.length) : generationCost
-    const usage = await aiGenerator.recordUsage(
-      session.userId,
-      session.username || session.userId,
-      preset.commandName,
-      actualCost,
-      session.platform || undefined,
-    )
+    const usage = await aiGenerator.settleReservation(requestId, images.length, preset.commandName, { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `已应用「${preset.commandName}」风格，生成 ${images.length} 张图像。`,
       images: images.map(summarizeImageUrl),
-      ...(usage?.summary
-        ? { remainingCredits: aiGenerator.formatCredits(usage.summary.totalAvailable) }
-        : {}),
+      remainingCredits: aiGenerator.formatCredits((await aiGenerator.getQuotaSummary(session.userId, session.username || session.userId)).totalAvailable),
     })
   })
 }
@@ -521,7 +476,7 @@ function normalizeImageUrls(items: unknown[]): string[] {
 async function withImageTaskLock(
   session: ToolSessionLike,
   aiGenerator: AiImageGeneratorService,
-  work: () => Promise<ToolExecuteResult>,
+  work: (requestId: string) => Promise<ToolExecuteResult>,
 ): Promise<ToolExecuteResult> {
   const requestId = aiGenerator.userManager.startTask(session.userId)
   if (!requestId) {
@@ -529,7 +484,10 @@ async function withImageTaskLock(
   }
 
   try {
-    return await work()
+    return await work(requestId)
+  } catch (error) {
+    try { await aiGenerator.releaseReservation(requestId, error instanceof Error ? error.message : String(error)) } catch { /* reservation may not exist */ }
+    throw error
   } finally {
     aiGenerator.userManager.endTask(session.userId, requestId)
   }

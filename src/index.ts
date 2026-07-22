@@ -65,6 +65,9 @@ export function apply(ctx: Context, config: Config) {
   // 1. UserManager —— 数据落盘目录走 ctx.baseDir/data/<plugin>
   const dataDir = path.join(ctx.baseDir, 'data', name)
   const userManager = new UserManager(dataDir, logger)
+  void userManager.reconcileExpiredReservations(config).catch(error => {
+    logger.warn('启动时预授权恢复失败：%s', error)
+  })
 
   // 2. Service —— 注入 UserManager 与 ProviderRegistry
   // Service 基类构造函数会自动注册到 ctx（super(ctx, 'aiImageGenerator', true)），

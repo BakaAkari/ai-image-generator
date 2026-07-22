@@ -329,12 +329,7 @@ export function createImageGenerationHandlers(
       const estimatedCost = options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
 
       // 1. 积分预检
-      const reservation = await service.checkAndReserveQuota(
-        userId,
-        userName,
-        estimatedCost,
-        platform,
-      )
+      const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost, platform)
       if (!reservation.allowed) {
         return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
       }
@@ -436,17 +431,14 @@ export function createImageGenerationHandlers(
       }
 
       // 6. 成功发送后按实际图片数扣费并记录用量
-      let usageResult: Awaited<ReturnType<AiImageGeneratorService['recordUsage']>> | undefined
+      let usageResult: Awaited<ReturnType<AiImageGeneratorService['settleReservation']>> | undefined
       if (generatedImages.length > 0) {
-        const actualCost = service.scaleGenerationCost(estimatedCost, generatedImages.length)
         try {
-          usageResult = await service.recordUsage(
-            userId,
-            userName,
-            options.styleName,
-            actualCost,
-            platform,
+          usageResult = await service.settleReservation(
             requestId,
+            generatedImages.length,
+            options.styleName,
+            { routeId: options.requestContext?.routeId ?? null, modelId: options.requestContext?.modelId ?? null },
           )
         } catch (recordError) {
           logger.error('记录用量失败', {
@@ -490,12 +482,12 @@ export function createImageGenerationHandlers(
         // showQuotaInImageCommands 是子开关，在总开关开启时额外控制是否显示剩余积分明细
         if (config.showCreditCostInResult) {
           try {
-            const summary = usageResult?.summary || await service.getQuotaSummary(userId, userName)
+            const summary = await service.getQuotaSummary(userId, userName)
             const lines = [
               '生成完成',
               '',
               `- 图片｜${generatedImages.length} 张`,
-              `- 本次消耗｜${service.formatCredits(usageResult?.consumedCredits ?? 0)}`,
+              `- 本次消耗｜${service.formatCredits(usageResult?.settledCredits ?? 0)}`,
             ]
             if (config.showQuotaInImageCommands) {
               lines.push(
@@ -512,6 +504,7 @@ export function createImageGenerationHandlers(
         return ''
       }
 
+      await service.releaseReservation(requestId, 'provider returned no images')
       return sendFinalText(
         session,
         ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n'),
@@ -520,6 +513,7 @@ export function createImageGenerationHandlers(
         userName,
       )
     } catch (error) {
+      try { await service.releaseReservation(requestId, error instanceof Error ? error.message : String(error)) } catch { /* no active reservation */ }
       logger.error('图像生成流程异常', {
         userId,
         styleName: options.styleName,

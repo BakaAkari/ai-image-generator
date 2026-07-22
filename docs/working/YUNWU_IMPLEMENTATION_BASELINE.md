@@ -172,6 +172,15 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 已接线：`src/catalog/image-catalog.ts` 使用 scope cache 与 Scheduler；`src/index.ts` 在热重载时调用 `updateRefreshHours()`，凭证变化仍立即刷新，dispose 显式 stop。
 - 当前验证：全量 71 测试通过，`npm run typecheck`、`npm run build` 通过。
 
-### Task 6–9
+### Task 6：真实预授权、生成链路结算与账本证据
+- 状态：完成代码接线，待最终容器 smoke 验收。
+- 已完成：`reserveCredits` 在 `dataLock` 内冻结免费/已购余额；并发请求不可超卖。
+- 已完成：`settleReservation` 按实际交付图片数结算并释放差额；`releaseReservation` 失败全额释放；操作幂等且满足 `reserved = settled + released`。
+- 已完成：reservation 单独原子持久化，重启后可继续 settle/release；过期 active hold 启动时自动 reconcile。
+- 已完成：管理员、永久会员、豁免平台记录交付但不扣费。
+- 已完成：主编排器、ChatLuna、YesImBot 全部切到 reserve→settle/release；旧伪预检和生成后直接 consume 入口已删除。
+- 当前验证：93 tests、typecheck、build 通过。
+
+### Task 7–9
 - 状态：未开始。
-- 包含真实预授权/结算、aka-tools 后端视图模型与前端去公式、只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。
+- 包含 aka-tools 后端视图模型与前端去公式、只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。

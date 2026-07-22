@@ -88,6 +88,7 @@ export interface ImageRequestContext {
   /** 运行时协议通道 */
   provider?: ProviderType
   modelId?: string
+  routeId?: string
   apiFormat?: ApiFormat
   // resolution 支持预设值 (1k/2k/4k) 或自定义尺寸 (如 '1024x2048')
   resolution?: '1k' | '2k' | '4k' | `${number}x${number}`

@@ -390,14 +390,16 @@ export class AiImageGeneratorService extends Service {
       .slice(0, Math.min(50, Math.max(1, Math.floor(limit || 10))))
   }
 
-  checkAndReserveQuota(userId: string, userName: string, cost: GenerationCost, platform?: string) {
-    return this.userManager.checkAndReserveQuota(
-      userId,
-      userName,
-      cost,
-      this.pluginConfig,
-      platform,
-    )
+  reserveCredits(userId: string, userName: string, requestId: string, cost: GenerationCost, platform?: string) {
+    return this.userManager.reserveCredits(userId, userName, requestId, cost, this.pluginConfig, platform)
+  }
+
+  settleReservation(requestId: string, actualImages: number, commandName: string, evidence: Record<string, unknown> | null) {
+    return this.userManager.settleReservation(requestId, actualImages, commandName, this.pluginConfig, evidence)
+  }
+
+  releaseReservation(requestId: string, reason: string) {
+    return this.userManager.releaseReservation(requestId, this.pluginConfig, reason)
   }
 
   /** 目录计价查询函数（由 index.ts 注入；未注入时自动换算不生效） */
@@ -419,6 +421,7 @@ export class AiImageGeneratorService extends Service {
       const resolvedRoute = this.resolveModelRoute(modelMapping)
       requestContext.supplier = resolvedRoute.supplier
       requestContext.provider = resolvedRoute.protocol
+      requestContext.routeId = this.catalogRouteLookup?.(modelMapping.modelId)?.routeId
     }
     if (modelMapping?.modelId) {
       requestContext.modelId = modelMapping.modelId
@@ -476,52 +479,6 @@ export class AiImageGeneratorService extends Service {
     }
   }
 
-  async recordUsage(
-    userId: string,
-    userName: string,
-    commandName: string,
-    cost: GenerationCost,
-    platform?: string,
-    requestId?: string,
-  ): Promise<UsageRecordingResult> {
-    const isAdmin = this.userManager.isAdmin(userId, this.pluginConfig)
-    const isPermanentMember = this.userManager.isPermanentMember(userId, this.pluginConfig)
-    const isPlatformExempt = Boolean(
-      platform && this.pluginConfig.unlimitedPlatforms?.includes(platform),
-    )
-
-    if (isAdmin || isPermanentMember || isPlatformExempt || cost.totalCredits <= 0) {
-      const userData = await this.userManager.recordUsageOnly(userId, userName, commandName, cost.numImages, this.pluginConfig)
-      return {
-        summary: this.userManager.buildCreditSummary(userData, this.pluginConfig),
-        consumedCredits: 0,
-        freeUsed: 0,
-        purchasedUsed: 0,
-        isAdmin,
-        isPermanentMember,
-        isPlatformExempt,
-      }
-    }
-
-    const result = await this.userManager.consumeCredits(
-      userId,
-      userName,
-      commandName,
-      cost,
-      this.pluginConfig,
-      requestId,
-    )
-    return {
-      summary: this.userManager.buildCreditSummary(result.userData, this.pluginConfig),
-      consumedCredits: cost.totalCredits,
-      freeUsed: result.freeUsed,
-      purchasedUsed: result.purchasedUsed,
-      isAdmin: false,
-      isPermanentMember: false,
-      isPlatformExempt: false,
-      ...(result.ledgerEvent ? { ledgerEvent: result.ledgerEvent } : {}),
-    }
-  }
 
   async grantCredits(
     userId: string,
