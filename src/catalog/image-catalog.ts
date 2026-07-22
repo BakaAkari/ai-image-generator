@@ -91,13 +91,21 @@ export class ImageCatalogService {
       }
 
       const models: ImageModelInfo[] = []
+      const unsupportedModels: CatalogSnapshot['unsupportedModels'] = []
       for (const m of rawModels) {
         if (!m?.id) continue
         const routes = (cfg.supplier === 'yunwu'
           ? resolveYunwuRoutes(m.supported_endpoint_types ?? [])
           : []).filter((route): route is typeof route & { protocol: 'openai' | 'gemini' } =>
             route.protocol === 'openai' || route.protocol === 'gemini')
-        if (routes.length === 0) continue
+        if (routes.length === 0) {
+          unsupportedModels.push({
+            id: m.id,
+            description: m.description?.slice(0, 200),
+            unsupportedReasons: ['no recognized image generation endpoint'],
+          })
+          continue
+        }
         const pricing = pricingMap.get(m.id.toLowerCase())
         const modes = [...new Set(routes.map(route => route.capability === 'image-edit' ? 'image-to-image' : route.capability))]
           .filter((mode): mode is 'text-to-image' | 'image-to-image' => mode === 'text-to-image' || mode === 'image-to-image')
@@ -120,6 +128,7 @@ export class ImageCatalogService {
       this.snapshot = {
         supplier: cfg.supplier,
         models,
+        unsupportedModels,
         fetchedAt: Date.now(),
       }
       await this.persist(cfg)
@@ -158,7 +167,10 @@ export class ImageCatalogService {
     const keyScopeFingerprint = createKeyScopeFingerprint({ supplier: cfg.supplier, apiBase: cfg.apiBase, apiKey: cfg.apiKey })
     const loaded = await this.repository.load(keyScopeFingerprint)
     if (!loaded) return
-    this.snapshot = loaded.envelope.catalog.snapshot
+    this.snapshot = {
+      ...loaded.envelope.catalog.snapshot,
+      unsupportedModels: loaded.envelope.catalog.snapshot.unsupportedModels ?? [],
+    }
     this.billing = loaded.envelope.catalog.billing
     this.logger.info('model catalog restored from scoped cache: %d models stale=%s', this.snapshot.models.length, loaded.stale)
   }

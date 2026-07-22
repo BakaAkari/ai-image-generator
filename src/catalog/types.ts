@@ -30,9 +30,16 @@ export interface ImageModelInfo {
   source: 'remote-pricing' | 'remote-models' | 'fallback'
 }
 
+export interface UnsupportedImageModelInfo {
+  id: string
+  description?: string
+  unsupportedReasons: string[]
+}
+
 export interface CatalogSnapshot {
   supplier: ActiveSupplier
   models: ImageModelInfo[]
+  unsupportedModels: UnsupportedImageModelInfo[]
   fetchedAt: number
   /** 拉取失败时的错误信息（models 为上次缓存） */
   error?: string

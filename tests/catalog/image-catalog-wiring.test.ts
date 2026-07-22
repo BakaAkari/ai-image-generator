@@ -32,4 +32,14 @@ describe('ImageCatalogService scheduler wiring', () => {
     const service = new ImageCatalogService(ctx, logger, '/tmp/catalog-wiring-' + Date.now())
     expect(() => { service.stop(); service.stop() }).not.toThrow()
   })
+  test('catalog contract exposes unsupported models separately', () => {
+    const snapshot = {
+      supplier: 'yunwu',
+      models: [],
+      unsupportedModels: [{ id: 'recognize-only', unsupportedReasons: ['no recognized image generation endpoint'] }],
+      fetchedAt: 0,
+    }
+    expect(snapshot.unsupportedModels).toHaveLength(1)
+  })
+
 })

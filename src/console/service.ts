@@ -10,6 +10,7 @@ import type { Context, Logger } from 'koishi'
 
 import type { ImageCatalogService } from '../catalog/image-catalog.js'
 import type { Config } from '../shared/config.js'
+import { buildConsoleState } from './view-model.js'
 
 export interface ConsoleServiceDeps {
   ctx: Context
@@ -26,16 +27,13 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
   consoleService.addListener('image-generator/get-state', async () => {
     const snapshot = catalog.current
     const billing = catalog.billingInfo
-    return {
-      config: getConfig(),
-      catalog: snapshot ? {
-        supplier: snapshot.supplier,
-        fetchedAt: snapshot.fetchedAt,
-        error: snapshot.error,
-        models: snapshot.models,
-      } : null,
-      billing,
-    }
+    return buildConsoleState(getConfig(), snapshot ? {
+      supplier: snapshot.supplier,
+      fetchedAt: snapshot.fetchedAt,
+      error: snapshot.error,
+      models: snapshot.models,
+      unsupportedModels: snapshot.unsupportedModels,
+    } : null, billing)
   })
 
   consoleService.addListener('image-generator/save-config', async (config: Config) => {

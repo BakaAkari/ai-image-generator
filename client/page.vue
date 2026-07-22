@@ -46,8 +46,8 @@
         <div class="supplier-picker">
           <div
             v-for="s in supplierOptions" :key="s.value"
-            class="supplier-option" :class="{ active: cfg.activeSupplier === s.value }"
-            @click="cfg.activeSupplier = s.value"
+            class="supplier-option" :class="{ active: cfg.activeSupplier === s.value, disabled: s.disabled }"
+            @click="!s.disabled && (cfg.activeSupplier = s.value)"
           >
             <div class="supplier-name">{{ s.label }}</div>
             <div class="supplier-desc">{{ s.desc }}</div>
@@ -97,13 +97,25 @@
             </template>
           </el-table-column>
           <el-table-column label="计价" width="160">
-            <template #default="{ row }">{{ priceLabel(row) }}</template>
+            <template #default="{ row }">{{ row.catalogPrice.label }}</template>
           </el-table-column>
-          <el-table-column label="约积分/张" width="110">
-            <template #default="{ row }">{{ autoCredits(row) }}</template>
+          <el-table-column label="成本报价" width="190">
+            <template #default="{ row }">{{ row.costQuote.label }}</template>
+          </el-table-column>
+          <el-table-column label="运营收费" width="190">
+            <template #default="{ row }">{{ row.chargePolicy.label }}</template>
           </el-table-column>
         </el-table>
         <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
+        <el-collapse v-if="state.catalog?.unsupportedModels?.length" class="unsupported-block">
+          <el-collapse-item :title="`不可执行模型（${state.catalog.unsupportedModels.length}）`">
+            <el-table :data="state.catalog.unsupportedModels" size="small" class="dark-table">
+              <el-table-column prop="id" label="模型" min-width="240" />
+              <el-table-column label="状态" width="100"><template #default><el-tag type="danger" size="small">不可选择</el-tag></template></el-table-column>
+              <el-table-column label="原因" min-width="260"><template #default="{ row }">{{ row.unsupportedReasons?.join('；') || '未识别生成路由' }}</template></el-table-column>
+            </el-table>
+          </el-collapse-item>
+        </el-collapse>
       </k-card>
 
       <!-- ══ ③ 模型映射 ══ -->
@@ -114,7 +126,7 @@
             <el-button size="small" @click="addMapping">添加映射</el-button>
           </div>
         </template>
-        <div class="hint">命令后缀用于聊天中 -后缀 切换模型；每张积分留空 = 按目录计价自动换算（成本 × 汇率 × 加成）</div>
+        <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认禁用，必须显式选择固定积分或目录成本加成。</div>
         <el-table :data="cfg.modelMappings" size="small">
           <el-table-column label="排序" width="70">
             <template #default="{ $index }">
@@ -128,13 +140,18 @@
           <el-table-column label="模型" min-width="260">
             <template #default="{ row }">
               <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
-                <el-option v-for="m in catalogModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
+                <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="每张积分" width="130">
+          <el-table-column label="收费策略" min-width="260">
             <template #default="{ row }">
-              <el-input-number v-model="row.creditCostPerImage" size="small" :min="0" :step="0.5" :placeholder="'自动'" style="width: 110px" />
+              <el-select v-model="row.chargePolicy.type" size="small" style="width: 110px">
+                <el-option value="disabled" label="禁用" />
+                <el-option value="fixed" label="固定积分" />
+                <el-option value="cost-plus" label="目录加成" />
+              </el-select>
+              <el-input-number v-if="row.chargePolicy.type === 'fixed'" v-model="row.chargePolicy.creditsPerImage" size="small" :min="0" :step="0.5" style="width: 110px; margin-left: 6px" />
             </template>
           </el-table-column>
           <el-table-column label="受限" width="70">
@@ -157,7 +174,6 @@
       <k-card title="积分与运营" class="section">
         <el-form label-width="200px">
           <el-form-item label="积分单位名称"><el-input v-model="cfg.creditUnitName" style="width: 160px" /></el-form-item>
-          <el-form-item label="默认每张积分（无单价时）"><el-input-number v-model="cfg.defaultCreditCostPerImage" :min="0" :step="0.5" /></el-form-item>
           <el-form-item label="每日免费积分"><el-input-number v-model="cfg.dailyFreeCredits" :min="0" :step="1" /></el-form-item>
           <el-form-item label="积分汇率（1 美元 = N 积分）"><el-input-number v-model="cfg.creditExchangeRate" :min="0" :step="100" /></el-form-item>
           <el-form-item label="定价加成倍率"><el-input-number v-model="cfg.costMarkup" :min="0.1" :step="0.05" /></el-form-item>
@@ -280,12 +296,12 @@ const saving = ref(false)
 const refreshing = ref(false)
 const catalogFilter = ref('')
 
-const supplierOptions = [
-  { value: 'yunwu', label: '云雾 yunwu.ai', desc: 'new-api 中转，模型全、计价透明' },
-  { value: 'gptgod', label: 'GPTGod', desc: 'Shell API 中转站' },
-  { value: 'openai-official', label: 'OpenAI 官方', desc: 'gpt-image 系列' },
-  { value: 'gemini-official', label: 'Gemini 官方', desc: 'Imagen / gemini-image' },
-]
+const supplierOptions = computed(() => state.value?.suppliers?.map((item: any) => ({
+  value: item.id,
+  label: item.label,
+  desc: item.status === 'maintained' ? '当前完整维护' : '暂未适配',
+  disabled: item.status !== 'maintained',
+})) ?? [])
 
 onMounted(async () => {
   state.value = await send('image-generator/get-state')
@@ -299,13 +315,14 @@ function normalizeConfig(raw: any) {
   c.catalogRefreshHours ??= 6
   c.creditExchangeRate ??= 1000
   c.costMarkup ??= 1.3
-  c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m }))
+  c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m, chargePolicy: m.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' } }))
   c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
   for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]
   return c
 }
 
 const catalogModels = computed(() => state.value?.catalog?.models ?? [])
+const selectableModels = computed(() => state.value?.catalog?.selectableModels ?? [])
 const filteredCatalog = computed(() => {
   const kw = catalogFilter.value.trim().toLowerCase()
   if (!kw) return catalogModels.value
@@ -324,29 +341,15 @@ const billingLimit = computed(() => state.value?.billing?.hardLimitUsd != null ?
 function modeLabel(m: string) {
   return { 'text-to-image': '文生图', 'image-to-image': '图生图', 'compose-image': '合成图' }[m] ?? m
 }
-function priceLabel(m: any) {
-  const p = m.pricing
-  if (p?.type === 'per-call' && p.pricePerCall != null) return `$${p.pricePerCall.toFixed(4)}/次`
-  if (p?.type === 'per-token' && p.tokenRatio != null) return `token ×${p.tokenRatio}`
-  return '未知'
-}
-function autoCredits(m: any) {
-  const p = m.pricing
-  const rate = cfg.value?.creditExchangeRate ?? 1000
-  const markup = cfg.value?.costMarkup ?? 1.3
-  if (p?.type === 'per-call' && p.pricePerCall != null) return Math.ceil(p.pricePerCall * rate * markup * 100) / 100
-  if (p?.type === 'per-token' && p.tokenRatio != null) return Math.ceil(0.004 * p.tokenRatio * rate * markup * 100) / 100
-  return '—'
-}
 function modelOptionLabel(m: any) {
-  return `${m.id}（${priceLabel(m)}）`
+  return `${m.id}（${m.catalogPrice?.label ?? '目录价格未知'}）`
 }
 function mappingValid(row: any) {
-  return catalogModels.value.some((m: any) => m.id === row.modelId)
+  return selectableModels.value.some((m: any) => m.id === row.modelId) && row.chargePolicy?.type !== 'disabled'
 }
 
 function addMapping() {
-  cfg.value.modelMappings.push({ suffix: '', modelId: catalogModels.value[0]?.id ?? '', restricted: false, creditCostPerImage: undefined })
+  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false, chargePolicy: { type: 'disabled', reason: '请显式配置收费策略' } })
 }
 function moveMapping(i: number, dir: number) {
   const arr = cfg.value.modelMappings
@@ -434,4 +437,5 @@ async function saveAll() {
 .mode-tag { margin-right: 4px; }
 .hint { font-size: 0.8rem; color: var(--fg3); margin-bottom: 0.5rem; }
 .error-line { color: var(--el-color-danger); font-size: 0.8rem; margin-top: 0.5rem; }
+.unsupported-block { margin-top: 0.75rem; }
 </style>

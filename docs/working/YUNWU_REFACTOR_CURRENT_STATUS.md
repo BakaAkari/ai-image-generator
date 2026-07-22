@@ -55,12 +55,11 @@ Task 6 提交前的完整验证：
 - `npm run typecheck`：通过。
 - `npm run build`：通过。
 
-### Task 7 未完成项
+### Task 7 当前状态
 
-- 旧 `ImageCatalogService` 当前只保留 executable 模型；unsupported 模型在刷新阶段被丢弃。
-- `src/console/service.ts` 目前仍显式传入 `unsupportedModels: []`。
-- 下一步必须让 `CatalogSnapshot` 持有独立 `unsupportedModels`，刷新时保留识别/上传/视频/未知 endpoint 模型，并由 Console 展示但禁止选择。
-- 完成上述数据链后重新运行全量 test/typecheck/build，更新基线文档并提交 Task 7。
+- `CatalogSnapshot` 已持有独立 `unsupportedModels`；刷新时保留未知/非生成 endpoint 模型。
+- Console 后端转发 unsupported 数据，页面独立分组展示并标记“不可选择”。
+- 待运行全量 test/typecheck/build 后提交 Task 7。
 
 ## 当前未提交工作树
 

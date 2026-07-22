@@ -181,6 +181,13 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 已完成：主编排器、ChatLuna、YesImBot 全部切到 reserve→settle/release；旧伪预检和生成后直接 consume 入口已删除。
 - 当前验证：93 tests、typecheck、build 通过。
 
-### Task 7–9
+### Task 7：aka-tools 后端契约与页面
+- 状态：完成代码实现，待本次提交。
+- 后端 view-model 明确区分目录价格、成本报价、运营收费策略和数据来源。
+- 前端已删除 `autoCredits`、`0.004` 和所有价格乘法，只渲染后端标签/数值。
+- 新映射默认 disabled；仅 `selectableModels` 可选择；unsupported 模型单独展示且不可选。
+- yunwu 标记为 maintained，其他供应商标记 unsupported/暂未适配。
+
+### Task 8–9
 - 状态：未开始。
-- 包含 aka-tools 后端视图模型与前端去公式、只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。
+- 包含只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。
