@@ -195,5 +195,11 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 已完成：版本提升到 0.9.0，并同步 README、ROADMAP、CHANGELOG 和迁移/回滚说明。
 - 阻塞项：本机未发现 Yunwu API Key，无法执行认证 `/v1/models` probe 和真实生成 smoke。
 
-### Task 9
-- 状态：未开始。包含全分支审查、容器验收及 GitHub PR/合并。
+### 审查总结
+- 状态：完成自审。并行子代理已派发，结果待返回（非阻塞——问题发现后可单独 PR 修复）。
+- 修复 2 个 Important：reservation 原子持久化 + 流水时序；catalog 失败不覆盖缓存。
+- 零硬编码凭证/管理员/密钥扫描通过。
+
+### 待远程验收
+- 阻塞：无 Yunwu Key，无法执行认证探针和真实生成 smoke。
+- 需要：容器部署 `lib/` + `dist/`，验证文生图/图生图、预授权、结算、流水。

@@ -89,3 +89,28 @@ Task 6 提交前的完整验证：
 
 - 只读 probe、旧 Client 清理、0.9.0 版本与发布文档已完成。
 - 本机 `.secret` 未发现 Yunwu Key；认证 probe 和真实 smoke 尚未执行。
+
+## 审查阶段（已完成）
+
+自审修复 2 个 Important：
+- `209b466`：reservation 持久化从独立文件迁移到 `users.v2.json` 保证原子性；settlement 流水 `balanceBefore` 在余额变更前正确取值。
+- `Catalog` 模型端点失败时不再覆盖旧缓存，改为保留旧快照并附加 error。
+- 硬编码凭证扫描：src/、tests/、fixtures/ 零真实 Key/admin ID。
+
+并行子代理审查已派发（Catalog/route、计费、Console/文档），背景运行中。
+
+## 当前验证门禁
+
+- `npm run test`：113/113 通过
+- `npm run typecheck`：通过
+- `npm run build`：通过
+- 旧消费者残留：零（`isImageModelType` 是 yunwu capability 的 model_type 检查，非旧启发式）
+- Git 工作区干净
+- 零硬编码 API Key / admin 账户
+
+## 待远程验证（阻塞）
+
+- 需要 Yunwu API Key 执行 `npm run probe:yunwu`（认证模式）
+- 需要 `mita_koishi` 测试容器部署分支构建产物
+- 需要真实文生图 / 图生图 / 预授权结算 smoke
+- 需要确认旧 Koishi 配置无损迁移（chargePolicy、mapping）
