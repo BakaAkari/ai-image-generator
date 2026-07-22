@@ -4,14 +4,21 @@
       <span>aka-tools · 图像生成</span>
     </template>
     <template #right>
-      <div class="header-right">
-        <div class="page-tabs">
-          <span class="page-tab active">图像生成</span>
-          <span class="page-tab disabled" title="安装 aka-ai-video-generator 后可用">视频生成（即将推出）</span>
-        </div>
-        <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
-      </div>
+      <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
     </template>
+
+    <!-- 顶层浮动工具按钮：图像 / 视频 / 存储 -->
+    <div class="floating-tools">
+      <div class="tool-btn active" title="图像生成设置">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
+      <div class="tool-btn disabled" title="视频生成设置（即将推出）">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="15" height="16" rx="2"/><path d="m17 9 5-3v12l-5-3"/></svg>
+      </div>
+      <div class="tool-btn disabled" title="存储管理（即将推出）">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+      </div>
+    </div>
 
     <div v-if="!state" class="loading">正在加载…</div>
     <div v-else class="page-scroll">
@@ -367,13 +374,18 @@ async function saveAll() {
 /* 页面滚动容器：k-layout 内容区撑满并自行滚动 */
 .page-scroll { height: 100%; overflow-y: auto; padding: 1rem; box-sizing: border-box; }
 
-/* 顶部右侧：分页切换 + 保存按钮 */
-.header-right { display: flex; align-items: center; gap: 1rem; }
 .save-btn { flex-shrink: 0; width: auto; }
-.page-tabs { display: flex; gap: 0.25rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.25rem; }
-.page-tab { padding: 0.3rem 0.9rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; color: var(--fg2); white-space: nowrap; }
-.page-tab.active { background: var(--primary); color: #fff; }
-.page-tab.disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 顶层浮动工具按钮组：固定定位，不占用布局区域 */
+.floating-tools { position: fixed; top: 3.5rem; right: 1rem; z-index: 2000;
+  display: flex; flex-direction: column; gap: 0.5rem; }
+.tool-btn { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--fg2);
+  cursor: pointer; transition: all 0.15s; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.tool-btn:hover { border-color: var(--primary); color: var(--primary); }
+.tool-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.tool-btn.disabled { opacity: 0.45; cursor: not-allowed; }
+.tool-btn.disabled:hover { border-color: var(--border); color: var(--fg2); }
 
 /* 暗色主题表格：统一行背景，避免斑马白行 */
 .dark-table { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent;
