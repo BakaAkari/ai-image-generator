@@ -140,6 +140,27 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 ## 当前实施状态
 
 ### Task 1：Yunwu 原始契约、Client 与脱敏 Fixture
+- 状态：完成
+- 新增文件：
+  - `src/suppliers/types.ts`、`src/suppliers/yunwu/raw-types.ts`、`src/suppliers/yunwu/client.ts`
+  - `tests/suppliers/yunwu/client.test.ts`、`tests/suppliers/yunwu/contract.test.ts`
+  - `tests/fixtures/yunwu/{models,pricing,billing,status,snapshot}.json`
+  - `vitest.config.ts` 作为测试运行器
+- 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
+- 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
+
+### Task 2：fail-closed 规范化 Catalog、能力和 Route 解析
+- 状态：完成
+- 新增文件：
+  - `src/catalog/model-catalog.ts` 通用 Catalog 类型
+  - `src/suppliers/yunwu/capability.ts` 能力解析
+  - `src/suppliers/yunwu/routes.ts` 路由解析
+  - `src/suppliers/yunwu/normalizer.ts` Snapshot 转换
+  - `tests/catalog/{capability,routes,yunwu-normalizer}.test.ts`、`tests/catalog/_fixture.ts`
+- 验证：`npm run test` 怱 31 通过，`typecheck` / `build` 通过
+- 关键反例：`kling-avatar-image2video`、`kling-image-recognize`、`mj_upload`、`pixverse-image-template` 被正确标记为 non-executable
+
+### Task 1：Yunwu 原始契约、Client 与脱敏 Fixture
 - 状态：已完成
 - 新增文件：
   - `src/suppliers/types.ts`、`src/suppliers/yunwu/raw-types.ts`、`src/suppliers/yunwu/client.ts`
