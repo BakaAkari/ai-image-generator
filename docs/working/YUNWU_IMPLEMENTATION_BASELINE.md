@@ -149,6 +149,15 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
 - 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
 
+### Task 4：旧配置无损迁移与删除默认模型/隐式价格/名称路由
+- 状态：已开始
+- 新增文件：
+  - `src/config/migration.ts` — `migrateConfig()` / `sanitizeModelMapping()`
+  - `tests/config/migration.test.ts`
+- 已修改：
+  - `src/shared/config.ts` 中 `modelMappings` 默认值清空
+  - `src/service/AiImageGeneratorService.ts` 中 `resolveModelRoute()` 首先尝试从 catalog 路由解析，不再单纯依赖名称匹配
+- 未完成：需要 `catalogService` 注入到 service 才能完全删除名称回退
 ### Task 3：Pricing、CostQuote、ChargePolicy、Settlement 领域模型
 - 状态：完成
 - 新增文件：

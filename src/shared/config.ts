@@ -262,10 +262,7 @@ export const Config = Schema.intersect([
       }).collapse()
     )
       .role('table')
-      .default([
-        { suffix: 'gpt', modelId: 'gpt-image-2', restricted: false, creditCostPerImage: undefined as unknown as number },
-        { suffix: 'gemini', modelId: 'gemini-3-pro-image-preview', restricted: false, creditCostPerImage: undefined as unknown as number },
-      ])
+      .default([])
       .description('模型路由；第一条为默认模型。供应商与协议由激活供应商统一决定，不在此配置'),
   }).description('🔀 模型映射（请前往 aka-tools 面板管理）').collapse().hidden(),
 
