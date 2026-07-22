@@ -16,6 +16,9 @@ pnpm-debug.log*
 data/
 *.log
 
+# isolated development worktrees
+.worktrees/
+
 # editors / OS
 .eslintcache
 .DS_Store
