@@ -3,10 +3,6 @@
     <template #header>
       <span>aka-tools · 图像生成</span>
     </template>
-    <template #right>
-      <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
-    </template>
-
     <!-- 顶层浮动工具按钮：图像 / 视频 / 存储（Teleport 到 body，避免祖先 transform 使 fixed 失效） -->
     <Teleport to="body">
     <div class="floating-tools" v-if="isAkaToolsRoute">
@@ -255,7 +251,15 @@
         </el-form>
       </k-card>
 
+      <div class="bottom-spacer"></div>
     </div>
+
+    <!-- 固定底部保存栏：常驻可视窗口底部，不随内容滚动 -->
+    <Teleport to="body">
+      <div class="save-bar" v-if="isAkaToolsRoute">
+        <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
+      </div>
+    </Teleport>
   </k-layout>
 </template>
 
@@ -379,12 +383,20 @@ async function saveAll() {
 
 /* 页面滚动容器：k-layout 内容区撑满并自行滚动 */
 .page-scroll { height: 100%; overflow-y: auto; padding: 1rem; box-sizing: border-box; }
+.bottom-spacer { height: 3.5rem; }
 
 .save-btn { flex-shrink: 0; width: auto; }
 
 </style>
 
 <style lang="scss">
+/* 固定底部保存栏：常驻可视底部，横向对齐内容区（避开左侧 ~4rem 菜单栏），不随滚动 */
+.save-bar { position: fixed; left: 4rem; right: 0; bottom: 0; z-index: 1990;
+  display: flex; justify-content: flex-end; padding: 0.6rem 1.2rem;
+  background: var(--bg0, rgba(20,20,20,0.92)); backdrop-filter: blur(6px);
+  border-top: 1px solid var(--border); }
+.save-bar .save-btn { flex-shrink: 0; width: auto; }
+
 /* 顶层浮动工具按钮组：固定定位，不占用布局区域（全局样式，Teleport 目标在组件外） */
 .floating-tools { position: fixed; top: 3.5rem; right: 1rem; z-index: 2000;
   display: flex; flex-direction: column; gap: 0.5rem; }
