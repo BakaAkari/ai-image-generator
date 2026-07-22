@@ -443,6 +443,12 @@ function buildCommandModifiers(
     const defaultMapping = resolveStyleModelMapping(style, modelIndex)
     if (defaultMapping) modifiers.modelMapping = defaultMapping
   }
+  // 0.9.0：无后缀、无 style 默认模型时取第一个非 disabled 映射
+  if (!modifiers.modelMapping) {
+    modifiers.modelMapping = (config.modelMappings ?? []).find(
+      m => m.chargePolicy?.type !== 'disabled',
+    )
+  }
   return modifiers
 }
 
