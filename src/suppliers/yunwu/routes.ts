@@ -58,7 +58,7 @@ export function resolveRoutesFromCapabilities(capabilities: ModelCapability[]): 
   const routes: GenerationRoute[] = []
   const seen = new Set<string>()
 
-  const capabilityRouteMap: Record<ModelCapability, GenerationProtocol> = {
+  const capabilityRouteMap: Partial<Record<ModelCapability, GenerationProtocol>> = {
     'text-to-image': 'openai',
     'image-to-image': 'openai',
     'image-edit': 'openai',

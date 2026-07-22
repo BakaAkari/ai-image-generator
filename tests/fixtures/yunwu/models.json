@@ -4,7 +4,9 @@
       "id": "dall-e-3",
       "model_type": "图像",
       "description": "生成图像的新版本DALL-E。",
-      "supported_endpoint_types": [],
+      "supported_endpoint_types": [
+        "dall-e-3"
+      ],
       "tags": "绘画,弃用",
       "vendor_id": 52,
       "available": true
@@ -12,7 +14,7 @@
     {
       "id": "gpt-image-2",
       "model_type": "图像",
-      "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输入。",
+      "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输",
       "supported_endpoint_types": [
         "openai编辑图片",
         "image-generation"
@@ -36,7 +38,7 @@
     {
       "id": "gemini-3-pro-image-preview",
       "model_type": "图像",
-      "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 Flash Image(Nano Banana)的升级版。该模型融合多模态Transformer和扩散模型,原生支持2K(2048×2048)及4K分辨率输出,在图像质量、文字渲染、物理推理等方面实现显著提升。",
+      "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 ",
       "supported_endpoint_types": [
         "gemini",
         "openai"
@@ -48,7 +50,7 @@
     {
       "id": "gemini-3-pro-image",
       "model_type": "图像",
-      "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功能。Nano Banana Pro 最适合用于复杂的平面设计、高保真产品视觉稿和需要通过 Google 搜索进行真实世界接地的事实数据可视化，这些任务需要准确的文本渲染",
+      "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功",
       "supported_endpoint_types": [
         "gemini",
         "openai"
@@ -71,7 +73,7 @@
     {
       "id": "kling-avatar-image2video",
       "model_type": "音视频",
-      "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚拟主播、视频配音、数字人制作等应用。",
+      "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚",
       "supported_endpoint_types": [
         "数字人"
       ],

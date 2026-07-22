@@ -3,7 +3,7 @@
  */
 
 import type { CatalogModel, CatalogSnapshot, CatalogNormalizer } from '../../catalog/model-catalog.js'
-import type { CatalogModelPricing } from '../../catalog/types.js'
+import type { CatalogModelPricing } from '../../catalog/model-catalog.js'
 import type { YunwuModelItem, YunwuPricingItem, YunwuRawSnapshot } from './raw-types.js'
 import { resolveYunwuCapabilities } from './capability.js'
 import { resolveRoutesFromCapabilities, resolveYunwuRoutes } from './routes.js'
@@ -27,31 +27,12 @@ function normalizePricing(item: YunwuModelItem, pricing?: YunwuPricingItem): Cat
 
 function normalizeModel(item: YunwuModelItem, pricing?: YunwuPricingItem): CatalogModel {
   const { capabilities, reasons } = resolveYunwuCapabilities(item)
-
   const routesFromEndpoints = resolveYunwuRoutes(item.supported_endpoint_types ?? [])
   const routesFromCapabilities = routesFromEndpoints.length > 0 ? [] : resolveRoutesFromCapabilities(capabilities)
   const routes = [...routesFromEndpoints, ...routesFromCapabilities]
-
-  const hasBlockingReason = reasons.some(r =>
-    r.includes('not image') ||
-    r.includes('endpoint') ||
-    r.includes('no recognized')
-  )
-
-  let executableStatus: CatalogModel['executableStatus'] = 'available'
-  let executable = item.available !== false && routes.length > 0 && !hasBlockingReason
-
-  if (!executable) {
-    if (routes.length === 0 || hasBlockingReason) {
-      executableStatus = 'unsupported'
-    } else if (item.available === false) {
-      executableStatus = 'unavailable'
-    } else {
-      executableStatus = 'unknown'
-    }
-  }
-
-  const unsupportedReasons = executable ? undefined : reasons
+  const hasBlockingReason = reasons.some(r => r.includes('not image') || r.includes('no recognized'))
+  const executable = item.available !== false && routes.length > 0 && !hasBlockingReason
+  const executableStatus: CatalogModel['executableStatus'] = executable ? 'available' : 'unsupported'
 
   return {
     id: item.id,
@@ -61,7 +42,7 @@ function normalizeModel(item: YunwuModelItem, pricing?: YunwuPricingItem): Catal
     routes,
     executable,
     executableStatus,
-    unsupportedReasons,
+    unsupportedReasons: executable ? undefined : reasons,
   }
 }
 

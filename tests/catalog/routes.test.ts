@@ -1,39 +1,55 @@
 import { describe, test, expect } from 'vitest'
-import { resolveYunwuRoutes } from '../../src/suppliers/yunwu/routes.js'
-import type { YunwuModelItem } from '../../src/suppliers/yunwu/raw-types.js'
+import { resolveYunwuRoutes, resolveRoutesFromCapabilities } from '../../src/suppliers/yunwu/routes.js'
+import type { GenerationRoute } from '../../src/catalog/model-catalog.js'
 
 describe('resolveYunwuRoutes', () => {
-  test('openai image generation endpoint yields openai route', () => {
-    const m: YunwuModelItem = { id: 'gpt-image-2', supported_endpoint_types: ['image-generation'] }
-    const routes = resolveYunwuRoutes(m)
-    expect(routes).toHaveLength(1)
-    expect(routes[0]!.protocol).toBe('openai')
+  test('image-generation endpoint maps to openai text-to-image', () => {
+    const routes = resolveYunwuRoutes(['image-generation'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'openai:text-to-image', protocol: 'openai', capability: 'text-to-image', endpointName: 'image-generation' },
+    ])
   })
 
-  test('gemini endpoint yields gemini route', () => {
-    const m: YunwuModelItem = { id: 'gemini-3-pro-image', supported_endpoint_types: ['gemini'] }
-    const routes = resolveYunwuRoutes(m)
-    expect(routes).toHaveLength(1)
-    expect(routes[0]!.protocol).toBe('gemini')
+  test('openai edit endpoint maps to openai image-edit', () => {
+    const routes = resolveYunwuRoutes(['openai-编辑'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'openai:image-edit', protocol: 'openai', capability: 'image-edit', endpointName: 'openai-编辑' },
+    ])
   })
 
-  test('mixed endpoints yield both routes without duplication', () => {
-    const m: YunwuModelItem = { id: 'gemini-3-pro-image', supported_endpoint_types: ['gemini', 'openai'] }
-    const routes = resolveYunwuRoutes(m)
-    const protocols = routes.map(r => r.protocol)
-    expect(protocols).toContain('gemini')
-    expect(protocols).toContain('openai')
+  test('gemini endpoint maps to gemini text-to-image', () => {
+    const routes = resolveYunwuRoutes(['gemini'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'gemini:text-to-image', protocol: 'gemini', capability: 'text-to-image', endpointName: 'gemini' },
+    ])
   })
 
-  test('unknown endpoint yields no routes', () => {
-    const m: YunwuModelItem = { id: 'weird', supported_endpoint_types: ['unknown-endpoint'] }
-    const routes = resolveYunwuRoutes(m)
-    expect(routes).toHaveLength(0)
+  test('dall-e-3 endpoint maps to openai text-to-image', () => {
+    const routes = resolveYunwuRoutes(['dall-e-3'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'openai:text-to-image', protocol: 'openai', capability: 'text-to-image', endpointName: 'dall-e-3' },
+    ])
   })
 
-  test('non-generation endpoints yield no routes', () => {
-    const m: YunwuModelItem = { id: 'mj_upload', supported_endpoint_types: ['mj图片上传'] }
-    const routes = resolveYunwuRoutes(m)
-    expect(routes).toHaveLength(0)
+  test('unknown endpoint yields no route', () => {
+    const routes = resolveYunwuRoutes(['数字人'])
+    expect(routes).toEqual([])
+  })
+
+  test('mixed endpoints drop unknowns and keep known routes', () => {
+    const routes = resolveYunwuRoutes(['image-generation', '图像识别', 'gemini'])
+    expect(routes.map(r => r.protocol)).toEqual(['openai', 'gemini'])
+  })
+})
+
+describe('resolveRoutesFromCapabilities', () => {
+  test('maps known capabilities to default routes', () => {
+    const routes = resolveRoutesFromCapabilities(['text-to-image', 'image-edit'])
+    expect(routes.map(r => r.id)).toEqual(['openai:text-to-image', 'openai:image-edit'])
+  })
+
+  test('returns empty for empty capabilities', () => {
+    const routes = resolveRoutesFromCapabilities([])
+    expect(routes).toEqual([])
   })
 })

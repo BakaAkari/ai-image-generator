@@ -15,7 +15,9 @@
             "id": "dall-e-3",
             "model_type": "图像",
             "description": "生成图像的新版本DALL-E。",
-            "supported_endpoint_types": [],
+            "supported_endpoint_types": [
+              "dall-e-3"
+            ],
             "tags": "绘画,弃用",
             "vendor_id": 52,
             "available": true
@@ -23,7 +25,7 @@
           {
             "id": "gpt-image-2",
             "model_type": "图像",
-            "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输入。",
+            "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输",
             "supported_endpoint_types": [
               "openai编辑图片",
               "image-generation"
@@ -47,7 +49,7 @@
           {
             "id": "gemini-3-pro-image-preview",
             "model_type": "图像",
-            "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 Flash Image(Nano Banana)的升级版。该模型融合多模态Transformer和扩散模型,原生支持2K(2048×2048)及4K分辨率输出,在图像质量、文字渲染、物理推理等方面实现显著提升。",
+            "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 ",
             "supported_endpoint_types": [
               "gemini",
               "openai"
@@ -59,7 +61,7 @@
           {
             "id": "gemini-3-pro-image",
             "model_type": "图像",
-            "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功能。Nano Banana Pro 最适合用于复杂的平面设计、高保真产品视觉稿和需要通过 Google 搜索进行真实世界接地的事实数据可视化，这些任务需要准确的文本渲染",
+            "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功",
             "supported_endpoint_types": [
               "gemini",
               "openai"
@@ -82,7 +84,7 @@
           {
             "id": "kling-avatar-image2video",
             "model_type": "音视频",
-            "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚拟主播、视频配音、数字人制作等应用。",
+            "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚",
             "supported_endpoint_types": [
               "数字人"
             ],
@@ -154,39 +156,39 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "纯AZ",
-              "uchat_o3_特供\t_官转openai",
-              "enterprise-az2",
-              "特供-az 0.7",
-              "限时体验",
-              "特供az1.5",
-              "特供-优质gpt",
-              "特供HC-官转openai",
-              "测试",
               "特供飞数-gpt",
+              "分组一",
+              "enterprise",
+              "限时体验",
+              "纯AZ",
+              "特供-HC-纯AZ",
+              "官转",
+              "特供az1.5",
               "分组三",
+              "enterprise-az0.4",
+              "特供HC-官转openai",
+              "特供-HC-default",
               "官转OpenAI",
-              "分组二",
-              "default",
-              "特供-az 1.3",
-              "0.22az专属",
+              "enterprise-default",
+              "GLB Official",
               "特供HC-官转",
+              "特供-优质gpt",
+              "特供az *1.36",
+              "enterprise-az2",
+              "特供kimi3折",
+              "az0.3",
+              "特供-az 0.7",
+              "限时特价",
+              "default",
+              "uchat_o3_特供\t_官转openai",
+              "0.22az专属",
+              "特供-az 1.3",
+              "测试",
               "特价9折",
+              "分组二",
               "enterprise-az0.45",
               "enterprise-az-224",
-              "分组一",
-              "特供-HC-纯AZ",
-              "enterprise",
-              "az0.4",
-              "enterprise-az0.4",
-              "enterprise-default",
-              "az0.3",
-              "特供-HC-default",
-              "GLB Official",
-              "特供az *1.36",
-              "特供kimi3折",
-              "官转",
-              "限时特价"
+              "az0.4"
             ],
             "supported_endpoint_types": [],
             "type": 1,
@@ -205,37 +207,37 @@
             "completion_ratio": 6,
             "image_ratio": 1.6,
             "enable_groups": [
-              "enterprise-default",
               "纯AZ",
-              "优质官转OpenAI",
-              "特供-优质官转openai",
-              "特供az *1.36",
-              "分组三",
-              "测试",
-              "特供az1.5",
-              "enterprise-az-224",
-              "default",
-              "分组二",
-              "enterprise-az2",
-              "GLB Official",
-              "Codex专属",
               "官转",
+              "分组一",
+              "enterprise-default",
+              "GLB Official",
+              "优质官转OpenAI",
+              "特供HC-官转openai",
+              "分组三",
+              "enterprise-az2",
+              "测试",
+              "官转OpenAI",
+              "特供-优质官转openai",
+              "限时体验",
+              "特供HC-官转",
+              "enterprise-az0.4",
+              "特供-HC-default",
               "特供飞数-gpt",
+              "default",
+              "Codex专属",
+              "特供az *1.36",
+              "特供-az 1.3",
               "az0.3",
               "特供-az 0.7",
+              "分组二",
               "特供-HC-纯AZ",
-              "uchat_o3_特供\t_官转openai",
-              "特供-优质gpt",
-              "特供-az 1.3",
-              "特供-HC-default",
-              "限时体验",
-              "特供HC-官转openai",
-              "官转OpenAI",
-              "特供HC-优质官转openai",
-              "特供HC-官转",
+              "enterprise-az-224",
+              "特供az1.5",
               "enterprise-az0.45",
-              "分组一",
-              "enterprise-az0.4"
+              "uchat_o3_特供\t_官转openai",
+              "特供HC-优质官转openai",
+              "特供-优质gpt"
             ],
             "supported_endpoint_types": [
               "openai编辑图片",
@@ -257,8 +259,8 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "default",
               "测试",
+              "default",
               "gpt-绘图"
             ],
             "supported_endpoint_types": [
@@ -281,19 +283,19 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "优质gemini-vertex",
-              "特供-banana0.85",
               "特供-gemini45折",
-              "官转gemini",
-              "优质官转gemini2",
-              "测试",
-              "向量-特供生图-高价",
-              "特供飞数-gemini",
-              "直连Gemini",
               "优质gemini",
-              "特供星星",
+              "官转gemini",
+              "优质官转gemini",
               "特价banana",
-              "优质官转gemini"
+              "测试",
+              "特供星星",
+              "直连Gemini",
+              "特供飞数-gemini",
+              "优质官转gemini2",
+              "特供-banana0.85",
+              "向量-特供生图-高价",
+              "优质gemini-vertex"
             ],
             "supported_endpoint_types": [
               "gemini",
@@ -315,13 +317,13 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "优质官转gemini",
-              "优质gemini-vertex",
               "官转gemini",
-              "优质官转gemini2",
-              "测试",
+              "优质官转gemini",
               "向量-特供生图-高价",
+              "测试",
               "直连Gemini",
+              "优质gemini-vertex",
+              "优质官转gemini2",
               "优质gemini"
             ],
             "supported_endpoint_types": [
@@ -344,10 +346,10 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "default",
+              "限时体验",
               "测试",
               "纯AZ",
-              "限时体验"
+              "default"
             ],
             "supported_endpoint_types": [
               "dall-e-3"
@@ -389,8 +391,8 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "default",
-              "国内模型"
+              "国内模型",
+              "default"
             ],
             "supported_endpoint_types": [
               "图像识别"
@@ -408,8 +410,8 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "default",
-              "纯AZ"
+              "纯AZ",
+              "default"
             ],
             "supported_endpoint_types": [
               "mj图片上传"
@@ -430,8 +432,8 @@
             "owner_by": "",
             "completion_ratio": 0,
             "enable_groups": [
-              "default",
-              "测试"
+              "测试",
+              "default"
             ],
             "supported_endpoint_types": [
               "图片模板"

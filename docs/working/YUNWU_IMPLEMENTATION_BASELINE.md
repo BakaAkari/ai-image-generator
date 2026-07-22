@@ -149,6 +149,14 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
 - 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
 
+### Task 3：Pricing、CostQuote、ChargePolicy、Settlement 领域模型
+- 状态：完成
+- 新增文件：
+  - `src/pricing/pricing.ts` — `PricingEngine`、`CostQuote`、`ChargePolicy`、`PriceQuoteKind`
+  - `src/pricing/settlement.ts` — `LedgerEntry`、`SettlementStore`、`SettlementResult`
+  - `tests/pricing/pricing.test.ts`、`tests/pricing/settlement.test.ts`
+- 验证：全部 55 测试通过，`typecheck`/`build` 通过
+- 关键语义：目录价 = `catalog-quote`，不再声称 `exact`。per-call 使用 `model_price`；per-token 使用 `model_ratio + image_ratio`。缺少目录时依网全局缺省积分，否则抛出 `PricingNotAvailableError`。
 ### Task 2：fail-closed 规范化 Catalog、能力和 Route 解析
 - 状态：完成
 - 新增文件：

@@ -15,6 +15,11 @@ export type ModelCapability =
   | 'image-edit'
   | 'image-variation'
   | 'image-upscale'
+  | 'video-generation'
+  | 'image-recognition'
+  | 'upload'
+  | 'avatar'
+  | 'unknown'
 
 /** 生成路由的目标协议 */
 export type GenerationProtocol = 'openai' | 'gemini' | 'openai-legacy'
@@ -57,6 +62,7 @@ export type PricingType = 'per-call' | 'per-token' | 'unknown'
 
 /** 规范化计价信息 */
 export interface CatalogModelPricing {
+
   type: PricingType
   /** per-call 单价（美元/次） */
   pricePerCall?: number
@@ -93,4 +99,16 @@ export interface CatalogNormalizer<TRawSnapshot, TSnapshot extends CatalogSnapsh
   executable(snapshot: TSnapshot): CatalogModel[]
   /** 过滤出不可执行/不受支持模型 */
   unsupported(snapshot: TSnapshot): CatalogModel[]
+}
+
+
+/** Raw pricing info used by pricing engine before normalization */
+export interface SupplierPriceInfo {
+  quotaType: number
+  modelPrice?: number
+  modelRatio?: number
+  imageRatio?: number
+  completionRatio?: number
+  source: 'remote-pricing' | 'unknown'
+  raw?: unknown
 }
