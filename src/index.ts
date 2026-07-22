@@ -178,6 +178,14 @@ export function apply(ctx: Context, config: Config) {
 
   // aka-tools 面板后端服务（console 可用时注册）
   ctx.inject(['console'], (ctx) => {
+    // 注册 client 扩展入口（prod 指向 koishi-console build 产物 dist/）
+    const entry = (ctx as any).console.addEntry({
+      dev: path.resolve(__dirname, '../client/index.ts'),
+      prod: path.resolve(__dirname, '../dist'),
+    })
+    logger.info('aka-tools console entry registered: id=%s prod=%s exists=%s',
+      entry?.id, path.resolve(__dirname, '../dist'),
+      require('node:fs').existsSync(path.resolve(__dirname, '../dist/index.js')))
     registerConsoleService({
       ctx,
       logger,

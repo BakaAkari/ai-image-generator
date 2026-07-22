@@ -42,7 +42,7 @@
     "@koishijs/client": "^5.30.11"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --out-dir lib && koishi-console build .",
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --shims --out-dir lib && koishi-console build .",
     "clean": "rimraf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --project tsconfig.json --noEmit"
