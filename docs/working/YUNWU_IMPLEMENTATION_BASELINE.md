@@ -163,13 +163,13 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 未完成：正式 `chargePolicy` 迁移与“空映射显式报错”尚未实现。
 
 ### Task 5：原子 CatalogRepository、Key Scope 与热更新 Scheduler
-- 状态：进行中。
-- 本切片已完成：
+- 状态：完成。
+- 已完成：
   - `src/catalog/catalog-repository.ts`：scope 校验、stale 标记、临时文件写入、`fsync`、原子 rename、完整备份回退。
   - `src/catalog/catalog-scheduler.ts`：single-flight、interval 热更新、stop 清理。
   - `tests/catalog/catalog-{repository,scheduler}.test.ts`：8 个针对性测试。
-- 当前验证：针对性测试 8/8 通过，`npm run typecheck` 通过。
-- 下一步：替换 `src/catalog/image-catalog.ts` 的同步缓存/固定定时器，并在 `src/index.ts` 热重载路径接入 `updateInterval()`；完成前 Task 5 不标记完成。
+- 已接线：`src/catalog/image-catalog.ts` 使用 scope cache 与 Scheduler；`src/index.ts` 在热重载时调用 `updateRefreshHours()`，凭证变化仍立即刷新，dispose 显式 stop。
+- 当前验证：全量 71 测试通过，`npm run typecheck`、`npm run build` 通过。
 
 ### Task 6–9
 - 状态：未开始。

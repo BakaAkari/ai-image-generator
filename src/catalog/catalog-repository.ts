@@ -2,16 +2,16 @@ import { copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promise
 import { dirname } from 'node:path'
 import type { CatalogSnapshot } from './model-catalog.js'
 
-export interface CatalogCacheEnvelope {
+export interface CatalogCacheEnvelope<TCatalog = CatalogSnapshot> {
   schemaVersion: number
   parserVersion: string
   keyScopeFingerprint: string
   savedAt: number
-  catalog: CatalogSnapshot
+  catalog: TCatalog
 }
 
-export interface LoadedCatalogCache {
-  envelope: CatalogCacheEnvelope
+export interface LoadedCatalogCache<TCatalog = CatalogSnapshot> {
+  envelope: CatalogCacheEnvelope<TCatalog>
   stale: boolean
   ageMs: number
 }
@@ -21,7 +21,7 @@ export interface CatalogFileRepositoryOptions {
   maxAgeMs?: number
 }
 
-export class CatalogFileRepository {
+export class CatalogFileRepository<TCatalog = CatalogSnapshot> {
   private readonly now: () => number
   private readonly maxAgeMs: number
 
@@ -33,17 +33,18 @@ export class CatalogFileRepository {
     this.maxAgeMs = options.maxAgeMs ?? Number.POSITIVE_INFINITY
   }
 
-  async load(keyScopeFingerprint: string): Promise<LoadedCatalogCache | null> {
+  async load(keyScopeFingerprint: string): Promise<LoadedCatalogCache<TCatalog> | null> {
     return await this.loadPath(this.finalPath, keyScopeFingerprint)
       ?? await this.loadPath(`${this.finalPath}.bak`, keyScopeFingerprint)
   }
 
-  private async loadPath(filePath: string, keyScopeFingerprint: string): Promise<LoadedCatalogCache | null> {
+  private async loadPath(filePath: string, keyScopeFingerprint: string): Promise<LoadedCatalogCache<TCatalog> | null> {
     try {
       const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown
-      if (!isCatalogCacheEnvelope(parsed)) return null
+      if (!isCatalogCacheEnvelope<TCatalog>(parsed)) return null
       if (parsed.keyScopeFingerprint !== keyScopeFingerprint) return null
-      if (parsed.catalog.keyScopeFingerprint !== keyScopeFingerprint) return null
+      const catalogScope = (parsed.catalog as { keyScopeFingerprint?: unknown }).keyScopeFingerprint
+      if (catalogScope !== undefined && catalogScope !== keyScopeFingerprint) return null
       const ageMs = Math.max(0, this.now() - parsed.savedAt)
       return { envelope: parsed, stale: ageMs > this.maxAgeMs, ageMs }
     } catch {
@@ -51,10 +52,7 @@ export class CatalogFileRepository {
     }
   }
 
-  async save(envelope: CatalogCacheEnvelope): Promise<void> {
-    if (envelope.keyScopeFingerprint !== envelope.catalog.keyScopeFingerprint) {
-      throw new Error('catalog cache scope mismatch')
-    }
+  async save(envelope: CatalogCacheEnvelope<TCatalog>): Promise<void> {
     const directory = dirname(this.finalPath)
     const tempPath = `${this.finalPath}.tmp`
     await mkdir(directory, { recursive: true })
@@ -79,9 +77,9 @@ export class CatalogFileRepository {
   }
 }
 
-function isCatalogCacheEnvelope(value: unknown): value is CatalogCacheEnvelope {
+function isCatalogCacheEnvelope<TCatalog>(value: unknown): value is CatalogCacheEnvelope<TCatalog> {
   if (!value || typeof value !== 'object') return false
-  const envelope = value as Partial<CatalogCacheEnvelope>
+  const envelope = value as Partial<CatalogCacheEnvelope<TCatalog>>
   return typeof envelope.schemaVersion === 'number'
     && typeof envelope.parserVersion === 'string'
     && typeof envelope.keyScopeFingerprint === 'string'

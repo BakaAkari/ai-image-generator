@@ -255,7 +255,8 @@ export function apply(ctx: Context, config: Config) {
     const nextCred = resolveCredentials(next)
     currentConfig = next
     service.updateConfig(next)
-    // 供应商或凭证变化时立即刷新目录
+    catalog.updateRefreshHours(next.catalogRefreshHours ?? 6)
+    // 供应商或凭证变化时立即刷新目录；仅间隔变化由 scheduler 热更新处理。
     if (nextCred && JSON.stringify(prevCred) !== JSON.stringify(nextCred)) {
       void catalog.refresh(nextCred)
     }
@@ -271,6 +272,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 8. 插件卸载时的清理
   ctx.on('dispose' as any, async () => {
+    catalog.stop()
     await chatLunaBridgeManager.dispose()
     await yesimbotBridgeManager.dispose()
   })

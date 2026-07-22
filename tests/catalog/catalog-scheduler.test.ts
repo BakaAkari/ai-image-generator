@@ -35,6 +35,18 @@ describe('CatalogScheduler', () => {
     expect(calls).toBe(2)
   })
 
+
+  test('repeated start replaces the previous timer instead of adding another', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const scheduler = new CatalogScheduler(async () => { calls += 1 })
+    scheduler.start(1)
+    scheduler.start(1)
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    expect(calls).toBe(1)
+  })
+
   test('stop prevents future ticks', async () => {
     vi.useFakeTimers()
     let calls = 0

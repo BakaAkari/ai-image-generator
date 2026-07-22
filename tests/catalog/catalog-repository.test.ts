@@ -32,6 +32,22 @@ describe('CatalogFileRepository', () => {
     expect(await repo.load('scope-b')).toBeNull()
   })
 
+
+  test('stores a legacy catalog payload while scope remains in the envelope', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'catalog-repo-'))
+    const repo = new CatalogFileRepository<{ supplier: string; models: unknown[]; fetchedAt: number }>(join(dir, 'legacy.json'))
+    await repo.save({
+      schemaVersion: 1,
+      parserVersion: 'legacy-bridge',
+      keyScopeFingerprint: 'scope-a',
+      savedAt: 1_000,
+      catalog: { supplier: 'yunwu', models: [], fetchedAt: 1_000 },
+    })
+
+    expect((await repo.load('scope-a'))?.envelope.catalog.supplier).toBe('yunwu')
+    expect(await repo.load('scope-b')).toBeNull()
+  })
+
   test('marks an old matching cache stale without discarding it', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'catalog-repo-'))
     const repo = new CatalogFileRepository(join(dir, 'catalog.json'), { now: () => 10_000, maxAgeMs: 2_000 })
