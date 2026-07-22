@@ -9,7 +9,7 @@
 
     <!-- 顶层浮动工具按钮：图像 / 视频 / 存储（Teleport 到 body，避免祖先 transform 使 fixed 失效） -->
     <Teleport to="body">
-    <div class="floating-tools">
+    <div class="floating-tools" v-if="isAkaToolsRoute">
       <div class="tool-btn active" title="图像生成设置">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
@@ -261,8 +261,12 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue'
-import { send, store } from '@koishijs/client'
+import { send, store, useRouter } from '@koishijs/client'
 import { ElMessage } from 'element-plus'
+
+// 浮动按钮仅在本页面路由下显示（Teleport 到 body 后脱离了页面容器，需手动绑定路由生命周期）
+const router = useRouter()
+const isAkaToolsRoute = computed(() => router.currentRoute.value.path.startsWith('/aka-tools'))
 
 const state = ref<any>(null)
 const cfg = ref<any>(null)
