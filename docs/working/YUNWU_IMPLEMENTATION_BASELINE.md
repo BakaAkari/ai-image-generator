@@ -140,50 +140,37 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 ## 当前实施状态
 
 ### Task 1：Yunwu 原始契约、Client 与脱敏 Fixture
-- 状态：完成
-- 新增文件：
-  - `src/suppliers/types.ts`、`src/suppliers/yunwu/raw-types.ts`、`src/suppliers/yunwu/client.ts`
-  - `tests/suppliers/yunwu/client.test.ts`、`tests/suppliers/yunwu/contract.test.ts`
-  - `tests/fixtures/yunwu/{models,pricing,billing,status,snapshot}.json`
-  - `vitest.config.ts` 作为测试运行器
-- 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
-- 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
+- 状态：完成（commit `d16d164`）
+- 产物：`src/suppliers/types.ts`、`src/suppliers/yunwu/{raw-types,client}.ts`、脱敏 fixture 与契约测试。
+- 当前验证基线：纳入全量测试持续回归。
+- 已知限制：fixture 中少数 endpoint 是基于已审计供应商数据补全，Task 8 必须用真实只读 probe 更新并复核。
 
-### Task 4：旧配置无损迁移与删除默认模型/隐式价格/名称路由
-- 状态：已开始
-- 新增文件：
-  - `src/config/migration.ts` — `migrateConfig()` / `sanitizeModelMapping()`
-  - `tests/config/migration.test.ts`
-- 已修改：
-  - `src/shared/config.ts` 中 `modelMappings` 默认值清空
-  - `src/service/AiImageGeneratorService.ts` 中 `resolveModelRoute()` 首先尝试从 catalog 路由解析，不再单纯依赖名称匹配
-- 未完成：需要 `catalogService` 注入到 service 才能完全删除名称回退
-### Task 3：Pricing、CostQuote、ChargePolicy、Settlement 领域模型
-- 状态：完成
-- 新增文件：
-  - `src/pricing/pricing.ts` — `PricingEngine`、`CostQuote`、`ChargePolicy`、`PriceQuoteKind`
-  - `src/pricing/settlement.ts` — `LedgerEntry`、`SettlementStore`、`SettlementResult`
-  - `tests/pricing/pricing.test.ts`、`tests/pricing/settlement.test.ts`
-- 验证：全部 55 测试通过，`typecheck`/`build` 通过
-- 关键语义：目录价 = `catalog-quote`，不再声称 `exact`。per-call 使用 `model_price`；per-token 使用 `model_ratio + image_ratio`。缺少目录时依网全局缺省积分，否则抛出 `PricingNotAvailableError`。
-### Task 2：fail-closed 规范化 Catalog、能力和 Route 解析
-- 状态：完成
-- 新增文件：
-  - `src/catalog/model-catalog.ts` 通用 Catalog 类型
-  - `src/suppliers/yunwu/capability.ts` 能力解析
-  - `src/suppliers/yunwu/routes.ts` 路由解析
-  - `src/suppliers/yunwu/normalizer.ts` Snapshot 转换
-  - `tests/catalog/{capability,routes,yunwu-normalizer}.test.ts`、`tests/catalog/_fixture.ts`
-- 验证：`npm run test` 怱 31 通过，`typecheck` / `build` 通过
-- 关键反例：`kling-avatar-image2video`、`kling-image-recognize`、`mj_upload`、`pixverse-image-template` 被正确标记为 non-executable
+### Task 2：fail-closed Catalog、Capability 与 Route
+- 状态：完成基础实现（commit `e25125c`），最终接线仍由 Task 5/6 完成。
+- 产物：`src/catalog/model-catalog.ts`、`src/suppliers/yunwu/{capability,routes,normalizer}.ts`。
+- 反例：识别、上传、视频、数字人模型不进入 executable projection。
 
-### Task 1：Yunwu 原始契约、Client 与脱敏 Fixture
-- 状态：已完成
-- 新增文件：
-  - `src/suppliers/types.ts`、`src/suppliers/yunwu/raw-types.ts`、`src/suppliers/yunwu/client.ts`
-  - `tests/suppliers/yunwu/client.test.ts`、`tests/suppliers/yunwu/contract.test.ts`
-  - `tests/fixtures/yunwu/{models,pricing,billing,status,snapshot}.json`
-  - `vitest.config.ts` 作为测试运行器
-- 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
-- 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
-- 备注：缺少从缓存模型获取的 `model_type` 等字段，测试使用来自公开价格接口的字段；此后将与完整模型快照合并
+### Task 3：Pricing、CostQuote、ChargePolicy、Settlement
+- 状态：基础类型与测试已提交（commit `62dfafa`），但不满足最终验收，后续必须返修。
+- 已完成：`PricingEngine`、`CostQuote`、`ChargePolicy`、Settlement/Ledger 类型。
+- 未完成：当前 per-token 路径仍含 `$2/M token` 基准和简化倍率公式；违反“无业务硬编码”，必须改成“无显式 formula 时 unknown”，不得静默收费。
+- 未完成：领域层尚未按正式计划拆分到 `src/billing/*`，也尚未接入真实预授权/结算。
+
+### Task 4：旧配置迁移与删除隐式默认
+- 状态：部分完成（commit `34ce373`），不得视为验收完成。
+- 已完成：Schema 默认 `modelMappings` 清空；新增旧字段清理工具和测试。
+- 未完成：`DEFAULT_OPENAI_MODEL_ID`、按 `/gemini/i` 猜协议、旧默认积分回退仍存在生产消费者；必须在 Task 6/8 清零。
+- 未完成：正式 `chargePolicy` 迁移与“空映射显式报错”尚未实现。
+
+### Task 5：原子 CatalogRepository、Key Scope 与热更新 Scheduler
+- 状态：进行中。
+- 本切片已完成：
+  - `src/catalog/catalog-repository.ts`：scope 校验、stale 标记、临时文件写入、`fsync`、原子 rename、完整备份回退。
+  - `src/catalog/catalog-scheduler.ts`：single-flight、interval 热更新、stop 清理。
+  - `tests/catalog/catalog-{repository,scheduler}.test.ts`：8 个针对性测试。
+- 当前验证：针对性测试 8/8 通过，`npm run typecheck` 通过。
+- 下一步：替换 `src/catalog/image-catalog.ts` 的同步缓存/固定定时器，并在 `src/index.ts` 热重载路径接入 `updateInterval()`；完成前 Task 5 不标记完成。
+
+### Task 6–9
+- 状态：未开始。
+- 包含真实预授权/结算、aka-tools 后端视图模型与前端去公式、只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。
