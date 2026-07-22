@@ -111,12 +111,7 @@
           <el-table-column label="计价" width="160">
             <template #default="{ row }">{{ row.catalogPrice.label }}</template>
           </el-table-column>
-          <el-table-column label="成本报价" width="190">
-            <template #default="{ row }">{{ row.costQuote.label }}</template>
-          </el-table-column>
-          <el-table-column label="运营收费" width="190">
-            <template #default="{ row }">{{ row.chargePolicy.label }}</template>
-          </el-table-column>
+
         </el-table>
         <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
         <el-collapse v-if="state.catalog?.unsupportedModels?.length" class="unsupported-block">
