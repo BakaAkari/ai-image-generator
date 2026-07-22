@@ -63,6 +63,7 @@ export interface UsersStoreV2 {
   createdAt: string
   updatedAt: string
   users: Record<string, UserAccountV2>
+  reservations: Record<string, CreditReservation>
   metadata: {
     plugin: 'aka-ai-image-generator'
     billingUnit: 'credit'
@@ -312,6 +313,7 @@ export class UserManager {
       createdAt: now,
       updatedAt: now,
       users: {},
+      reservations: {},
       metadata: {
         plugin: 'aka-ai-image-generator',
         billingUnit: 'credit',
@@ -331,6 +333,8 @@ export class UserManager {
           const data = await fs.readFile(this.usersFile, 'utf-8')
           const parsed = JSON.parse(data)
           this.usersCache = this.normalizeStore(parsed)
+          this.creditReservations = new Map(Object.entries(this.usersCache.reservations))
+          this.reservationsLoaded = true
           return this.usersCache
         }
       } catch (error) {
@@ -348,6 +352,8 @@ export class UserManager {
       }
 
       this.usersCache = this.createEmptyStore()
+      this.creditReservations.clear()
+      this.reservationsLoaded = true
       await this.saveUsersStoreInternal()
       return this.usersCache
     })
@@ -361,6 +367,7 @@ export class UserManager {
         createdAt: value.createdAt || now,
         updatedAt: value.updatedAt || now,
         users: value.users,
+        reservations: value.reservations && typeof value.reservations === 'object' ? value.reservations : {},
         metadata: {
           plugin: 'aka-ai-image-generator',
           billingUnit: 'credit',
@@ -375,6 +382,7 @@ export class UserManager {
     if (!this.usersCache) return
 
     this.usersCache.updatedAt = new Date().toISOString()
+    this.usersCache.reservations = Object.fromEntries(this.creditReservations)
     try {
       if (existsSync(this.usersFile)) {
         await fs.copyFile(this.usersFile, this.usersBackupFile)
@@ -484,22 +492,19 @@ export class UserManager {
 
   private async loadReservations(): Promise<void> {
     if (this.reservationsLoaded) return
+    // One-release migration path from the short-lived standalone reservation file.
     try {
       const parsed = JSON.parse(await fs.readFile(this.reservationsFile, 'utf8')) as { reservations?: CreditReservation[] }
-      for (const reservation of parsed.reservations ?? []) {
-        this.creditReservations.set(reservation.reservationId, reservation)
+      for (const reservation of parsed.reservations ?? []) this.creditReservations.set(reservation.reservationId, reservation)
+      if (this.usersCache) {
+        this.usersCache.reservations = Object.fromEntries(this.creditReservations)
+        await this.saveUsersStoreInternal()
       }
-    } catch { /* first run or corrupt reservation file: leave empty and log on access */ }
+      await fs.unlink(this.reservationsFile).catch(() => undefined)
+    } catch { /* no legacy file */ }
     this.reservationsLoaded = true
   }
 
-  private async saveReservationsInternal(): Promise<void> {
-    await this.atomicWriteFile(this.reservationsFile, JSON.stringify({
-      schemaVersion: 1,
-      updatedAt: new Date().toISOString(),
-      reservations: [...this.creditReservations.values()],
-    }, null, 2))
-  }
 
   async reconcileExpiredReservations(config: Config, now = Date.now()): Promise<number> {
     await this.loadUsersStore()
@@ -527,7 +532,6 @@ export class UserManager {
       }
       if (released > 0) {
         await this.saveUsersStoreInternal()
-        await this.saveReservationsInternal()
         this.logger.warn('已释放过期图像积分预授权', { released })
       }
       return released
@@ -578,7 +582,6 @@ export class UserManager {
         exempt,
       })
       await this.saveUsersStoreInternal()
-      await this.saveReservationsInternal()
       this.updateRateLimit(userId)
       return { allowed: true, reservationId }
     })
@@ -602,6 +605,7 @@ export class UserManager {
       const delivered = Math.max(0, Math.min(reservation.cost.numImages, Math.floor(actualImages || 0)))
       const settledCredits = reservation.exempt ? 0 : roundCredits(reservation.cost.creditCostPerImage * delivered)
       const releasedCredits = roundCredits(reservation.reservedCredits - settledCredits)
+      const before = this.snapshotBalance(user, config)
       const usedFree = Math.min(reservation.reservedFreeCredits, settledCredits)
       const usedPurchased = roundCredits(settledCredits - usedFree)
       const releaseFree = roundCredits(reservation.reservedFreeCredits - usedFree)
@@ -623,7 +627,6 @@ export class UserManager {
       }
       reservation.status = 'settled'
       reservation.result = result
-      const before = this.snapshotBalance(user, config)
       const event = this.buildLedgerEvent(user, 'consume', settledCredits, before, this.snapshotBalance(user, config), '图像生成预授权结算', {
         generation: {
           commandName,
@@ -644,7 +647,6 @@ export class UserManager {
       })
       await this.appendLedgerEvent(event)
       await this.saveUsersStoreInternal()
-      await this.saveReservationsInternal()
       return result
     })
   }
@@ -673,7 +675,6 @@ export class UserManager {
       reservation.result = result
       this.logger.info('释放图像积分预授权', { reservationId, reason })
       await this.saveUsersStoreInternal()
-      await this.saveReservationsInternal()
       return result
     })
   }

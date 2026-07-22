@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { ImageCatalogService } from '../../src/catalog/image-catalog.js'
+import { ImageCatalogService, canPublishYunwuSnapshot } from '../../src/catalog/image-catalog.js'
 
 const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } as any
 
@@ -40,6 +40,14 @@ describe('ImageCatalogService scheduler wiring', () => {
       fetchedAt: 0,
     }
     expect(snapshot.unsupportedModels).toHaveLength(1)
+  })
+
+  test('does not publish a snapshot when the authoritative models endpoint failed', () => {
+    expect(canPublishYunwuSnapshot({ endpoints: { models: { success: false } } } as any)).toBe(false)
+  })
+
+  test('can publish when models succeeded even if pricing failed', () => {
+    expect(canPublishYunwuSnapshot({ endpoints: { models: { success: true }, pricing: { success: false } } } as any)).toBe(true)
   })
 
 })

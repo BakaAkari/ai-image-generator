@@ -14,8 +14,13 @@ import { normalizeYunwuBilling } from './billing-info.js'
 import type { ActiveSupplier, CatalogSnapshot, ImageModelInfo } from './types.js'
 import { createKeyScopeFingerprint, YunwuClient } from '../suppliers/yunwu/client.js'
 import { normalizeYunwuSnapshot } from '../suppliers/yunwu/normalizer.js'
+import type { YunwuRawSnapshot } from '../suppliers/yunwu/raw-types.js'
 import { CatalogFileRepository } from './catalog-repository.js'
 import { CatalogScheduler } from './catalog-scheduler.js'
+
+export function canPublishYunwuSnapshot(snapshot: Pick<YunwuRawSnapshot, 'endpoints'>): boolean {
+  return snapshot.endpoints.models.success === true
+}
 
 export class ImageCatalogService {
   private snapshot: CatalogSnapshot | null = null
@@ -85,6 +90,12 @@ export class ImageCatalogService {
     })
     try {
       const raw = await client.fetchSnapshot()
+      if (!canPublishYunwuSnapshot(raw)) {
+        const message = raw.endpoints.models.error || 'yunwu models endpoint failed'
+        this.logger.warn('model catalog refresh rejected: %s（沿用旧缓存）', message)
+        if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
+        return this.snapshot
+      }
       const normalized = normalizeYunwuSnapshot(raw)
       this.billing = normalizeYunwuBilling(raw)
       const models: ImageModelInfo[] = normalized.models.map(model => ({

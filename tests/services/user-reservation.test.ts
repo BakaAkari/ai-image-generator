@@ -64,6 +64,17 @@ describe('UserManager credit reservations', () => {
 
 
 
+
+  test('reservation and frozen balance are persisted in one atomic users store', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'reservation-'))
+    const users = new UserManager(dir, logger)
+    await users.reserveCredits('u1', 'User', 'r1', cost(4), config)
+    users.dispose()
+    const store = JSON.parse(await readFile(join(dir, 'users.v2.json'), 'utf8'))
+    expect(store.reservations.r1.status).toBe('active')
+    await expect(readFile(join(dir, 'credit-reservations.v1.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   test('a reservation survives manager restart and can be released', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'reservation-'))
     const first = new UserManager(dir, logger)
@@ -84,9 +95,9 @@ describe('UserManager credit reservations', () => {
     const first = new UserManager(dir, logger)
     await first.reserveCredits('u1', 'User', 'r1', cost(4), config)
     first.dispose()
-    const file = join(dir, 'credit-reservations.v1.json')
+    const file = join(dir, 'users.v2.json')
     const stored = JSON.parse(await readFile(file, 'utf8'))
-    stored.reservations[0].expiresAt = 0
+    stored.reservations.r1.expiresAt = 0
     await writeFile(file, JSON.stringify(stored), 'utf8')
 
     const second = new UserManager(dir, logger)
@@ -110,6 +121,18 @@ describe('UserManager credit reservations', () => {
     users.dispose()
   })
 
+
+
+  test('settlement ledger captures different before and after balances', async () => {
+    const users = await manager()
+    await users.reserveCredits('u1', 'User', 'r1', cost(4), config)
+    await users.settleReservation('r1', 2, '生成', config, { routeId: 'openai:text-to-image' })
+    const [event] = await users.listLedgerEvents('u1', 1)
+    expect(event.balanceBefore.totalAvailable).toBe(1)
+    expect(event.balanceAfter.totalAvailable).toBe(3)
+    expect(event.amount).toBe(2)
+    users.dispose()
+  })
 
   test('platform-exempt reservation records delivery without debit', async () => {
     const users = await manager()
