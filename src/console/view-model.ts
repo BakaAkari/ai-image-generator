@@ -112,9 +112,9 @@ function quoteCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow[
 
 function formatYunwuCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow['yunwuCost'] {
   const pricing = model.pricing
-  const rmbRate = config.usdToRmbRate ?? 7.2
+  const creditToRmb = config.yunwuCreditToRmb ?? 0.5
   if (pricing?.type === 'per-call' && typeof pricing.pricePerCall === 'number') {
-    const rmb = Math.round(pricing.pricePerCall * rmbRate * 100) / 100
+    const rmb = Math.round(pricing.pricePerCall * creditToRmb * 100) / 100
     return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张` }
   }
   if (pricing?.type === 'per-token') {

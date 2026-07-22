@@ -182,7 +182,7 @@
           <el-form-item label="每日免费积分"><el-input-number v-model="cfg.dailyFreeCredits" :min="0" :step="1" /></el-form-item>
           <el-form-item label="积分汇率（1 美元 = N 积分）"><el-input-number v-model="cfg.creditExchangeRate" :min="0" :step="100" /></el-form-item>
           <el-form-item label="定价加成倍率"><el-input-number v-model="cfg.costMarkup" :min="0.1" :step="0.05" /></el-form-item>
-          <el-form-item label="USD→RMB 汇率"><el-input-number v-model="cfg.usdToRmbRate" :min="1" :max="100" :step="0.01" /></el-form-item>
+          <el-form-item label="yunwu 积分→人民币"><el-input-number v-model="cfg.yunwuCreditToRmb" :min="0.01" :max="100" :step="0.01" /><div style="font-size:0.75rem;color:var(--fg3)">默认 0.5（100积分=¥50）。仅用于 aka-tools 成本展示，不参与计费。</div></el-form-item>
           <el-form-item label="1 元 = N 积分（经营参考）"><el-input-number v-model="cfg.creditsPerCny" :min="0" :step="10" /></el-form-item>
           <el-form-item label="生成结果中显示消耗"><el-switch v-model="cfg.showCreditCostInResult" /></el-form-item>
           <el-form-item label="限流窗口（秒）"><el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" /></el-form-item>
@@ -321,7 +321,7 @@ function normalizeConfig(raw: any) {
   c.catalogRefreshHours ??= 6
   c.creditExchangeRate ??= 1000
   c.costMarkup ??= 1.3
-  c.usdToRmbRate ??= 7.2
+  c.yunwuCreditToRmb ??= 0.5
   c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m, chargePolicy: m.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' } }))
   c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
   for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]

@@ -71,8 +71,8 @@ export interface Config {
   creditExchangeRate?: number
   /** 定价加成倍率（成本 × N = 用户积分价） */
   costMarkup?: number
-  /** USD→RMB 汇率，用于在 aka-tools 中展示 yunwu 供应商的人民币等值成本 */
-  usdToRmbRate?: number
+  /** yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50） */
+  yunwuCreditToRmb?: number
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
@@ -217,12 +217,12 @@ const ActiveSupplierSchema = Schema.object({
     .min(0)
     .step(1)
     .description('积分汇率：1 美元 = N 积分；模型映射积分价留空时按目录计价自动换算'),
-    usdToRmbRate: Schema.number()
-      .default(7.2)
-      .min(1)
+    yunwuCreditToRmb: Schema.number()
+      .default(0.5)
+      .min(0.01)
       .max(100)
       .step(0.01)
-      .description('USD→RMB 汇率，用于在模型目录中展示 yunwu 供应商的人民币等值成本'),
+      .description('yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50）。仅影响 aka-tools 成本展示，不参与计费。'),
   costMarkup: Schema.number()
     .default(1.3)
     .min(0.1)
