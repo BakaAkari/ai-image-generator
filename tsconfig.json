@@ -12,13 +12,15 @@
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist",
     "types": [
-      "node"
+      "node",
+      "vitest/globals"
     ]
   },
   "include": [
-    "src"
+    "src",
+    "tests"
   ]
 }

@@ -1,0 +1,467 @@
+{
+  "schemaVersion": 1,
+  "supplier": "yunwu",
+  "fetchedAt": 0,
+  "keyScopeFingerprint": "15d1cc5766141ad1",
+  "endpoints": {
+    "models": {
+      "url": "/v1/models",
+      "status": 200,
+      "fetchedAt": 0,
+      "success": true,
+      "data": {
+        "data": [
+          {
+            "id": "dall-e-3",
+            "model_type": "图像",
+            "description": "生成图像的新版本DALL-E。",
+            "supported_endpoint_types": [],
+            "tags": "绘画,弃用",
+            "vendor_id": 52,
+            "available": true
+          },
+          {
+            "id": "gpt-image-2",
+            "model_type": "图像",
+            "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输入。",
+            "supported_endpoint_types": [
+              "openai编辑图片",
+              "image-generation"
+            ],
+            "tags": "绘画,dall-e-3格式",
+            "vendor_id": 52,
+            "available": true
+          },
+          {
+            "id": "gpt-image-2-c",
+            "model_type": "图像",
+            "description": "gpt-image-2-c,支持返回url，base64,支持1k图片生成，gpt-绘图分组支持1k、2k、4k\n\n",
+            "supported_endpoint_types": [
+              "openai-编辑",
+              "openai-绘图"
+            ],
+            "tags": "绘画",
+            "vendor_id": 93,
+            "available": true
+          },
+          {
+            "id": "gemini-3-pro-image-preview",
+            "model_type": "图像",
+            "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 Flash Image(Nano Banana)的升级版。该模型融合多模态Transformer和扩散模型,原生支持2K(2048×2048)及4K分辨率输出,在图像质量、文字渲染、物理推理等方面实现显著提升。",
+            "supported_endpoint_types": [
+              "gemini",
+              "openai"
+            ],
+            "tags": "绘画",
+            "vendor_id": 67,
+            "available": true
+          },
+          {
+            "id": "gemini-3-pro-image",
+            "model_type": "图像",
+            "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功能。Nano Banana Pro 最适合用于复杂的平面设计、高保真产品视觉稿和需要通过 Google 搜索进行真实世界接地的事实数据可视化，这些任务需要准确的文本渲染",
+            "supported_endpoint_types": [
+              "gemini",
+              "openai"
+            ],
+            "tags": "绘画",
+            "vendor_id": 67,
+            "available": true
+          },
+          {
+            "id": "grok-imagine-image",
+            "model_type": "图像",
+            "description": "Grok-Imagine-Image 是X平台推出的多模态AI模型，能够根据文本描述生成高质量图像",
+            "supported_endpoint_types": [
+              "dall-e-3"
+            ],
+            "tags": "绘画,dall-e-3格式",
+            "vendor_id": 874837,
+            "available": true
+          },
+          {
+            "id": "kling-avatar-image2video",
+            "model_type": "音视频",
+            "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚拟主播、视频配音、数字人制作等应用。",
+            "supported_endpoint_types": [
+              "数字人"
+            ],
+            "tags": "异步,视频,参考生视频",
+            "vendor_id": 88,
+            "available": true
+          },
+          {
+            "id": "kling-image-recognize",
+            "model_type": "图像",
+            "description": "智能图像识别模型，可对上传的图片进行内容分析和识别，提取图像中的关键信息、对象、场景等元素。\n",
+            "supported_endpoint_types": [
+              "图像识别"
+            ],
+            "tags": "异步,识图",
+            "vendor_id": 88,
+            "available": true
+          },
+          {
+            "id": "mj_upload",
+            "model_type": "",
+            "description": "Midjourney上传服务",
+            "supported_endpoint_types": [
+              "mj图片上传"
+            ],
+            "tags": "",
+            "vendor_id": 112,
+            "available": true
+          },
+          {
+            "id": "mj_video",
+            "model_type": "",
+            "description": "",
+            "supported_endpoint_types": [],
+            "tags": "",
+            "vendor_id": 0,
+            "available": true
+          },
+          {
+            "id": "pixverse-image-template",
+            "model_type": "音视频",
+            "description": "不同于基于视频的模版，这是一套以图片为核心的 AI 模版玩法——只需上传您的照片，即可快速生成沉浸式的 AI 内容体验。",
+            "supported_endpoint_types": [
+              "图片模板"
+            ],
+            "tags": "图片模板",
+            "vendor_id": 874847,
+            "available": true
+          }
+        ]
+      }
+    },
+    "pricing": {
+      "url": "/api/pricing",
+      "status": 200,
+      "fetchedAt": 0,
+      "success": true,
+      "data": {
+        "data": [
+          {
+            "model_name": "dall-e-3",
+            "description": "生成图像的新版本DALL-E。",
+            "tags": "绘画,弃用",
+            "model_type": "图像",
+            "vendor_id": 52,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.013999999999999999,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "纯AZ",
+              "uchat_o3_特供\t_官转openai",
+              "enterprise-az2",
+              "特供-az 0.7",
+              "限时体验",
+              "特供az1.5",
+              "特供-优质gpt",
+              "特供HC-官转openai",
+              "测试",
+              "特供飞数-gpt",
+              "分组三",
+              "官转OpenAI",
+              "分组二",
+              "default",
+              "特供-az 1.3",
+              "0.22az专属",
+              "特供HC-官转",
+              "特价9折",
+              "enterprise-az0.45",
+              "enterprise-az-224",
+              "分组一",
+              "特供-HC-纯AZ",
+              "enterprise",
+              "az0.4",
+              "enterprise-az0.4",
+              "enterprise-default",
+              "az0.3",
+              "特供-HC-default",
+              "GLB Official",
+              "特供az *1.36",
+              "特供kimi3折",
+              "官转",
+              "限时特价"
+            ],
+            "supported_endpoint_types": [],
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "gpt-image-2",
+            "description": "GPT Image 2 是我们最先进的图像生成模型，支持快速、高质量的图像生成和编辑。它支持灵活的图像尺寸和高保真图像输入。",
+            "tags": "绘画,dall-e-3格式",
+            "model_type": "图像",
+            "vendor_id": 52,
+            "quota_type": 0,
+            "model_ratio": 0.875,
+            "model_price": 0,
+            "owner_by": "",
+            "completion_ratio": 6,
+            "image_ratio": 1.6,
+            "enable_groups": [
+              "enterprise-default",
+              "纯AZ",
+              "优质官转OpenAI",
+              "特供-优质官转openai",
+              "特供az *1.36",
+              "分组三",
+              "测试",
+              "特供az1.5",
+              "enterprise-az-224",
+              "default",
+              "分组二",
+              "enterprise-az2",
+              "GLB Official",
+              "Codex专属",
+              "官转",
+              "特供飞数-gpt",
+              "az0.3",
+              "特供-az 0.7",
+              "特供-HC-纯AZ",
+              "uchat_o3_特供\t_官转openai",
+              "特供-优质gpt",
+              "特供-az 1.3",
+              "特供-HC-default",
+              "限时体验",
+              "特供HC-官转openai",
+              "官转OpenAI",
+              "特供HC-优质官转openai",
+              "特供HC-官转",
+              "enterprise-az0.45",
+              "分组一",
+              "enterprise-az0.4"
+            ],
+            "supported_endpoint_types": [
+              "openai编辑图片",
+              "image-generation"
+            ],
+            "sort_order": 525,
+            "type": 0,
+            "available": true
+          },
+          {
+            "model_name": "gpt-image-2-c",
+            "description": "gpt-image-2-c,支持返回url，base64,支持1k图片生成，gpt-绘图分组支持1k、2k、4k\n\n",
+            "tags": "绘画",
+            "model_type": "图像",
+            "vendor_id": 93,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.12,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "测试",
+              "gpt-绘图"
+            ],
+            "supported_endpoint_types": [
+              "openai-编辑",
+              "openai-绘图"
+            ],
+            "sort_order": 253,
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "gemini-3-pro-image-preview",
+            "description": "Nano Banana pro是Google Gemini系列中的下一代AI图像生成与编辑模型,是Gemini 2.5 Flash Image(Nano Banana)的升级版。该模型融合多模态Transformer和扩散模型,原生支持2K(2048×2048)及4K分辨率输出,在图像质量、文字渲染、物理推理等方面实现显著提升。",
+            "tags": "绘画",
+            "model_type": "图像",
+            "vendor_id": 67,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.33,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "优质gemini-vertex",
+              "特供-banana0.85",
+              "特供-gemini45折",
+              "官转gemini",
+              "优质官转gemini2",
+              "测试",
+              "向量-特供生图-高价",
+              "特供飞数-gemini",
+              "直连Gemini",
+              "优质gemini",
+              "特供星星",
+              "特价banana",
+              "优质官转gemini"
+            ],
+            "supported_endpoint_types": [
+              "gemini",
+              "openai"
+            ],
+            "sort_order": 511,
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "gemini-3-pro-image",
+            "description": "Nano Banana Pro 是一款由推理驱动的精细引擎，可实现专业级图片编辑和生成，提供工作室级精度和高级创意控制功能。Nano Banana Pro 最适合用于复杂的平面设计、高保真产品视觉稿和需要通过 Google 搜索进行真实世界接地的事实数据可视化，这些任务需要准确的文本渲染",
+            "tags": "绘画",
+            "model_type": "图像",
+            "vendor_id": 67,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.792,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "优质官转gemini",
+              "优质gemini-vertex",
+              "官转gemini",
+              "优质官转gemini2",
+              "测试",
+              "向量-特供生图-高价",
+              "直连Gemini",
+              "优质gemini"
+            ],
+            "supported_endpoint_types": [
+              "gemini",
+              "openai"
+            ],
+            "sort_order": 524,
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "grok-imagine-image",
+            "description": "Grok-Imagine-Image 是X平台推出的多模态AI模型，能够根据文本描述生成高质量图像",
+            "tags": "绘画,dall-e-3格式",
+            "model_type": "图像",
+            "vendor_id": 874837,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.208,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "测试",
+              "纯AZ",
+              "限时体验"
+            ],
+            "supported_endpoint_types": [
+              "dall-e-3"
+            ],
+            "sort_order": 520,
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "kling-avatar-image2video",
+            "description": "数字人视频生成模型，将静态人物图片转换为动态说话视频。支持标准版(std)和高品质版(pro)两种模式，按秒计费，适合虚拟主播、视频配音、数字人制作等应用。",
+            "tags": "异步,视频,参考生视频",
+            "model_type": "音视频",
+            "vendor_id": 88,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.017,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "国内模型"
+            ],
+            "supported_endpoint_types": [
+              "数字人"
+            ],
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "kling-image-recognize",
+            "description": "智能图像识别模型，可对上传的图片进行内容分析和识别，提取图像中的关键信息、对象、场景等元素。\n",
+            "tags": "异步,识图",
+            "model_type": "图像",
+            "vendor_id": 88,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.017,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "国内模型"
+            ],
+            "supported_endpoint_types": [
+              "图像识别"
+            ],
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "mj_upload",
+            "description": "Midjourney上传服务",
+            "vendor_id": 112,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.003,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "纯AZ"
+            ],
+            "supported_endpoint_types": [
+              "mj图片上传"
+            ],
+            "sort_order": 450,
+            "type": 1,
+            "available": true
+          },
+          {
+            "model_name": "pixverse-image-template",
+            "description": "不同于基于视频的模版，这是一套以图片为核心的 AI 模版玩法——只需上传您的照片，即可快速生成沉浸式的 AI 内容体验。",
+            "tags": "图片模板",
+            "model_type": "音视频",
+            "vendor_id": 874847,
+            "quota_type": 1,
+            "model_ratio": 0,
+            "model_price": 0.014,
+            "owner_by": "",
+            "completion_ratio": 0,
+            "enable_groups": [
+              "default",
+              "测试"
+            ],
+            "supported_endpoint_types": [
+              "图片模板"
+            ],
+            "sort_order": 524,
+            "type": 1,
+            "available": true
+          }
+        ],
+        "group_ratio": {},
+        "supported_endpoint": {},
+        "vendors": []
+      }
+    },
+    "billing": {
+      "url": "/v1/dashboard/billing/usage",
+      "status": 200,
+      "fetchedAt": 0,
+      "success": true,
+      "data": {
+        "total_usage": 0,
+        "token_name": "[REDACTED]"
+      }
+    },
+    "status": {
+      "url": "/v1/dashboard/billing/subscription",
+      "status": 200,
+      "fetchedAt": 0,
+      "success": true,
+      "data": {}
+    }
+  }
+}

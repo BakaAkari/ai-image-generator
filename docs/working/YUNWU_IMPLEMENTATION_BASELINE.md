@@ -136,3 +136,16 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 第一阶段只完成 yunwu adapter、规范化目录、fail-closed 能力、价格分层、无业务硬编码计费策略、原子缓存与动态刷新、aka-tools 展示、契约 fixture、生产只读探针和真实生成 smoke test。
 
 其他供应商只保留接口和 `unsupported` 状态，不做功能填充。
+
+## 当前实施状态
+
+### Task 1：Yunwu 原始契约、Client 与脱敏 Fixture
+- 状态：已完成
+- 新增文件：
+  - `src/suppliers/types.ts`、`src/suppliers/yunwu/raw-types.ts`、`src/suppliers/yunwu/client.ts`
+  - `tests/suppliers/yunwu/client.test.ts`、`tests/suppliers/yunwu/contract.test.ts`
+  - `tests/fixtures/yunwu/{models,pricing,billing,status,snapshot}.json`
+  - `vitest.config.ts` 作为测试运行器
+- 验证：`npm run test` 17 通过，`npm run typecheck` 通过，`npm run build` 通过
+- 脱敏：所有 fixture/snapshot 不含 `sk-*`、`Bearer`、`Authorization`；`token_name` 等价为 `[REDACTED]`
+- 备注：缺少从缓存模型获取的 `model_type` 等字段，测试使用来自公开价格接口的字段；此后将与完整模型快照合并
