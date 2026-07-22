@@ -4,11 +4,17 @@
       <span>aka-tools · 图像生成</span>
     </template>
     <template #right>
-      <el-button type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
+      <div class="header-right">
+        <div class="page-tabs">
+          <span class="page-tab active">图像生成</span>
+          <span class="page-tab disabled" title="安装 aka-ai-video-generator 后可用">视频生成（即将推出）</span>
+        </div>
+        <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
+      </div>
     </template>
 
     <div v-if="!state" class="loading">正在加载…</div>
-    <template v-else>
+    <div v-else class="page-scroll">
 
       <!-- ══ 状态总览 ══ -->
       <div class="stat-row">
@@ -78,7 +84,7 @@
             </div>
           </div>
         </template>
-        <el-table :data="filteredCatalog" max-height="360" size="small" stripe>
+        <el-table :data="filteredCatalog" max-height="360" size="small" class="dark-table">
           <el-table-column prop="id" label="模型" min-width="220" sortable />
           <el-table-column label="模式" width="150">
             <template #default="{ row }">
@@ -240,7 +246,7 @@
         </el-form>
       </k-card>
 
-    </template>
+    </div>
   </k-layout>
 </template>
 
@@ -357,6 +363,25 @@ async function saveAll() {
 
 <style lang="scss" scoped>
 .loading { padding: 2rem; text-align: center; color: var(--fg3); }
+
+/* 页面滚动容器：k-layout 内容区撑满并自行滚动 */
+.page-scroll { height: 100%; overflow-y: auto; padding: 1rem; box-sizing: border-box; }
+
+/* 顶部右侧：分页切换 + 保存按钮 */
+.header-right { display: flex; align-items: center; gap: 1rem; }
+.save-btn { flex-shrink: 0; width: auto; }
+.page-tabs { display: flex; gap: 0.25rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.25rem; }
+.page-tab { padding: 0.3rem 0.9rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; color: var(--fg2); white-space: nowrap; }
+.page-tab.active { background: var(--primary); color: #fff; }
+.page-tab.disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 暗色主题表格：统一行背景，避免斑马白行 */
+.dark-table { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--card-bg); --el-table-border-color: var(--border);
+  --el-table-text-color: var(--fg1); --el-table-header-text-color: var(--fg2);
+  --el-table-row-hover-bg-color: rgba(128, 128, 128, 0.12); background: transparent; }
+.dark-table :deep(.el-table__cell) { background: transparent !important; }
+.dark-table :deep(th.el-table__cell) { background: var(--card-bg) !important; }
 .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
 .stat-value { font-size: 1.4rem; font-weight: 600; }
