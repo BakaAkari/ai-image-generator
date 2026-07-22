@@ -75,6 +75,10 @@
           <el-form-item label="目录刷新间隔（小时）">
             <el-input-number v-model="cfg.catalogRefreshHours" :min="1" :max="72" />
           </el-form-item>
+          <el-form-item label="yunwu 分组">
+            <el-input v-model="cfg.yunwuGroup" placeholder="default" style="width: 200px" />
+            <div style="font-size:0.75rem;color:var(--fg3)">在 yunwu 后台 API 令牌页面查看。影响成本计算的倍率。留空=default(×1)</div>
+          </el-form-item>
         </el-form>
       </k-card>
 
@@ -322,6 +326,7 @@ function normalizeConfig(raw: any) {
   c.creditExchangeRate ??= 1000
   c.costMarkup ??= 1.3
   c.yunwuCreditToRmb ??= 0.5
+  c.yunwuGroup ??= 'default'
   c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m, chargePolicy: m.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' } }))
   c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
   for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]

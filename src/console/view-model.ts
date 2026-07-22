@@ -17,6 +17,7 @@ interface CatalogInput {
   error?: string
   models: CatalogModelInput[]
   unsupportedModels?: CatalogModelInput[]
+  groupRatio?: Record<string, number>
 }
 
 export interface ConsoleCatalogRow extends CatalogModelInput {
@@ -30,7 +31,6 @@ export interface ConsoleCatalogRow extends CatalogModelInput {
     label: string
   }
   chargePolicy: { type: string; label: string; source: string }
-  /** yunwu 供应商人民币等值成本（仅供定价参考） */
   yunwuCost: { type: string; label: string }
 }
 
@@ -50,8 +50,9 @@ export interface ImageGeneratorConsoleState {
 
 export function buildConsoleState(config: Config, catalog: CatalogInput | null, billing: BillingInfo | null): ImageGeneratorConsoleState {
   const mappings = new Map((config.modelMappings ?? []).map(mapping => [mapping.modelId, mapping]))
-  const models = catalog?.models.map(model => buildRow(model, mappings.get(model.id), config, true)) ?? []
-  const unsupportedModels = catalog?.unsupportedModels?.map(model => buildRow(model, mappings.get(model.id), config, false)) ?? []
+  const groupRatio = catalog?.groupRatio
+  const models = catalog?.models.map(model => buildRow(model, mappings.get(model.id), config, true, groupRatio)) ?? []
+  const unsupportedModels = catalog?.unsupportedModels?.map(model => buildRow(model, mappings.get(model.id), config, false, groupRatio)) ?? []
   return {
     config,
     suppliers: [
@@ -72,11 +73,12 @@ export function buildConsoleState(config: Config, catalog: CatalogInput | null, 
   }
 }
 
-function buildRow(model: CatalogModelInput, mapping: ModelMappingConfig | undefined, config: Config, selectable: boolean): ConsoleCatalogRow {
+function buildRow(model: CatalogModelInput, mapping: ModelMappingConfig | undefined, config: Config, selectable: boolean, groupRatio?: Record<string, number>): ConsoleCatalogRow {
+  const groupName = config.yunwuGroup ?? 'default'
   const catalogPrice = formatCatalogPrice(model)
   const costQuote = quoteCost(model, config)
   const chargePolicy = formatChargePolicy(mapping)
-  const yunwuCost = formatYunwuCost(model, config)
+  const yunwuCost = formatYunwuCost(model, config, groupRatio, groupName)
   return { ...model, selectable, catalogPrice, costQuote, chargePolicy, yunwuCost }
 }
 
@@ -110,15 +112,20 @@ function quoteCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow[
   return { kind: 'unknown', chargeable: false, label: '无法计算每图成本' }
 }
 
-function formatYunwuCost(model: CatalogModelInput, config: Config): ConsoleCatalogRow['yunwuCost'] {
+function formatYunwuCost(model: CatalogModelInput, config: Config, groupRatio: Record<string, number> | undefined, groupName: string): ConsoleCatalogRow['yunwuCost'] {
   const pricing = model.pricing
   const creditToRmb = config.yunwuCreditToRmb ?? 0.5
+  const ratio = groupRatio?.[groupName] ?? 1
   if (pricing?.type === 'per-call' && typeof pricing.pricePerCall === 'number') {
-    const rmb = Math.round(pricing.pricePerCall * creditToRmb * 100) / 100
+    const effective = pricing.pricePerCall * ratio
+    const rmb = Math.round(effective * creditToRmb * 100) / 100
+    if (ratio !== 1) {
+      return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张（${groupName} ×${ratio}）` }
+    }
     return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张` }
   }
   if (pricing?.type === 'per-token') {
-    return { type: 'per-token', label: `token 倍率 ×${pricing.tokenRatio ?? '?'}（按量计费）` }
+    return { type: 'per-token', label: `token ×${pricing.tokenRatio ?? '?'}（按量）` }
   }
   return { type: 'unknown', label: '未知' }
 }

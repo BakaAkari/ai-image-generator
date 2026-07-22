@@ -41,6 +41,7 @@ export interface CatalogSnapshot {
   models: ImageModelInfo[]
   unsupportedModels: UnsupportedImageModelInfo[]
   fetchedAt: number
+  groupRatio?: Record<string, number>
   /** 拉取失败时的错误信息（models 为上次缓存） */
   error?: string
 }

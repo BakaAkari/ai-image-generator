@@ -73,6 +73,7 @@ export interface Config {
   costMarkup?: number
   /** yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50） */
   yunwuCreditToRmb?: number
+  yunwuGroup?: string
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
@@ -223,6 +224,9 @@ const ActiveSupplierSchema = Schema.object({
       .max(100)
       .step(0.01)
       .description('yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50）。仅影响 aka-tools 成本展示，不参与计费。'),
+    yunwuGroup: Schema.string()
+      .default('default')
+      .description('yunwu API Key 所属分组，影响成本计算中的分组倍率。在 yunwu 后台 API 令牌页面查看。'),
   costMarkup: Schema.number()
     .default(1.3)
     .min(0.1)

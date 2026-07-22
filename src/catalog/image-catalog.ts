@@ -98,6 +98,7 @@ export class ImageCatalogService {
       }
       const normalized = normalizeYunwuSnapshot(raw)
       this.billing = normalizeYunwuBilling(raw)
+      const groupRatio = raw.endpoints.pricing.success ? (raw.endpoints.pricing.data as any)?.group_ratio : undefined
       const models: ImageModelInfo[] = normalized.models.map(model => ({
         id: model.id,
         routes: model.routes
@@ -120,6 +121,7 @@ export class ImageCatalogService {
         models,
         unsupportedModels,
         fetchedAt: normalized.fetchedAt,
+        groupRatio,
         error: normalized.error,
       }
       await this.persist(cfg)
@@ -159,6 +161,7 @@ export class ImageCatalogService {
     this.snapshot = {
       ...loaded.envelope.catalog.snapshot,
       unsupportedModels: loaded.envelope.catalog.snapshot.unsupportedModels ?? [],
+      groupRatio: loaded.envelope.catalog.snapshot.groupRatio,
     }
     this.billing = loaded.envelope.catalog.billing
     this.logger.info('model catalog restored from scoped cache: %d models stale=%s', this.snapshot.models.length, loaded.stale)
