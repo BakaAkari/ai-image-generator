@@ -40,7 +40,7 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
   consoleService.addListener('image-generator/save-config', async (config: Config) => {
     try {
       // scope.update 触发热重载；false = 不写入全局配置文件由 loader 持久化
-      ;(ctx.scope as any).update(config, false)
+      ;(ctx.scope as any).update(config, true)
       return { success: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
