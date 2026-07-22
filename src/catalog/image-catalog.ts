@@ -9,10 +9,11 @@
 import type { Context, Logger } from 'koishi'
 import path from 'node:path'
 
-import { NewApiClient, type BillingInfo } from './newapi-client.js'
-import { resolveYunwuRoutes } from '../suppliers/yunwu/routes.js'
-import type { ActiveSupplier, CatalogSnapshot, ImageModelInfo, NewApiPricingItem } from './types.js'
-import { createKeyScopeFingerprint } from '../suppliers/yunwu/client.js'
+import type { BillingInfo } from './billing-info.js'
+import { normalizeYunwuBilling } from './billing-info.js'
+import type { ActiveSupplier, CatalogSnapshot, ImageModelInfo } from './types.js'
+import { createKeyScopeFingerprint, YunwuClient } from '../suppliers/yunwu/client.js'
+import { normalizeYunwuSnapshot } from '../suppliers/yunwu/normalizer.js'
 import { CatalogFileRepository } from './catalog-repository.js'
 import { CatalogScheduler } from './catalog-scheduler.js'
 
@@ -70,78 +71,55 @@ export class ImageCatalogService {
   }
 
   private async doRefresh(cfg: { supplier: ActiveSupplier; apiBase: string; apiKey: string; timeoutSec: number; extraHeaders?: Record<string, string> }): Promise<CatalogSnapshot | null> {
-    const client = new NewApiClient({
+    if (cfg.supplier !== 'yunwu') {
+      const message = `supplier ${cfg.supplier} is not adapted; only yunwu is maintained`
+      this.logger.warn(message)
+      if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
+      return this.snapshot
+    }
+    const client = new YunwuClient({
       apiBase: cfg.apiBase,
       apiKey: cfg.apiKey,
       timeoutSec: cfg.timeoutSec,
       extraHeaders: cfg.extraHeaders,
     })
     try {
-      const [rawModels, rawPricing, billing] = await Promise.all([
-        client.fetchModels(),
-        client.fetchPricing(),
-        client.fetchBilling().catch(() => null),
-      ])
-      this.billing = billing
-
-      const pricingMap = new Map<string, NewApiPricingItem>()
-      for (const p of rawPricing ?? []) {
-        const id = (p.model_name || p.model_id || p.id || '').toLowerCase()
-        if (id) pricingMap.set(id, p)
-      }
-
-      const models: ImageModelInfo[] = []
-      const unsupportedModels: CatalogSnapshot['unsupportedModels'] = []
-      for (const m of rawModels) {
-        if (!m?.id) continue
-        const routes = (cfg.supplier === 'yunwu'
-          ? resolveYunwuRoutes(m.supported_endpoint_types ?? [])
-          : []).filter((route): route is typeof route & { protocol: 'openai' | 'gemini' } =>
-            route.protocol === 'openai' || route.protocol === 'gemini')
-        if (routes.length === 0) {
-          unsupportedModels.push({
-            id: m.id,
-            description: m.description?.slice(0, 200),
-            unsupportedReasons: ['no recognized image generation endpoint'],
-          })
-          continue
-        }
-        const pricing = pricingMap.get(m.id.toLowerCase())
-        const modes = [...new Set(routes.map(route => route.capability === 'image-edit' ? 'image-to-image' : route.capability))]
-          .filter((mode): mode is 'text-to-image' | 'image-to-image' => mode === 'text-to-image' || mode === 'image-to-image')
-        models.push({
-          id: m.id,
-          routes,
-          modes,
-          description: m.description?.slice(0, 60),
-          pricing: pricing ? {
-            type: pricing.quota_type === 0 ? 'per-token' : pricing.quota_type === 1 ? 'per-call' : 'unknown',
-            pricePerCall: pricing.quota_type === 1 && typeof pricing.model_price === 'number' ? pricing.model_price : undefined,
-            tokenRatio: pricing.quota_type === 0 && typeof pricing.model_ratio === 'number' ? pricing.model_ratio : undefined,
-            enableGroups: pricing.enable_groups,
-          } : { type: 'unknown' },
-          source: pricing ? 'remote-pricing' : 'remote-models',
-        })
-      }
-      models.sort((a, b) => a.id.localeCompare(b.id))
-
+      const raw = await client.fetchSnapshot()
+      const normalized = normalizeYunwuSnapshot(raw)
+      this.billing = normalizeYunwuBilling(raw)
+      const models: ImageModelInfo[] = normalized.models.map(model => ({
+        id: model.id,
+        routes: model.routes
+          .filter((route): route is typeof route & { protocol: 'openai' | 'gemini' } => route.protocol === 'openai' || route.protocol === 'gemini'),
+        modes: [...new Set(model.capabilities.map(capability => capability === 'image-edit' ? 'image-to-image' : capability))]
+          .filter((mode): mode is 'text-to-image' | 'image-to-image' => mode === 'text-to-image' || mode === 'image-to-image'),
+        description: model.description?.slice(0, 200),
+        pricing: model.pricing,
+        source: model.pricing.source,
+      }))
+      const unsupportedModels = normalized.allModels
+        .filter(model => !model.executable)
+        .map(model => ({
+          id: model.id,
+          description: model.description?.slice(0, 200),
+          unsupportedReasons: model.unsupportedReasons ?? ['no recognized image generation endpoint'],
+        }))
       this.snapshot = {
-        supplier: cfg.supplier,
+        supplier: 'yunwu',
         models,
         unsupportedModels,
-        fetchedAt: Date.now(),
+        fetchedAt: normalized.fetchedAt,
+        error: normalized.error,
       }
       await this.persist(cfg)
-      this.logger.info('model catalog refreshed: supplier=%s models=%d pricing=%s billing=%s',
-        cfg.supplier, models.length, rawPricing ? 'yes' : 'no',
-        this.billing?.totalUsageUsd != null ? `$${this.billing.totalUsageUsd.toFixed(2)}` : 'n/a')
+      this.logger.info('model catalog refreshed: supplier=yunwu models=%d unsupported=%d billing=%s',
+        models.length, unsupportedModels.length,
+        this.billing.totalUsageUsd != null ? `$${this.billing.totalUsageUsd.toFixed(2)}` : 'n/a')
       return this.snapshot
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.logger.warn('model catalog refresh failed: %s（沿用旧缓存）', message)
-      if (this.snapshot) {
-        this.snapshot = { ...this.snapshot, error: message }
-      }
+      if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
       return this.snapshot
     }
   }

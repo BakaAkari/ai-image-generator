@@ -3,7 +3,7 @@
 更新时间：2026-07-22
 分支：`refactor/yunwu-no-hardcoding`
 隔离工作区：`.worktrees/yunwu-no-hardcoding`
-当前 HEAD：`7b623d0`
+当前 HEAD：`037fd8a`（文档生成前）
 
 ## 总体状态
 
@@ -84,3 +84,8 @@ Task 6 提交前的完整验证：
 - 生产容器尚未部署本分支，真实生成与账本尚未验收。
 - Task 8 前不能删除 `src/catalog/newapi-client.ts` 或旧 Catalog 类型；必须先证明零消费者。
 - 测试 fixture 中少数 endpoint 为审计后补全，最终须用只读 probe 获取真实脱敏快照替换并复核。
+
+## Task 8 最新进展
+
+- 只读 probe、旧 Client 清理、0.9.0 版本与发布文档已完成。
+- 本机 `.secret` 未发现 Yunwu Key；认证 probe 和真实 smoke 尚未执行。

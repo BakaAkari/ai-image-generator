@@ -188,6 +188,12 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 新映射默认 disabled；仅 `selectableModels` 可选择；unsupported 模型单独展示且不可选。
 - yunwu 标记为 maintained，其他供应商标记 unsupported/暂未适配。
 
-### Task 8–9
-- 状态：未开始。
-- 包含只读 probe/真实 smoke/旧代码清理、全分支审查、容器验收及 GitHub PR/合并。
+### Task 8：Probe、旧代码清理、文档与版本
+- 状态：代码与文档部分完成，认证 probe / 容器 smoke 待执行。
+- 已完成：只读脱敏 probe、schema diff、unknown endpoint、退出码测试及 `npm run probe:yunwu`。
+- 已完成：运行 Catalog 切到 `YunwuClient + normalizeYunwuSnapshot`；删除旧 `newapi-client.ts` 和名称启发式类型/函数。
+- 已完成：版本提升到 0.9.0，并同步 README、ROADMAP、CHANGELOG 和迁移/回滚说明。
+- 阻塞项：本机未发现 Yunwu API Key，无法执行认证 `/v1/models` probe 和真实生成 smoke。
+
+### Task 9
+- 状态：未开始。包含全分支审查、容器验收及 GitHub PR/合并。

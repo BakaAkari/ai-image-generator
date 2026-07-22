@@ -2,13 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-aka-ai-image-generator?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-aka-ai-image-generator)
 
-自用 AI 图像生成插件 V2（image-only）。当前 `0.8.0` 版本采用供应商凭证 + 模型路由配置界面，支持在每条模型映射中显式选择供应商、运行时协议与积分单价，并使用积分制计费、用户数据 v2、精简后的账户命令体系，以及 ChatLuna 桥接和 YesImBot 桥接集成（均可选）。
+自用 AI 图像生成插件 V2（image-only）。当前 `0.9.0` 版本以 yunwu 为唯一完整维护供应商，模型、能力、route 和目录价格由供应商快照驱动；生成链路使用显式收费策略和真实积分预授权，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接。
 
-> 范围：仅图像生成。视频生成和 Console WebUI 不在当前运行时范围内。
+> 范围：仅图像生成。aka-tools Console 页面已实现；视频生成不在当前运行时范围内。
 
 ## 当前版本状态
 
-- 当前包版本：`0.8.0`。
+- 当前包版本：`0.9.0`。
 - 当前稳定能力：供应商凭证分区、模型映射显式 supplier + protocol 路由、模型级积分单价、OpenAI-compatible 图像站点、OpenAI 官方 GPT、Gemini 官方、openai 协议、gemini 协议、基础图像命令、通用合成图、动态 styles / styleGroups 快捷命令、配置重载后动态命令刷新、styles 默认模式 / 默认模型、紧凑控制台表格列名、设置页顶部命令速查、紧凑命令帮助、紧凑图像参数帮助、simple / detail 日志级别、最终失败显式聊天提示、统一聊天输出文案、显式 `-n`、受限模型权限拦截、用户自助查询、用户自助账单、管理员查询、用量排行榜、管理员充值与余额修正、积分账单、用户数据 v2、积分流水账本、充值审计、积分制限流和豁免能力、ChatLuna 桥接（5 个基础工具 + 动态风格工具 + 上下文注入，可选启用）、YesImBot 桥接（5 个 AI Agent 工具 + 上下文注入，可选启用）。
 - 当前活跃计划：`0.8.0` YesImBot 桥接集成已完成代码实现，等待远端验证；`0.7.0` ChatLuna 桥接集成已实现，等待远端验证。
 - 当前插件路线图：见 `ROADMAP.md`。
@@ -16,32 +16,17 @@
 
 ## 支持的供应商入口 / 模型路由
 
-控制台顶层只暴露三类供应商凭证入口，供应商只负责 API 凭证，不直接配置模型：
+- `yunwu`：当前唯一完整维护供应商。目录从 `/v1/models` 与 `/api/pricing` 获取，协议 route 只依据 `supported_endpoint_types`。
+- GPTGod、OpenAI 官方、Gemini 官方：保留配置边界，但在 aka-tools 中标记“暂未适配”，不会使用 Yunwu 规则猜测能力或价格。
 
-- 第三方：OpenAI-compatible 第三方站点。填写 `apiBase + apiKey`，可选额外请求头。
-- OpenAI：OpenAI 官方 GPT。只填写 API key，固定使用 OpenAI 官方 base。
-- Gemini：Gemini 官方。只填写 API key，固定使用 Google Gemini 官方 base。
+每条模型映射包含：
 
-模型统一在模型映射表中配置。每条模型映射都是一条模型路由：
+- `suffix`：聊天命令和 preset 使用的模型后缀。
+- `modelId`：必须存在于当前 Key scope 的可执行目录。
+- `restricted`：是否需要管理员或模型白名单。
+- `chargePolicy`：`fixed`（固定积分/张）、`cost-plus`（目录成本 × 汇率 × 加成，拒绝未知估算）或 `disabled`。
 
-- `suffix`：命令参数和 styles 预设引用的模型后缀。
-- `modelId`：真实上游模型 ID。
-- `supplier`：该模型使用哪个供应商凭证入口。
-- `protocol`：该模型使用哪个运行时协议 / 通道。
-- `restricted`：是否仅允许管理员或模型白名单用户使用。
-- `creditCostPerImage`：该模型每张图片消耗的积分，支持小数；为空时使用全局默认单价。
-
-当前运行时协议：
-
-- `openai`：OpenAI API，调用 `/v1/images/generations` 与 `/v1/images/edits`。
-- `gemini`：Gemini generateContent 协议，调用 `/v1beta/models/{model}:generateContent`。
-
-推荐组合：
-
-- OpenAI 官方 GPT：供应商选 OpenAI，协议选 `openai`。
-- 第三方 GPT Images：供应商选第三方，协议选 `openai`。
-- 第三方 Gemini generateContent（如云雾）：供应商选第三方，协议选 `gemini`。
-- Gemini 官方：供应商选 Gemini，协议选 `gemini`。
+系统没有具体默认模型。第一条有效映射是默认映射；空映射或缺少 endpoint route 会明确拒绝生成。
 
 配置页里的次数、窗口、超时等数值字段使用数字输入，不使用滑竿。低频设置使用 Koishi Schema 的嵌套 `.collapse()` 模式默认收起。配置页顶部提供只读“使用说明 / 命令速查”，用纯文本分区展示首次配置顺序、普通用户命令、管理员命令、常用参数和权限规则。配置页文案采用分层策略：下拉选项和表格列名保持极简，字段描述适度说明用途、单位和权限影响；表格列名优先使用短标签，减少控制台多行换行。日志级别使用 `simple` / `detail`：`simple` 记录关键流程，`detail` 额外记录脱敏请求诊断。
 
@@ -82,12 +67,12 @@
 
 积分计费：
 
-- 默认每张图片消耗 `defaultCreditCostPerImage` 积分；模型映射可用 `creditCostPerImage` 覆盖；积分支持最多两位小数。
-- 生成前按请求张数预检，生成后按成功发送到聊天窗口的图片数扣费。
-- 当部分图片生成或发送成功时，只按成功发送图片数扣费。
-- 管理员、永久会员和 `unlimitedPlatforms` 平台跳过积分扣费和限流，但仍记录生成统计。
-- 模型白名单只允许调用 `restricted` 模型，不代表免费。
-- 用户数据保存为 `users.v2.json`；流水保存为 `credit-ledger.v2.jsonl`；充值审计保存为 `recharge-records.v2.jsonl`。
+- 生成前在用户余额中真实冻结预计积分；并发请求不能超卖同一余额。
+- 成功后按实际发送图片数结算，未使用部分释放；失败、超时或未返回图片时全额释放。
+- reserve / settle / release 幂等，满足 `reserved = settled + released`；活动 hold 持久化到 `credit-reservations.v1.json`，重启和过期可恢复。
+- 管理员、永久会员和 `unlimitedPlatforms` 平台记录交付与证据但不扣费。
+- per-token 目录只有倍率、没有请求级公式时不生成虚假每图价格，也不允许 cost-plus 扣费。
+- 用户数据与旧流水保持兼容，不重写历史 consume 事件。
 
 ## 版本进度
 

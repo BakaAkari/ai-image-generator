@@ -49,6 +49,21 @@ describe('YunwuClient', () => {
     expect(snapshot.supplier).toBe('yunwu')
   })
 
+
+  test('passes configured extra headers without exposing them in snapshot', async () => {
+    const headers: Headers[] = []
+    const client = new YunwuClient(
+      { apiBase: 'https://api.yunwu.ai/v1', apiKey: 'test-key', timeoutSec: 30, extraHeaders: { 'X-Client': 'aka' } },
+      async (_url, init) => {
+        headers.push(new Headers(init?.headers))
+        return new Response(JSON.stringify({ data: [] }))
+      },
+    )
+    const snapshot = await client.fetchSnapshot()
+    expect(headers.every(header => header.get('X-Client') === 'aka')).toBe(true)
+    expect(JSON.stringify(snapshot)).not.toContain('X-Client')
+  })
+
   test('fetchSnapshot does not serialize apiKey or Authorization header in snapshot', async () => {
     const client = new YunwuClient(
       { apiBase: 'https://api.yunwu.ai/v1', apiKey: 'sk-secret', timeoutSec: 30 },

@@ -25,4 +25,11 @@ describe('config and routing hardcoding guard', () => {
     expect(text).not.toContain("{ suffix: 'gpt', modelId:")
     expect(text).not.toContain("{ suffix: 'gemini', modelId:")
   })
+  test('obsolete new-api client and heuristic catalog helpers are removed', () => {
+    expect(() => source('src/catalog/newapi-client.ts')).toThrow()
+    const types = source('src/catalog/types.ts')
+    expect(types).not.toContain('NewApiModelItem')
+    expect(types).not.toContain('NewApiPricingItem')
+  })
+
 })

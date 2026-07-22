@@ -44,24 +44,3 @@ export interface CatalogSnapshot {
   /** 拉取失败时的错误信息（models 为上次缓存） */
   error?: string
 }
-
-/** new-api 系 /v1/models 单项 */
-export interface NewApiModelItem {
-  id: string
-  owned_by?: string
-  model_type?: string
-  description?: string
-  supported_endpoint_types?: string[]
-}
-
-/** new-api 系 /api/pricing 单项 */
-export interface NewApiPricingItem {
-  model_name?: string
-  model_id?: string
-  id?: string
-  model_type?: string
-  quota_type?: number
-  model_price?: number
-  model_ratio?: number
-  enable_groups?: string[]
-}

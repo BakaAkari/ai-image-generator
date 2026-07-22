@@ -1,5 +1,5 @@
 import type { Config } from '../shared/config.js'
-import type { BillingInfo } from '../catalog/newapi-client.js'
+import type { BillingInfo } from '../catalog/billing-info.js'
 import type { ModelMappingConfig } from '../shared/types.js'
 
 interface CatalogModelInput {

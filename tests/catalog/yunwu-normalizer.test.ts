@@ -32,6 +32,13 @@ describe('YunwuCatalogNormalizer', () => {
     expect(ids).toContain('grok-imagine-image')
   })
 
+
+  test('preserves normalized supplier pricing on catalog models', () => {
+    const model = catalog.allModels.find(m => m.id === 'dall-e-3')!
+    expect(model.pricing).toMatchObject({ type: 'per-call', source: 'remote-pricing' })
+    expect(model.pricing.pricePerCall).toBeTypeOf('number')
+  })
+
   test('negative models are not executable', () => {
     const ids = catalog.models.map(m => m.id)
     expect(ids).not.toContain('kling-avatar-image2video')

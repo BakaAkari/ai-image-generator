@@ -49,6 +49,7 @@ export interface CatalogModel {
   capabilities: ModelCapability[]
   /** 可用于执行的生成路由 */
   routes: GenerationRoute[]
+  pricing: CatalogModelPricing
   /** 该模型可否被调用 */
   executable: boolean
   /** 可执行性状态 */

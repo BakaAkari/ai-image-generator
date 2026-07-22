@@ -4,6 +4,42 @@
 
 - 暂无。
 
+## 0.9.0
+
+### Added
+
+- Yunwu 专用 raw client、脱敏契约 fixture、fail-closed capability/route normalizer 和只读 `npm run probe:yunwu`。
+- Key/base scope 隔离的原子 Catalog 缓存，支持 temp + fsync + rename、完整备份恢复、stale 标记和刷新间隔热更新。
+- 显式模型收费策略：`fixed`、`cost-plus`、`disabled`；目录价格、成本报价、运营收费分层展示。
+- 真实积分预授权：生成前冻结，按实际交付图片 settle，失败 release；支持并发防超卖、幂等、持久化、重启恢复和过期 hold 自动释放。
+- aka-tools 后端 view-model；unsupported 模型单独展示且不可选择。
+
+### Changed
+
+- Yunwu 是当前唯一完整维护供应商；其他供应商入口标记为暂未适配，不再假装共享同一目录契约。
+- 生成协议只由供应商 endpoint route 决定，不再按模型名包含 `gemini` 猜测。
+- 空模型映射、缺失 route、未知价格和无法计算的 per-token 价格全部 fail-closed。
+- ChatLuna、YesImBot 和普通命令统一使用 reserve → settle/release 计费链路。
+- 配置升级时，旧 `creditCostPerImage` 迁移为 fixed；明确 per-call 目录价迁移为 cost-plus；未知价格映射迁移为 disabled。
+
+### Removed
+
+- 具体默认模型、全局默认每张积分运行回退、2000-token / `$2/M` / `0.004` 价格公式。
+- 旧 `NewApiClient`、模型名/描述启发式 `isImageModel` / `inferModes`。
+- 前端所有价格计算；页面只渲染后端视图模型。
+
+### Migration
+
+- 升级后必须至少配置一条有效模型映射，并显式选择收费策略。
+- 旧模型映射不会自动删除；不可用或无法报价的映射会显示为失效/禁用。
+- 旧用户数据和历史流水不重写；新增 `credit-reservations.v1.json` 保存活动预授权。
+- 回滚前应备份插件目录和数据目录；0.8.x 不理解 0.9.0 的 `chargePolicy` 和 reservation 文件。
+
+### Verification status
+
+- 本地单元/契约测试、typecheck 和 build 已通过。
+- 认证只读 probe、目标容器部署及真实文生图/图生图 smoke 必须在发布前完成并写入最终 verification 文档。
+
 ## 0.8.13
 
 ### Fixed

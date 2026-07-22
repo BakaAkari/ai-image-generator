@@ -38,6 +38,7 @@ export class YunwuClient implements ImageSupplierAdapter<SupplierRawSnapshot<Yun
   private readonly apiKey: string
   private readonly timeoutMs: number
   private readonly fetchLike: FetchLike
+  private readonly extraHeaders: Record<string, string>
 
   constructor(
     config: YunwuClientConfig,
@@ -47,6 +48,7 @@ export class YunwuClient implements ImageSupplierAdapter<SupplierRawSnapshot<Yun
     this.apiKey = config.apiKey
     this.timeoutMs = (config.timeoutSec ?? 30) * 1000
     this.fetchLike = fetchLike
+    this.extraHeaders = { ...(config.extraHeaders ?? {}) }
   }
 
   getKeyScopeFingerprint(): string {
@@ -83,6 +85,7 @@ export class YunwuClient implements ImageSupplierAdapter<SupplierRawSnapshot<Yun
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
+          ...this.extraHeaders,
         },
         signal: controller.signal,
       })

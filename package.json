@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-aka-ai-image-generator",
-  "version": "0.8.13",
+  "version": "0.9.0",
   "description": "AI image generator for Koishi (V2: semantic supplier UI, image protocols, credit billing).",
   "license": "MIT",
   "main": "lib/index.js",
@@ -47,7 +47,8 @@
     "clean": "rimraf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "probe:yunwu": "node scripts/probe-yunwu-catalog.mjs"
   },
   "publishConfig": {
     "access": "public"

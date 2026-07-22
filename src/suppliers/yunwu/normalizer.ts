@@ -40,6 +40,7 @@ function normalizeModel(item: YunwuModelItem, pricing?: YunwuPricingItem): Catal
     description: item.description,
     capabilities: [...new Set(capabilities)],
     routes,
+    pricing: normalizePricing(item, pricing),
     executable,
     executableStatus,
     unsupportedReasons: executable ? undefined : reasons,

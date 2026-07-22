@@ -2,8 +2,8 @@
 
 ## Current status
 
-- Current package version: `0.8.13`.
-- Current line: `0.8.13` hardens runtime reliability: rate-limit ordering fix, volatile map pruning, task TTL cap, userId guard, ChatLuna bridge send isolation, and download-image magic-byte validation; `0.8.12` fixes command-timeout stale Provider callbacks; `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
+- Current package version: `0.9.0`.
+- Current line: `0.9.0` rebuilds the Yunwu catalog, pricing, routing, reservations, and aka-tools contract; prior `0.8.13` hardens runtime reliability: rate-limit ordering fix, volatile map pruning, task TTL cap, userId guard, ChatLuna bridge send isolation, and download-image magic-byte validation; `0.8.12` fixes command-timeout stale Provider callbacks; `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
 - Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle + YesImBot bridge toggle.
 - Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
 
@@ -31,6 +31,15 @@ Stable runtime direction:
 5. Keep remote Koishi validation as the source of truth for runtime behavior.
 
 ## Completed milestones
+
+### `0.9.0` Yunwu sourced catalog and atomic billing
+
+- Yunwu endpoint data is the maintained source for model availability, route and catalog pricing.
+- Unknown capability/route/pricing is fail-closed; no concrete default model or token-cost guess remains.
+- Key-scoped atomic cache and hot-update scheduler are implemented.
+- Explicit charge policies and persistent atomic reservations replace check-only quota handling.
+- aka-tools renders backend pricing/charge view models and separates unsupported models.
+- A read-only redacting probe is available through `npm run probe:yunwu`.
 
 ### `0.2.x` V2 MVP
 

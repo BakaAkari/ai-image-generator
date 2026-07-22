@@ -2,6 +2,7 @@ export interface SupplierCredentials {
   apiBase: string
   apiKey: string
   timeoutSec?: number
+  extraHeaders?: Record<string, string>
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
