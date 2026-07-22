@@ -95,7 +95,8 @@ export interface Config {
 
   // ── ④ 积分计费 ────────────────────────────────────────────────────────────
   creditUnitName: string
-  defaultCreditCostPerImage: number
+  /** @deprecated 0.9.0 仅用于旧配置读取，不参与运行时计费。 */
+  defaultCreditCostPerImage?: number
   dailyFreeCredits: number
   showCreditCostInResult: boolean
   creditsPerCny?: number
@@ -253,12 +254,23 @@ export const Config = Schema.intersect([
           .default(false)
           .description('限制项')
           .role('table-cell', { width: 10 }),
+        chargePolicy: Schema.union([
+          Schema.object({
+            type: Schema.const('fixed').required(),
+            creditsPerImage: Schema.number().min(0).max(100000).step(0.01).required(),
+          }).description('固定积分/张'),
+          Schema.object({
+            type: Schema.const('cost-plus').required(),
+            acceptEstimated: Schema.boolean().default(false),
+          }).description('目录成本 × 汇率 × 加成；拒绝无明确公式的估算'),
+          Schema.object({
+            type: Schema.const('disabled').required(),
+            reason: Schema.string().default('pricing unavailable'),
+          }).description('禁用'),
+        ]).description('显式收费策略'),
         creditCostPerImage: Schema.number()
-          .min(0)
-          .max(100000)
-          .step(0.01)
-          .description('每张积分；留空 = 按目录计价自动换算')
-          .default(undefined as unknown as number),
+          .hidden()
+          .description('旧字段，仅用于迁移'),
       }).collapse()
     )
       .role('table')
@@ -325,11 +337,8 @@ export const Config = Schema.intersect([
       .default('积分')
       .description('聊天输出里的余额单位'),
     defaultCreditCostPerImage: Schema.number()
-      .default(1)
-      .min(0)
-      .max(100000)
-      .step(0.01)
-      .description('模型未设置单价时，每张图消耗的积分，支持小数'),
+      .hidden()
+      .description('旧字段，仅用于配置迁移；不参与运行时计费'),
     dailyFreeCredits: Schema.number()
       .default(5)
       .min(0)

@@ -15,6 +15,7 @@ import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { UserManager } from './services/UserManager.js'
 import { Config as ConfigSchema } from './shared/config.js'
 import type { Config as PluginConfig } from './shared/config.js'
+import { migrateConfig } from './config/migration.js'
 import { PLUGIN_NAME } from './shared/constants.js'
 
 /**
@@ -77,6 +78,7 @@ export function apply(ctx: Context, config: Config) {
 
   // 3. Orchestrator —— 闭包持有 currentConfig，热重载时由 acceptor 覆盖
   let currentConfig = config
+  let migrationLogged = false
   const handlers = createImageGenerationHandlers({
     ctx,
     service,
@@ -92,6 +94,12 @@ export function apply(ctx: Context, config: Config) {
   service.catalogPricingLookup = (modelId: string) => {
     const model = catalog.current?.models.find(m => m.id === modelId)
     return model?.pricing
+  }
+  service.catalogRouteLookup = (modelId: string) => {
+    const model = catalog.current?.models.find(m => m.id === modelId)
+    const route = model?.routes[0]
+    if (!route || (route.protocol !== 'openai' && route.protocol !== 'gemini')) return undefined
+    return { routeId: route.id, protocol: route.protocol }
   }
 
   // Schema.dynamic 选项源：模型映射的 modelId 下拉来自动态目录。
@@ -130,6 +138,18 @@ export function apply(ctx: Context, config: Config) {
   const revalidate = () => {
     const models = catalog.current?.models ?? []
     if (!models.length) return
+    const migration = migrateConfig(currentConfig, modelId => {
+      const pricing = models.find(model => model.id === modelId)?.pricing
+      return pricing?.type === 'per-call' && pricing.pricePerCall != null ? 'catalog-quote' : 'unknown'
+    })
+    if (migration.migrated && migration.actions.some(action => action.startsWith('migrated ') || action.startsWith('disabled '))) {
+      currentConfig = migration.config
+      service.updateConfig(currentConfig)
+      if (!migrationLogged) {
+        migrationLogged = true
+        logger.warn('模型收费策略已迁移：%s', migration.actions.join('；'))
+      }
+    }
     const invalid = service.revalidateMappings(models)
     if (invalid.length) {
       logger.warn('模型映射校验：%d 个映射在当前供应商目录中不可用：%s', invalid.length, invalid.join('、'))

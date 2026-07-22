@@ -9,13 +9,12 @@
 import type { Context, Logger } from 'koishi'
 import path from 'node:path'
 
-import { NewApiClient, inferModes, isImageModel, type BillingInfo } from './newapi-client.js'
+import { NewApiClient, type BillingInfo } from './newapi-client.js'
+import { resolveYunwuRoutes } from '../suppliers/yunwu/routes.js'
 import type { ActiveSupplier, CatalogSnapshot, ImageModelInfo, NewApiPricingItem } from './types.js'
 import { createKeyScopeFingerprint } from '../suppliers/yunwu/client.js'
 import { CatalogFileRepository } from './catalog-repository.js'
 import { CatalogScheduler } from './catalog-scheduler.js'
-
-const IMAGE_TYPE_PATTERN = /图像|图片|image/i
 
 export class ImageCatalogService {
   private snapshot: CatalogSnapshot | null = null
@@ -93,11 +92,19 @@ export class ImageCatalogService {
 
       const models: ImageModelInfo[] = []
       for (const m of rawModels) {
-        if (!m?.id || !isImageModel(m)) continue
+        if (!m?.id) continue
+        const routes = (cfg.supplier === 'yunwu'
+          ? resolveYunwuRoutes(m.supported_endpoint_types ?? [])
+          : []).filter((route): route is typeof route & { protocol: 'openai' | 'gemini' } =>
+            route.protocol === 'openai' || route.protocol === 'gemini')
+        if (routes.length === 0) continue
         const pricing = pricingMap.get(m.id.toLowerCase())
+        const modes = [...new Set(routes.map(route => route.capability === 'image-edit' ? 'image-to-image' : route.capability))]
+          .filter((mode): mode is 'text-to-image' | 'image-to-image' => mode === 'text-to-image' || mode === 'image-to-image')
         models.push({
           id: m.id,
-          modes: inferModes(m),
+          routes,
+          modes,
           description: m.description?.slice(0, 60),
           pricing: pricing ? {
             type: pricing.quota_type === 0 ? 'per-token' : pricing.quota_type === 1 ? 'per-call' : 'unknown',

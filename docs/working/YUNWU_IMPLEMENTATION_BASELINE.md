@@ -157,10 +157,11 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 - 未完成：领域层尚未接入真实预授权/结算。
 
 ### Task 4：旧配置迁移与删除隐式默认
-- 状态：部分完成（commit `34ce373`），不得视为验收完成。
-- 已完成：Schema 默认 `modelMappings` 清空；新增旧字段清理工具和测试。
-- 未完成：`DEFAULT_OPENAI_MODEL_ID`、按 `/gemini/i` 猜协议、旧默认积分回退仍存在生产消费者；必须在 Task 6/8 清零。
-- 未完成：正式 `chargePolicy` 迁移与“空映射显式报错”尚未实现。
+- 状态：完成。
+- 已完成：Schema 默认 `modelMappings` 清空；新增显式 `fixed` / `cost-plus` / `disabled` chargePolicy。
+- 已完成：旧 `creditCostPerImage` 无损迁移为 fixed；可用 per-call catalog quote 迁移为 cost-plus（`acceptEstimated=false`）；未知价格映射迁移为 disabled。
+- 已完成：删除 `DEFAULT_OPENAI_MODEL_ID`、按 `/gemini/i` 猜协议和运行时全局默认积分回退；空映射/缺目录 route 显式报错。
+- 已完成：目录 endpoint route 是协议唯一来源；新增源码硬编码回归测试。
 
 ### Task 5：原子 CatalogRepository、Key Scope 与热更新 Scheduler
 - 状态：完成。

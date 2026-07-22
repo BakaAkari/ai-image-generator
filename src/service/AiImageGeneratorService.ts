@@ -30,6 +30,7 @@ import type { ProviderRegistry } from '../providers/registry.js'
 import type { ImageProvider as RuntimeImageProvider } from '../providers/types.js'
 import type { CreditLedgerEventV2, CreditSummary } from '../services/UserManager.js'
 import { UserManager } from '../services/UserManager.js'
+import { MissingModelMappingError, MissingCatalogRouteError } from './model-route-selection.js'
 
 declare module 'koishi' {
   interface Context {
@@ -77,7 +78,6 @@ interface SessionConversationLike {
 
 const DEFAULT_GEMINI_API_BASE = 'https://generativelanguage.googleapis.com'
 const DEFAULT_OPENAI_API_BASE = 'https://api.openai.com/v1'
-const DEFAULT_OPENAI_MODEL_ID = 'gpt-image-2'
 const DEFAULT_CONTEXT_HISTORY_SIZE = 20
 
 export class AiImageGeneratorService extends Service {
@@ -138,7 +138,7 @@ export class AiImageGeneratorService extends Service {
     const provider = this.resolveProvider(requestContext)
     const supplier = this.resolveSupplier(requestContext)
     const targetModelId = requestContext?.modelId
-    const effectiveModelId = targetModelId || this.resolveDefaultModelId(provider)
+    const effectiveModelId = targetModelId || this.resolveDefaultModelId()
     const factoryConfig = this.buildProviderFactoryConfig(provider, requestContext)
     const imageOptions = {
       resolution: requestContext?.resolution,
@@ -227,7 +227,7 @@ export class AiImageGeneratorService extends Service {
 
     const provider = this.resolveProvider(params.requestContext)
     const supplier = this.resolveSupplier(params.requestContext)
-    const modelId = params.requestContext?.modelId || this.resolveDefaultModelId(provider)
+    const modelId = params.requestContext?.modelId || this.resolveDefaultModelId()
 
     const createdAt = Date.now()
     const records: GeneratedImageRecord[] = params.imageUrls.map((imageUrl, index) => {
@@ -402,6 +402,8 @@ export class AiImageGeneratorService extends Service {
 
   /** 目录计价查询函数（由 index.ts 注入；未注入时自动换算不生效） */
   public catalogPricingLookup: ((modelId: string) => { type: string; pricePerCall?: number; tokenRatio?: number } | undefined) | undefined
+  /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
+  public catalogRouteLookup: ((modelId: string) => { routeId: string; protocol: ProviderType } | undefined) | undefined
 
   buildGenerationSetup(numImages: number, modifiers?: ImageGenerationModifiers) {
     const requestContext: ImageRequestContext = { numImages }
@@ -563,33 +565,24 @@ export class AiImageGeneratorService extends Service {
     return this.resolveDefaultModelRoute().protocol
   }
 
-  private resolveDefaultModelId(provider: ProviderType): string {
+  private resolveDefaultModelId(): string {
     const firstMapping = this.getFirstModelMapping()
-    if (firstMapping?.modelId) return firstMapping.modelId
-    switch (provider) {
-      case 'openai':
-        return DEFAULT_OPENAI_MODEL_ID
-      case 'gemini':
-        return ''
-      default:
-        return ''
-    }
+    if (!firstMapping?.modelId) throw new MissingModelMappingError()
+    return firstMapping.modelId
   }
 
   private resolveDefaultModelRoute(): { supplier: ImageProvider; protocol: ProviderType } {
     const firstMapping = this.getFirstModelMapping()
-    if (firstMapping) return this.resolveModelRoute(firstMapping)
-    return { supplier: 'openai-compatible', protocol: 'openai' }
+    if (!firstMapping) throw new MissingModelMappingError()
+    return this.resolveModelRoute(firstMapping)
   }
 
   private resolveModelRoute(mapping: ModelMappingConfig): { supplier: ImageProvider; protocol: ProviderType } {
-    // 0.9.0：供应商与协议不再逐映射配置。
-    // - 供应商：由全局 activeSupplier 统一决定凭证入口
-    // - 协议：由模型 ID 自动推断（gemini 系走 gemini 协议，其余走 openai 协议）
-    const protocol: ProviderType = /gemini/i.test(mapping.modelId) ? 'gemini' : 'openai'
-    const supplier = this.resolveActiveSupplierRoute(protocol, mapping)
-    this.assertRouteSupported(supplier, protocol, mapping)
-    return { supplier, protocol }
+    const route = this.catalogRouteLookup?.(mapping.modelId)
+    if (!route) throw new MissingCatalogRouteError(mapping.modelId)
+    const supplier = this.resolveActiveSupplierRoute(route.protocol, mapping)
+    this.assertRouteSupported(supplier, route.protocol, mapping)
+    return { supplier, protocol: route.protocol }
   }
 
   /** activeSupplier → 运行时凭证入口（ImageProvider） */
@@ -676,7 +669,7 @@ export class AiImageGeneratorService extends Service {
         return {
           ...common,
           apiKey: settings.openaiCompatibleApiKey || '',
-          modelId: targetModelId || this.resolveDefaultModelId(provider),
+          modelId: targetModelId || this.resolveDefaultModelId(),
           apiBase: provider === 'gemini'
             ? this.resolveOpenAICompatibleGeminiApiBase(settings)
             : settings.openaiCompatibleApiBase || DEFAULT_OPENAI_API_BASE,
@@ -686,7 +679,7 @@ export class AiImageGeneratorService extends Service {
         return {
           ...common,
           apiKey: settings.gptOfficialApiKey || '',
-          modelId: targetModelId || this.resolveDefaultModelId('openai'),
+          modelId: targetModelId || this.resolveDefaultModelId(),
           apiBase: DEFAULT_OPENAI_API_BASE,
           extraHeaders: {},
         }
@@ -694,7 +687,7 @@ export class AiImageGeneratorService extends Service {
         return {
           ...common,
           apiKey: settings.geminiOfficialApiKey || '',
-          modelId: targetModelId || this.resolveDefaultModelId('gemini'),
+          modelId: targetModelId || this.resolveDefaultModelId(),
           apiBase: DEFAULT_GEMINI_API_BASE,
         }
       default:

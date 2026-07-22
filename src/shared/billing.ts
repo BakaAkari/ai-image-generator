@@ -7,52 +7,61 @@ export interface GenerationCost {
   numImages: number
   modelId?: string
   modelSuffix?: string
-  costSource: 'default' | 'model-fixed' | 'catalog-auto'
+  costSource: 'model-fixed' | 'catalog-auto'
 }
 
 export interface CalculateGenerationCostParams {
   numImages: number
   modelMapping?: ModelMappingConfig
   config: Config
-  /** 目录计价查询（0.9.0 自动换算）；未注入时退回默认单价 */
   catalogPricingLookup?: (modelId: string) => { type: string; pricePerCall?: number; tokenRatio?: number } | undefined
 }
 
-/** per-token 模型的每张图 token 量经验估算（gpt-image-2 系一张 1k 图约 1600-2400 token） */
-const ESTIMATED_TOKENS_PER_IMAGE = 2000
-/** new-api token 计费基础单价（美元/百万 token），平台基准 */
-const TOKEN_BASE_PRICE_PER_MILLION = 2
+export class GenerationPricingUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GenerationPricingUnavailableError'
+  }
+}
 
 export function calculateGenerationCost(params: CalculateGenerationCostParams): GenerationCost {
   const numImages = normalizePositiveInteger(params.numImages, 1)
-  const defaultCost = normalizeNonNegativeNumber(params.config.defaultCreditCostPerImage, 1)
-  const modelCost = normalizeOptionalNonNegativeNumber(params.modelMapping?.creditCostPerImage)
-  let creditCostPerImage = modelCost ?? defaultCost
-  let costSource: GenerationCost['costSource'] = modelCost === undefined ? 'default' : 'model-fixed'
+  const mapping = params.modelMapping
+  if (!mapping?.modelId) throw new GenerationPricingUnavailableError('未配置模型收费策略')
 
-  // 0.9.0：映射积分价留空时，按动态目录计价自动换算（成本 × 汇率 × 加成）
-  if (modelCost === undefined && params.modelMapping?.modelId && params.catalogPricingLookup) {
-    const pricing = params.catalogPricingLookup(params.modelMapping.modelId)
-    const rate = params.config.creditExchangeRate ?? 1000
-    const markup = params.config.costMarkup ?? 1.3
-    let costUsd: number | null = null
-    if (pricing?.type === 'per-call' && typeof pricing.pricePerCall === 'number') {
-      costUsd = pricing.pricePerCall
-    } else if (pricing?.type === 'per-token' && typeof pricing.tokenRatio === 'number') {
-      costUsd = (ESTIMATED_TOKENS_PER_IMAGE / 1_000_000) * TOKEN_BASE_PRICE_PER_MILLION * pricing.tokenRatio
+  const policy = mapping.chargePolicy
+    ?? (typeof mapping.creditCostPerImage === 'number'
+      ? { type: 'fixed' as const, creditsPerImage: mapping.creditCostPerImage }
+      : undefined)
+  if (!policy) throw new GenerationPricingUnavailableError(`模型 ${mapping.modelId} 未配置收费策略`)
+  if (policy.type === 'disabled') throw new GenerationPricingUnavailableError(policy.reason)
+
+  let creditCostPerImage: number
+  let costSource: GenerationCost['costSource']
+
+  if (policy.type === 'fixed') {
+    creditCostPerImage = roundCredits(policy.creditsPerImage)
+    costSource = 'model-fixed'
+  } else {
+    const pricing = params.catalogPricingLookup?.(mapping.modelId)
+    if (pricing?.type !== 'per-call' || typeof pricing.pricePerCall !== 'number') {
+      throw new GenerationPricingUnavailableError(`模型 ${mapping.modelId} 当前目录价格无法计算，已拒绝生成`)
     }
-    if (costUsd != null && rate > 0) {
-      creditCostPerImage = roundCredits(costUsd * rate * markup)
-      costSource = 'catalog-auto'
+    const rate = params.config.creditExchangeRate
+    const markup = params.config.costMarkup
+    if (!Number.isFinite(rate) || !Number.isFinite(markup) || Number(rate) <= 0 || Number(markup) <= 0) {
+      throw new GenerationPricingUnavailableError('cost-plus 策略缺少有效的积分汇率或加成倍率')
     }
+    creditCostPerImage = roundCredits(pricing.pricePerCall * Number(rate) * Number(markup))
+    costSource = 'catalog-auto'
   }
 
   return {
     totalCredits: roundCredits(creditCostPerImage * numImages),
     creditCostPerImage,
     numImages,
-    ...(params.modelMapping?.modelId ? { modelId: params.modelMapping.modelId } : {}),
-    ...(params.modelMapping?.suffix ? { modelSuffix: params.modelMapping.suffix } : {}),
+    modelId: mapping.modelId,
+    ...(mapping.suffix ? { modelSuffix: mapping.suffix } : {}),
     costSource,
   }
 }
@@ -62,20 +71,12 @@ export function calculateCostFromModifiers(
   modifiers: ImageGenerationModifiers | undefined,
   config: Config,
 ): GenerationCost {
-  return calculateGenerationCost({
-    numImages,
-    modelMapping: modifiers?.modelMapping,
-    config,
-  })
+  return calculateGenerationCost({ numImages, modelMapping: modifiers?.modelMapping, config })
 }
 
 export function scaleGenerationCost(cost: GenerationCost, actualImages: number): GenerationCost {
   const numImages = normalizePositiveInteger(actualImages, 0)
-  return {
-    ...cost,
-    numImages,
-    totalCredits: roundCredits(cost.creditCostPerImage * numImages),
-  }
+  return { ...cost, numImages, totalCredits: roundCredits(cost.creditCostPerImage * numImages) }
 }
 
 export function formatCredits(value: number, unitName = '积分'): string {
@@ -91,14 +92,4 @@ export function roundCredits(value: number): number {
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) return fallback
   return Math.max(0, Math.floor(value || fallback))
-}
-
-function normalizeNonNegativeNumber(value: number | undefined, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback
-  return roundCredits(value ?? fallback)
-}
-
-function normalizeOptionalNonNegativeNumber(value: number | undefined): number | undefined {
-  if (!Number.isFinite(value)) return undefined
-  return roundCredits(value ?? 0)
 }

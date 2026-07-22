@@ -66,7 +66,7 @@ function buildParameterHelp(config: Config): string {
     '- -1:1 / -4:3 / -16:9 / -9:16 / -3:2 / -2:3｜画幅比例',
     '',
     '积分：',
-    `- 默认每张｜${config.defaultCreditCostPerImage ?? 1} ${config.creditUnitName || '积分'}`,
+    '- 每个模型必须配置固定价或目录成本加成策略；无法报价时拒绝生成',
     `- 每日免费｜${config.dailyFreeCredits ?? 0} ${config.creditUnitName || '积分'}`,
     '- 受限模型仍需白名单或管理员权限；白名单不代表免费',
   ]

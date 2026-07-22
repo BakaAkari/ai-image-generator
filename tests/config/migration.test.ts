@@ -17,6 +17,37 @@ describe('migrateConfig', () => {
     expect(result.actions).toContain('removed legacy supplier from mapping')
   })
 
+
+  test('legacy explicit creditCostPerImage migrates to a fixed charge policy', () => {
+    const config = {
+      modelMappings: [{ suffix: 'gpt', modelId: 'gpt-image-2', creditCostPerImage: 0.3 }],
+    } as unknown as Config
+    const result = migrateConfig(config)
+    expect(result.config.modelMappings![0]).toMatchObject({
+      chargePolicy: { type: 'fixed', creditsPerImage: 0.3 },
+    })
+  })
+
+  test('legacy mapping with catalog quote migrates to cost-plus and rejects estimates', () => {
+    const config = {
+      modelMappings: [{ suffix: 'gpt', modelId: 'gpt-image-2' }],
+    } as unknown as Config
+    const result = migrateConfig(config, modelId => modelId === 'gpt-image-2' ? 'catalog-quote' : 'unknown')
+    expect(result.config.modelMappings![0]).toMatchObject({
+      chargePolicy: { type: 'cost-plus', acceptEstimated: false },
+    })
+  })
+
+  test('legacy mapping without a usable catalog quote migrates disabled', () => {
+    const config = {
+      modelMappings: [{ suffix: 'x', modelId: 'unknown-model' }],
+    } as unknown as Config
+    const result = migrateConfig(config, () => 'unknown')
+    expect(result.config.modelMappings![0]).toMatchObject({
+      chargePolicy: { type: 'disabled', reason: 'pricing unavailable' },
+    })
+  })
+
   test('removes legacy global provider', () => {
     const config = { provider: 'openai-compatible' } as unknown as Config
     const result = migrateConfig(config)
@@ -27,7 +58,7 @@ describe('migrateConfig', () => {
   test('reports empty mappings', () => {
     const config = { modelMappings: [] } as unknown as Config
     const result = migrateConfig(config)
-    expect(result.actions).toContain('modelMappings empty; default models will be derived from catalog at runtime')
+    expect(result.actions).toContain('modelMappings empty; explicit configuration required')
   })
 })
 
@@ -36,6 +67,6 @@ describe('sanitizeModelMapping', () => {
     const m = sanitizeModelMapping({
       suffix: 'gpt', modelId: 'gpt-image-2', supplier: 'openai-compatible', protocol: 'openai', restricted: false, creditCostPerImage: 0.5,
     } as any)
-    expect(m).toEqual({ suffix: 'gpt', modelId: 'gpt-image-2', restricted: false, creditCostPerImage: 0.5 })
+    expect(m).toEqual({ suffix: 'gpt', modelId: 'gpt-image-2', restricted: false, chargePolicy: undefined, creditCostPerImage: 0.5 })
   })
 })
