@@ -41,6 +41,20 @@
         </div>
       </div>
 
+      <!-- ══ ⓪ 使用说明（只读） ══ -->
+      <k-card class="section">
+        <template #header>
+          <div class="card-header">
+            <span>使用说明 / 命令速查</span>
+            <el-button size="small" text @click="setupGuideOpen = !setupGuideOpen">{{ setupGuideOpen ? '收起' : '展开' }}</el-button>
+          </div>
+        </template>
+        <div v-if="setupGuideOpen">
+          <el-input :model-value="cfg.setupGuide ?? ''" type="textarea" :rows="18" readonly resize="none" />
+          <div class="hint">此为只读速查说明，不参与保存。</div>
+        </div>
+      </k-card>
+
       <!-- ══ ① 供应商与凭证 ══ -->
       <k-card title="供应商与凭证" class="section">
         <div class="supplier-picker">
@@ -60,6 +74,17 @@
             </el-form-item>
             <el-form-item label="Base URL">
               <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'" />
+            </el-form-item>
+            <el-form-item label="额外请求头">
+              <div class="extra-headers">
+                <div v-for="(row, i) in extraHeadersRows" :key="i" class="extra-header-row">
+                  <el-input v-model="row.key" size="small" placeholder="Header 名" style="width: 200px" @input="syncExtraHeaders" />
+                  <el-input v-model="row.value" size="small" placeholder="值（字符串）" style="flex: 1" @input="syncExtraHeaders" />
+                  <el-button link type="danger" size="small" @click="removeExtraHeader(i)">删</el-button>
+                </div>
+                <el-button size="small" @click="addExtraHeader">添加请求头</el-button>
+                <div class="hint">键和值都会强制转成字符串；空键或空值会在保存前被丢弃。</div>
+              </div>
             </el-form-item>
           </template>
           <template v-else-if="cfg.activeSupplier === 'openai-official'">
@@ -189,8 +214,19 @@
           <el-form-item label="yunwu 积分→人民币"><el-input-number v-model="cfg.yunwuCreditToRmb" :min="0.01" :max="100" :step="0.01" /><div style="font-size:0.75rem;color:var(--fg3)">默认 0.5（100积分=¥50）。仅用于 aka-tools 成本展示，不参与计费。</div></el-form-item>
           <el-form-item label="1 元 = N 积分（经营参考）"><el-input-number v-model="cfg.creditsPerCny" :min="0" :step="10" /></el-form-item>
           <el-form-item label="生成结果中显示消耗"><el-switch v-model="cfg.showCreditCostInResult" /></el-form-item>
+          <el-form-item label="显示剩余积分明细"><el-switch v-model="cfg.showQuotaInImageCommands" /><div class="hint">需先开启"生成结果中显示消耗"。</div></el-form-item>
+          <el-form-item label="管理员余额显示估算金额"><el-switch v-model="cfg.showEstimatedCny" /></el-form-item>
+          <el-form-item label="充值提示最低积分"><el-input-number v-model="cfg.minRechargeCredits" :min="0" :max="1000000" :step="1" /></el-form-item>
           <el-form-item label="限流窗口（秒）"><el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" /></el-form-item>
           <el-form-item label="窗口内最大请求数"><el-input-number v-model="cfg.rateLimitMax" :min="1" :max="20" /></el-form-item>
+        </el-form>
+      </k-card>
+
+      <!-- ══ 安全策略 ══ -->
+      <k-card title="安全策略" class="section">
+        <el-form label-width="200px">
+          <el-form-item label="拦截统计窗口（秒）"><el-input-number v-model="cfg.securityBlockWindow" :min="60" :max="3600" :step="60" /></el-form-item>
+          <el-form-item label="窗口内拦截警示阈值"><el-input-number v-model="cfg.securityBlockWarningThreshold" :min="1" :max="10" /></el-form-item>
         </el-form>
       </k-card>
 
@@ -226,6 +262,36 @@
         </el-collapse>
       </k-card>
 
+      <!-- ══ Prompt 分组 ══ -->
+      <k-card class="section">
+        <template #header>
+          <div class="card-header">
+            <span>Prompt 分组</span>
+            <el-button size="small" @click="addStyleGroup">添加分组</el-button>
+          </div>
+        </template>
+        <div class="hint">用于管理旧版分组快捷命令；每个分组内的预设会继续注册为聊天命令。</div>
+        <el-collapse>
+          <el-collapse-item v-for="groupName in styleGroupNames" :key="groupName" :title="groupName">
+            <el-form label-width="100px">
+              <el-form-item label="分组名称">
+                <el-input :model-value="groupName" style="width: 220px" @change="renameStyleGroup(groupName, String($event))" />
+              </el-form-item>
+              <el-form-item label="预设 JSON">
+                <el-input
+                  :model-value="formatStyleGroupPrompts(groupName)"
+                  type="textarea"
+                  :rows="8"
+                  @change="updateStyleGroupPrompts(groupName, String($event))"
+                />
+                <div class="hint">格式为 Prompt 预设数组；保存前会校验为 JSON 数组。</div>
+              </el-form-item>
+              <el-form-item><el-button type="danger" size="small" @click="removeStyleGroup(groupName)">删除分组</el-button></el-form-item>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
+      </k-card>
+
       <!-- ══ ⑥ 用户与权限 ══ -->
       <k-card title="用户与权限" class="section">
         <el-form label-width="200px">
@@ -253,6 +319,9 @@
             <el-form-item label="注入最近图像上下文"><el-switch v-model="cfg.chatlunaContextInjectionEnabled" /></el-form-item>
             <el-form-item label="暴露积分查询工具"><el-switch v-model="cfg.chatlunaExposeQuotaTool" /></el-form-item>
             <el-form-item label="暴露风格列表工具"><el-switch v-model="cfg.chatlunaExposeStyleListTool" /></el-form-item>
+            <el-form-item label="上下文保留条数"><el-input-number v-model="cfg.chatlunaContextHistorySize" :min="1" :max="100" /></el-form-item>
+            <el-form-item label="上下文过期时间（秒）"><el-input-number v-model="cfg.chatlunaContextTtlSeconds" :min="3600" :max="604800" :step="3600" /></el-form-item>
+            <el-form-item label="私聊自动映射上一张"><el-switch v-model="cfg.chatlunaPreferLastGeneratedInPrivateRoom" /></el-form-item>
           </template>
           <el-divider content-position="left">YesImBot</el-divider>
           <el-form-item label="启用 YesImBot 工具"><el-switch v-model="cfg.yesimbotEnabled" /></el-form-item>
@@ -293,6 +362,7 @@
 import { computed, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { send, store } from '@koishijs/client'
 import { ElMessage } from 'element-plus'
+import { normalizeConfig, objectToRows, rowsToObject, sanitizeHeaders } from './normalize'
 
 // 浮动元素仅在本页面激活时显示：koishi console 对页面组件做 keep-alive，
 // Teleport 到 body 的节点脱离页面容器，靠 activated/deactivated 生命周期控制显隐。
@@ -305,6 +375,8 @@ const cfg = ref<any>(null)
 const saving = ref(false)
 const refreshing = ref(false)
 const catalogFilter = ref('')
+const setupGuideOpen = ref(false)
+const extraHeadersRows = ref<Array<{ key: string; value: string }>>([])
 
 const supplierOptions = computed(() => state.value?.suppliers?.map((item: any) => ({
   value: item.id,
@@ -316,21 +388,20 @@ const supplierOptions = computed(() => state.value?.suppliers?.map((item: any) =
 onMounted(async () => {
   state.value = await send('image-generator/get-state')
   cfg.value = normalizeConfig(state.value.config)
+  extraHeadersRows.value = objectToRows(cfg.value.providerSettings?.openaiCompatibleExtraHeaders)
 })
 
-function normalizeConfig(raw: any) {
-  const c = { ...raw }
-  c.providerSettings = { openaiCompatibleApiKey: '', openaiCompatibleApiBase: '', gptOfficialApiKey: '', geminiOfficialApiKey: '', ...(raw.providerSettings ?? {}) }
-  c.activeSupplier ??= 'yunwu'
-  c.catalogRefreshHours ??= 6
-  c.creditExchangeRate ??= 1000
-  c.costMarkup ??= 1.3
-  c.yunwuCreditToRmb ??= 0.5
-  c.yunwuGroup ??= 'default'
-  c.modelMappings = (raw.modelMappings ?? []).map((m: any) => ({ ...m, chargePolicy: m.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' } }))
-  c.styles = (raw.styles ?? []).map((s: any) => ({ ...s }))
-  for (const k of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) c[k] = [...(raw[k] ?? [])]
-  return c
+function syncExtraHeaders() {
+  cfg.value.providerSettings.openaiCompatibleExtraHeaders = rowsToObject(extraHeadersRows.value)
+}
+
+function addExtraHeader() {
+  extraHeadersRows.value.push({ key: '', value: '' })
+}
+
+function removeExtraHeader(index: number) {
+  extraHeadersRows.value.splice(index, 1)
+  syncExtraHeaders()
 }
 
 const catalogModels = computed(() => state.value?.catalog?.models ?? [])
@@ -372,6 +443,38 @@ function addStyle() {
   cfg.value.styles.push({ commandName: '', mode: 'image-to-image', modelSuffix: '', description: '', prompt: '' })
 }
 
+const styleGroupNames = computed(() => Object.keys(cfg.value?.styleGroups ?? {}))
+function addStyleGroup() {
+  let index = 1
+  let name = `分组${index}`
+  while (cfg.value.styleGroups[name]) name = `分组${++index}`
+  cfg.value.styleGroups = { ...cfg.value.styleGroups, [name]: { prompts: [] } }
+}
+function removeStyleGroup(name: string) {
+  const next = { ...cfg.value.styleGroups }
+  delete next[name]
+  cfg.value.styleGroups = next
+}
+function renameStyleGroup(oldName: string, rawName: string) {
+  const name = rawName.trim()
+  if (!name || name === oldName || cfg.value.styleGroups[name]) return
+  const next: Record<string, any> = {}
+  for (const [key, value] of Object.entries(cfg.value.styleGroups)) next[key === oldName ? name : key] = value
+  cfg.value.styleGroups = next
+}
+function formatStyleGroupPrompts(name: string) {
+  return JSON.stringify(cfg.value.styleGroups?.[name]?.prompts ?? [], null, 2)
+}
+function updateStyleGroupPrompts(name: string, raw: string) {
+  try {
+    const prompts = JSON.parse(raw)
+    if (!Array.isArray(prompts)) throw new Error('预设必须是数组')
+    cfg.value.styleGroups[name] = { prompts }
+  } catch (error) {
+    ElMessage.error(`Prompt 分组 JSON 无效：${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 async function refreshCatalog() {
   refreshing.value = true
   try {
@@ -386,6 +489,8 @@ async function refreshCatalog() {
 async function saveAll() {
   saving.value = true
   try {
+    syncExtraHeaders()
+    cfg.value.providerSettings.openaiCompatibleExtraHeaders = sanitizeHeaders(cfg.value.providerSettings.openaiCompatibleExtraHeaders)
     const res: any = await send('image-generator/save-config', cfg.value)
     if (res.success) ElMessage.success('设置已保存并热重载')
     else ElMessage.error(`保存失败：${res.error}`)
@@ -450,4 +555,6 @@ async function saveAll() {
 .hint { font-size: 0.8rem; color: var(--fg3); margin-bottom: 0.5rem; }
 .error-line { color: var(--el-color-danger); font-size: 0.8rem; margin-top: 0.5rem; }
 .unsupported-block { margin-top: 0.75rem; }
+.extra-headers { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+.extra-header-row { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
 </style>

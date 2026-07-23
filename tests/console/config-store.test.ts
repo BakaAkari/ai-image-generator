@@ -20,8 +20,13 @@ function baseConfig(): Config {
     apiTimeout: 60,
     rateLimitWindow: 300,
     rateLimitMax: 5,
+    securityBlockWindow: 600,
+    securityBlockWarningThreshold: 3,
     creditUnitName: '积分',
     showCreditCostInResult: true,
+    showQuotaInImageCommands: true,
+    showEstimatedCny: false,
+    minRechargeCredits: 0,
     creditsPerCny: 100,
     modelMappings: [],
     styles: [],
@@ -33,12 +38,16 @@ function baseConfig(): Config {
     chatlunaContextInjectionEnabled: false,
     chatlunaExposeQuotaTool: false,
     chatlunaExposeStyleListTool: false,
+    chatlunaContextHistorySize: 20,
+    chatlunaContextTtlSeconds: 86400,
+    chatlunaPreferLastGeneratedInPrivateRoom: true,
     yesimbotEnabled: false,
     yesimbotExposeQuotaTool: false,
     yesimbotExposeStyleListTool: false,
     providerSettings: {
       openaiCompatibleApiKey: 'secret',
       openaiCompatibleApiBase: 'https://yunwu.ai/v1',
+      openaiCompatibleExtraHeaders: { 'X-Existing': 'keep-me' },
     },
   } as unknown as Config
 }
@@ -78,5 +87,41 @@ describe('aka-tools JSON config store', () => {
     const raw = JSON.parse(await readFile(join(baseDir, 'data/aka-ai-image-generator/settings.json'), 'utf8'))
     expect(raw.dailyFreeCredits).toBe(77)
     expect(await readConfig(ctx, baseConfig())).toEqual(saved)
+  })
+
+  it('merges newly-panel-managed fields from the client payload', () => {
+    const current = baseConfig()
+    const next = mergeConfig(current, {
+      showQuotaInImageCommands: false,
+      showEstimatedCny: true,
+      minRechargeCredits: 12,
+      securityBlockWindow: 900,
+      securityBlockWarningThreshold: 5,
+      chatlunaContextHistorySize: 42,
+      chatlunaContextTtlSeconds: 7200,
+      chatlunaPreferLastGeneratedInPrivateRoom: false,
+    } as Partial<Config>)
+
+    expect(next.showQuotaInImageCommands).toBe(false)
+    expect(next.showEstimatedCny).toBe(true)
+    expect(next.minRechargeCredits).toBe(12)
+    expect(next.securityBlockWindow).toBe(900)
+    expect(next.securityBlockWarningThreshold).toBe(5)
+    expect(next.chatlunaContextHistorySize).toBe(42)
+    expect(next.chatlunaContextTtlSeconds).toBe(7200)
+    expect(next.chatlunaPreferLastGeneratedInPrivateRoom).toBe(false)
+  })
+
+  it('replaces extra headers with the incoming panel value', () => {
+    const current = baseConfig()
+    const next = mergeConfig(current, {
+      providerSettings: {
+        openaiCompatibleApiKey: '***',
+        openaiCompatibleExtraHeaders: { 'X-New': 'value' },
+      } as Config['providerSettings'],
+    })
+
+    expect(next.providerSettings?.openaiCompatibleApiKey).toBe('secret')
+    expect(next.providerSettings?.openaiCompatibleExtraHeaders).toEqual({ 'X-New': 'value' })
   })
 })

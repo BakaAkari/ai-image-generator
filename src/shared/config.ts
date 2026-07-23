@@ -238,7 +238,10 @@ const ActiveSupplierSchema = Schema.object({
 // 顶层 Schema
 // ----------------------------------------------------------------------------
 
-export const Config = Schema.intersect([
+// 所有业务配置由 aka-tools client/page.vue 页面统一管理；Koishi 原插件 Config
+// Schema 页面不再显示任何可编辑分组。运行期 interface、默认值、迁移与
+// bootstrap 解析仍完整保留。此处集中列出所有顶层分组，最终统一隐藏。
+const CONFIG_GROUPS = [
   // ⓪ 初始化说明（只读引导）
   Schema.object({
     setupGuide: Schema.string()
@@ -476,4 +479,14 @@ export const Config = Schema.intersect([
       .step(10)
       .description('上游请求超时时间，单位秒'),
   }).description('🧰 运行与诊断').collapse(),
-]) as unknown as Schema<Config>
+] as const
+
+/**
+ * 统一隐藏所有顶层 Schema 分组：
+ * - Koishi 原插件配置页不再显示任何业务分组，所有编辑走 aka-tools 面板。
+ * - 每个分组都被 hidden + collapse，兼容 Koishi 不同渲染实现下的隐藏语义。
+ * - 保留字段本体、默认值和描述，运行期 interface / bootstrap 解析 / 迁移不受影响。
+ */
+export const Config = Schema.intersect(
+  (CONFIG_GROUPS as readonly Schema[]).map((group) => group.hidden().collapse()),
+) as unknown as Schema<Config>
