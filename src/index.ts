@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
 import { ImageCatalogService } from './catalog/image-catalog.js'
 import { registerConsoleService } from './console/service.js'
+import { mergeConfig, readConfig, writeConfig } from './console/config-store.js'
 import type { ActiveSupplier } from './catalog/types.js'
 import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
@@ -59,8 +60,12 @@ providerRegistry.register('openai', createOpenAIProvider)
 providerRegistry.register('gemini', createGeminiProvider)
 
 
-export function apply(ctx: Context, config: Config) {
+export async function apply(ctx: Context, config: Config) {
   const logger = ctx.logger(name)
+
+  // koishi.yml 只作为首次启动的 bootstrap；aka-tools 后续以 settings.json 为唯一持久化事实源。
+  const persistedConfig = await readConfig(ctx, config)
+  Object.assign(config, persistedConfig)
 
   // 1. UserManager —— 数据落盘目录走 ctx.baseDir/data/<plugin>
   const dataDir = path.join(ctx.baseDir, 'data', name)
@@ -218,6 +223,9 @@ export function apply(ctx: Context, config: Config) {
         const cred = resolveCredentials(currentConfig)
         if (cred) await catalog.refresh(cred)
       },
+      writeConfig: next => writeConfig(ctx, next),
+      mergeConfig,
+      applyConfig: next => applyRuntimeConfig(next),
     })
   })
 
@@ -272,26 +280,30 @@ export function apply(ctx: Context, config: Config) {
   )
   void yesimbotBridgeManager.sync(currentConfig.yesimbotEnabled)
 
-  // 7. 配置热重载兼容
-  ctx.accept((next: Config) => {
+  // 7. 统一运行态更新：保存 settings.json 后原地更新 Koishi 注入的 config 对象。
+  // 不调用 scope.update，避免 YAML 与 JSON 两个持久化事实源互相覆盖。
+  const applyRuntimeConfig = (next: Config) => {
     const prevCred = resolveCredentials(currentConfig)
-    const nextCred = resolveCredentials(next)
-    currentConfig = next
-    service.updateConfig(next)
-    catalog.updateRefreshHours(next.catalogRefreshHours ?? 6)
+    Object.assign(config, next)
+    currentConfig = config
+    const nextCred = resolveCredentials(currentConfig)
+    service.updateConfig(currentConfig)
+    catalog.updateRefreshHours(currentConfig.catalogRefreshHours ?? 6)
     // 供应商或凭证变化时立即刷新目录；仅间隔变化由 scheduler 热更新处理。
     if (nextCred && JSON.stringify(prevCred) !== JSON.stringify(nextCred)) {
       void catalog.refresh(nextCred)
     }
     commands.image.refreshStyleCommands()
-    chatLunaBridgeManager.updateConfig(next)
-    // 只在 chatluna 服务可用时同步（热重载场景）
+    chatLunaBridgeManager.updateConfig(currentConfig)
     if ((ctx as Context & { chatluna?: unknown }).chatluna) {
-      void chatLunaBridgeManager.sync(next.chatlunaEnabled)
+      void chatLunaBridgeManager.sync(currentConfig.chatlunaEnabled)
     }
-    yesimbotBridgeManager.updateConfig(next)
-    void yesimbotBridgeManager.sync(next.yesimbotEnabled)
-  })
+    yesimbotBridgeManager.updateConfig(currentConfig)
+    void yesimbotBridgeManager.sync(currentConfig.yesimbotEnabled)
+  }
+
+  // 保留经典配置页热更新兼容；aka-tools 自身不会再走 scope.update。
+  ctx.accept((next: Config) => applyRuntimeConfig(next))
 
   // 8. 插件卸载时的清理
   ctx.on('dispose' as any, async () => {

@@ -3,7 +3,7 @@
  *
  * 通过 ctx.console.addListener 暴露：
  *   image-generator/get-state       面板全量状态（配置 + 目录 + billing）
- *   image-generator/save-config     保存配置（触发热重载）
+ *   image-generator/save-config     保存配置（JSON 持久化 + 原地更新运行态）
  *   image-generator/refresh-catalog 手动刷新模型目录
  */
 import type { Context, Logger } from 'koishi'
@@ -18,10 +18,13 @@ export interface ConsoleServiceDeps {
   catalog: ImageCatalogService
   getConfig: () => Config
   refreshCatalog: () => Promise<unknown>
+  writeConfig: (config: Config) => Promise<void>
+  applyConfig: (config: Config) => Promise<void> | void
+  mergeConfig: (current: Config, incoming: Partial<Config>) => Config
 }
 
 export function registerConsoleService(deps: ConsoleServiceDeps) {
-  const { ctx, logger, catalog, getConfig, refreshCatalog } = deps
+  const { ctx, logger, catalog, getConfig, refreshCatalog, writeConfig, applyConfig, mergeConfig } = deps
   const consoleService = (ctx as any).console as { addListener: (name: string, cb: (...args: any[]) => any, options?: any) => void }
 
   consoleService.addListener('image-generator/get-state', async () => {
@@ -33,14 +36,14 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
       error: snapshot.error,
       models: snapshot.models,
       unsupportedModels: snapshot.unsupportedModels,
-      groupRatio: snapshot.groupRatio,
     } : null, billing)
   })
 
   consoleService.addListener('image-generator/save-config', async (config: Config) => {
     try {
-      // scope.update 触发热重载；false = 不写入全局配置文件由 loader 持久化
-      ;(ctx.scope as any).update(config, true)
+      const next = mergeConfig(getConfig(), config)
+      await writeConfig(next)
+      await applyConfig(next)
       return { success: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

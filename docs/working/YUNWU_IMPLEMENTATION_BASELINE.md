@@ -203,3 +203,10 @@ P2：刷新间隔热更新不重建 timer；缓存写入非原子；README/ROADM
 ### 待远程验收
 - 阻塞：无 Yunwu Key，无法执行认证探针和真实生成 smoke。
 - 需要：容器部署 `lib/` + `dist/`，验证文生图/图生图、预授权、结算、流水。
+
+### 2026-07-23：aka-tools 设置持久化修复
+- 根因：aka-tools 保存走 `ctx.scope.update()`/`koishi.yml`，而启动又从 `data/aka-ai-image-generator/settings.json` 合并，存在两个持久化事实源；重启后 JSON 会覆盖 UI 刚写入 YAML 的值。
+- 修复：以 `settings.json` 为唯一持久化事实源；`koishi.yml` 仅作为首次启动 bootstrap。保存顺序为原子写 JSON → `Object.assign(config, next)` 原地更新运行配置 → 同步 service/catalog/commands/bridges。
+- 安全：前端返回的 `***`、`sk-xxx...yyy` 等遮罩值不会覆盖磁盘中的真实 API Key。
+- 验证：新增 config-store/save-listener 4 项测试；全套 117 tests、typecheck、build 通过。
+- 真实 UI：将 `dailyFreeCredits` 由 0.30 改为 0.31，页面显示“设置已保存并热重载”；刷新后仍为 0.31，容器重启后仍为 0.31；随后恢复为 0.30。最终部署恢复 `authority: 4`。
