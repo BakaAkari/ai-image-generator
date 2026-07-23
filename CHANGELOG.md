@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+- Add the maintained Yunwu catalog, pricing, configuration migration, and JSON settings-store implementation.
+- Pin Vitest to the Vite 5 compatible major used by the Koishi console toolchain.
+- Declare the `element-plus` client build dependency required by the aka-tools console page.
+
 ## Unreleased
 
 - 暂无。
