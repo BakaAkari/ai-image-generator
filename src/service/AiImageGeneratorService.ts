@@ -77,7 +77,7 @@ interface SessionConversationLike {
 }
 
 const DEFAULT_GEMINI_API_BASE = 'https://generativelanguage.googleapis.com'
-const DEFAULT_OPENAI_API_BASE = 'https://api.openai.com/v1'
+const DEFAULT_OPENAI_API_BASE = 'https://yunwu.ai'
 const DEFAULT_CONTEXT_HISTORY_SIZE = 20
 
 export class AiImageGeneratorService extends Service {
@@ -639,9 +639,7 @@ export class AiImageGeneratorService extends Service {
           ...common,
           apiKey: settings.openaiCompatibleApiKey || '',
           modelId: targetModelId || this.resolveDefaultModelId(),
-          apiBase: provider === 'gemini'
-            ? this.resolveOpenAICompatibleGeminiApiBase(settings)
-            : settings.openaiCompatibleApiBase || DEFAULT_OPENAI_API_BASE,
+          apiBase: normalizeApiBase(settings.openaiCompatibleApiBase) || DEFAULT_OPENAI_API_BASE,
           extraHeaders: settings.openaiCompatibleExtraHeaders || {},
         }
       case 'gpt-official':
@@ -664,17 +662,6 @@ export class AiImageGeneratorService extends Service {
     }
   }
 
-  private resolveOpenAICompatibleGeminiApiBase(settings: ProviderSettingsConfig): string {
-    if (settings.openaiCompatibleApiBase) {
-      const base = settings.openaiCompatibleApiBase.replace(/\/$/, '')
-      // 云雾等第三方通常使用 /v1beta 路径，但如果 base 已含 /v1 则去掉 /v1 后缀
-      if (base.endsWith('/v1')) {
-        return base.replace(/\/v1$/, '')
-      }
-      return base
-    }
-    return DEFAULT_GEMINI_API_BASE
-  }
 
   private resolveProviderSettings(): ProviderSettingsConfig {
     const cfg = this.pluginConfig
@@ -766,6 +753,11 @@ function buildQueryTerms(query: string): string[] {
   }
 
   return Array.from(unique)
+}
+
+function normalizeApiBase(base?: string): string | undefined {
+  if (!base) return undefined
+  return base.replace(/\/$/, '').replace(/\/v1\/?$/, '')
 }
 
 function redactHeadersForLog(value: unknown): Record<string, string> | undefined {

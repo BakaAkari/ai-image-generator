@@ -23,9 +23,22 @@ const OPENAI_IMAGE_ENDPOINTS = new Set([
 
 const GEMINI_IMAGE_ENDPOINTS = new Set(['gemini'])
 
+const MJ_KLING_IMAGE_ENDPOINTS = new Set([
+  'mj想象模式',
+  'mj动作',
+  'mj混合',
+  'mj描述模式',
+  'mj模态模式',
+  'mj图片上传',
+  'kling生图',
+  'kling多图生图',
+  'kling扩图',
+  'omni-image',
+  '图像识别',
+])
+
 const NON_GENERATION_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /数字人|avatar|image2video|image-to-video|video/, reason: 'avatar/video endpoint' },
-  { pattern: /图像识别|识别|recognition|recognize|vision/, reason: 'image recognition endpoint' },
   { pattern: /上传|upload/, reason: 'upload endpoint' },
   { pattern: /图片模板|image.template|template/, reason: 'image template endpoint' },
 ]
@@ -62,8 +75,10 @@ function capabilitiesFromEndpoints(endpoints: string[]): CapabilityResult {
 
   const hasOpenai = normalized.some(e => OPENAI_IMAGE_ENDPOINTS.has(e))
   const hasGemini = normalized.some(e => GEMINI_IMAGE_ENDPOINTS.has(e))
-  const hasEdit = normalized.some(e => /编辑|edit/i.test(e))
+  const hasMjKling = normalized.some(e => MJ_KLING_IMAGE_ENDPOINTS.has(e))
+  const hasEdit = normalized.some(e => /编辑|edit/i.test(e)) || normalized.some(e => ['mj动作', 'kling扩图'].includes(e))
   const hasGeneration = normalized.some(e => /绘图|generation|generations|dall-e/i.test(e))
+  const hasRecognition = normalized.some(e => ['mj描述模式', '图像识别'].includes(e))
 
   if (hasOpenai) {
     if (hasEdit) {
@@ -85,6 +100,13 @@ function capabilitiesFromEndpoints(endpoints: string[]): CapabilityResult {
     caps.add('text-to-image')
     caps.add('image-to-image')
     reasons.push('gemini image endpoint')
+  }
+
+  if (hasMjKling) {
+    caps.add('text-to-image')
+    if (hasEdit) caps.add('image-edit')
+    if (hasRecognition) caps.add('image-recognition')
+    reasons.push('mj/kling endpoint')
   }
 
   return { capabilities: [...caps], reasons }

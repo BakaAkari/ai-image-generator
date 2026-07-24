@@ -196,8 +196,8 @@ const ProviderSettingsSchema = Schema.object({
     .role('secret')
     .description('第三方 Key。留空则沿用已保存的 Key。'),
   openaiCompatibleApiBase: Schema.string()
-    .default('https://yunwu.ai/v1')
-    .description('第三方 Base，通常以 /v1 结尾'),
+    .default('https://yunwu.ai')
+    .description('第三方 Base 地址'),
   openaiCompatibleExtraHeaders: Schema.dict(Schema.string())
     .default({})
     .description('额外请求头；不需要时留空'),

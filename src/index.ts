@@ -9,8 +9,9 @@ import type { ActiveSupplier } from './catalog/types.js'
 import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
 import { createImageGenerationHandlers } from './orchestrators/ImageGenerationOrchestrator.js'
-import { createGeminiProvider } from './providers/gemini.js'
 import { createOpenAIProvider } from './providers/openai.js'
+import { createGeminiProvider } from './providers/gemini.js'
+import { createMjProvider } from './providers/midjourney.js'
 import { ProviderRegistry } from './providers/registry.js'
 import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { UserManager } from './services/UserManager.js'
@@ -58,6 +59,7 @@ const providerRegistry = new ProviderRegistry()
 // 内置 Provider 注册（image-only：协议优先，不注册供应商别名）
 providerRegistry.register('openai', createOpenAIProvider)
 providerRegistry.register('gemini', createGeminiProvider)
+providerRegistry.register('mj', createMjProvider)
 
 
 export async function apply(ctx: Context, config: Config) {
@@ -96,7 +98,7 @@ export async function apply(ctx: Context, config: Config) {
   service.catalogRouteLookup = (modelId: string) => {
     const model = catalog.current?.models.find(m => m.id === modelId)
     const route = model?.routes[0]
-    if (!route || (route.protocol !== 'openai' && route.protocol !== 'gemini')) return undefined
+    if (!route || (route.protocol !== 'openai' && route.protocol !== 'gemini' && route.protocol !== 'mj')) return undefined
     return { routeId: route.id, protocol: route.protocol }
   }
 

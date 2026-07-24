@@ -102,7 +102,7 @@ export class ImageCatalogService {
       const models: ImageModelInfo[] = normalized.models.map(model => ({
         id: model.id,
         routes: model.routes
-          .filter((route): route is typeof route & { protocol: 'openai' | 'gemini' } => route.protocol === 'openai' || route.protocol === 'gemini'),
+          .filter((route): route is typeof route & { protocol: 'openai' | 'gemini' | 'mj' } => route.protocol === 'openai' || route.protocol === 'gemini' || route.protocol === 'mj'),
         modes: [...new Set(model.capabilities.map(capability => capability === 'image-edit' ? 'image-to-image' : capability))]
           .filter((mode): mode is 'text-to-image' | 'image-to-image' => mode === 'text-to-image' || mode === 'image-to-image'),
         description: model.description?.slice(0, 200),

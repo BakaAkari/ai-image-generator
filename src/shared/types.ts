@@ -11,7 +11,7 @@
  */
 
 /** V2 已注册的运行时 Provider 名称（与 ProviderRegistry 中 register 的 key 对应）。 */
-export type ProviderType = 'openai' | 'gemini'
+export type ProviderType = 'openai' | 'gemini' | 'mj'
 
 /** 配置页中的供应商入口（仅用于凭证分区）。 */
 export type ImageProvider = 'openai-compatible' | 'gemini-official' | 'gpt-official'

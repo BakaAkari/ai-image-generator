@@ -22,7 +22,7 @@ export type ModelCapability =
   | 'unknown'
 
 /** 生成路由的目标协议 */
-export type GenerationProtocol = 'openai' | 'gemini' | 'openai-legacy'
+export type GenerationProtocol = 'openai' | 'gemini' | 'mj' | 'openai-legacy'
 
 /** 模型对于某个协议的具体生成路由 */
 export interface GenerationRoute {

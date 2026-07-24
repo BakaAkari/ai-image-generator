@@ -187,7 +187,7 @@ export class OpenAIProvider extends BaseImageProvider {
           this.name,
           i + 1,
           numImages,
-          `${apiBase}/images/generations`,
+          `${apiBase}/v1/images/generations`,
           this.modelId,
           size,
           this.getTimeoutMs(),
@@ -200,7 +200,7 @@ export class OpenAIProvider extends BaseImageProvider {
         const response = await this.callApi<OpenAIImagesResponse>(() =>
           (this.ctx.http as unknown as {
             post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-          }).post(`${apiBase}/images/generations`, requestData, {
+          }).post(`${apiBase}/v1/images/generations`, requestData, {
             headers: this.buildHeaders(),
             timeout: this.getTimeoutMs(),
           })
@@ -305,7 +305,7 @@ export class OpenAIProvider extends BaseImageProvider {
           this.name,
           i + 1,
           numImages,
-          `${apiBase}/images/edits`,
+          `${apiBase}/v1/images/edits`,
           this.modelId,
           size,
           imageDataList.length,
@@ -374,7 +374,7 @@ export class OpenAIProvider extends BaseImageProvider {
     size: string,
     imageDataList: Array<{ data: string; mimeType: string }>
   ): Promise<OpenAIImagesResponse> {
-    const editUrl = `${apiBase}/images/edits`
+    const editUrl = `${apiBase}/v1/images/edits`
     const http = this.ctx.http as unknown as {
       post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
     }
