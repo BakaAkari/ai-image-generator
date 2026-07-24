@@ -194,8 +194,7 @@ const StyleItemSchema = Schema.object({
 const ProviderSettingsSchema = Schema.object({
   openaiCompatibleApiKey: Schema.string()
     .role('secret')
-    .default('')
-    .description('第三方 Key，用于云雾等兼容站点'),
+    .description('第三方 Key。留空则沿用已保存的 Key。'),
   openaiCompatibleApiBase: Schema.string()
     .default('https://yunwu.ai/v1')
     .description('第三方 Base，通常以 /v1 结尾'),
@@ -205,13 +204,11 @@ const ProviderSettingsSchema = Schema.object({
 
   gptOfficialApiKey: Schema.string()
     .role('secret')
-    .default('')
-    .description('OpenAI Key，仅用于官方 OpenAI'),
+    .description('OpenAI Key，仅用于官方 OpenAI。留空则沿用已保存的 Key。'),
 
   geminiOfficialApiKey: Schema.string()
     .role('secret')
-    .default('')
-    .description('Gemini Key，仅用于 Google 官方 Gemini'),
+    .description('Gemini Key，仅用于 Google 官方 Gemini。留空则沿用已保存的 Key。'),
 })
 
 // 顶层供应商分组：不再使用单选 union，改为直接展示三个凭证区（默认收起）
