@@ -40,6 +40,9 @@ export interface ImageProvider {
   /** Provider 标识，例如 'openai' / 'gemini' */
   readonly name: string
 
+  /** 最近一次生成调用返回的 usage.total_tokens（后生成定价用）。null 表示未获取到或调用尚未完成。 */
+  lastTotalTokens: number | null
+
   /**
    * 生成图像
    *

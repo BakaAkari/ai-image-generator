@@ -167,7 +167,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         '图像查询',
         '',
         `- 用户｜${summary.userName || targetUser?.userName || targetUser?.userId || operatorId}`,
-        `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
+        `- 试用剩余｜${service.formatCredits(summary.trialRemaining)}`,
         `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
         `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
         `- 已生成｜${summary.totalImagesGenerated} 张`,
@@ -443,11 +443,9 @@ function buildCommandModifiers(
     const defaultMapping = resolveStyleModelMapping(style, modelIndex)
     if (defaultMapping) modifiers.modelMapping = defaultMapping
   }
-  // 0.9.0：无后缀、无 style 默认模型时取第一个非 disabled 映射
+  // 0.9.0：无后缀、无 style 默认模型时取第一个可用映射
   if (!modifiers.modelMapping) {
-    modifiers.modelMapping = (config.modelMappings ?? []).find(
-      m => m.chargePolicy?.type !== 'disabled',
-    )
+    modifiers.modelMapping = (config.modelMappings ?? [])[0]
   }
   return modifiers
 }

@@ -127,7 +127,7 @@ export class ImageCatalogService {
       await this.persist(cfg)
       this.logger.info('model catalog refreshed: supplier=yunwu models=%d unsupported=%d billing=%s',
         models.length, unsupportedModels.length,
-        this.billing.totalUsageUsd != null ? `$${this.billing.totalUsageUsd.toFixed(2)}` : 'n/a')
+        this.billing.supplierCredits != null ? `${this.billing.supplierCredits.toFixed(2)}供应商积分` : 'n/a')
       return this.snapshot
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

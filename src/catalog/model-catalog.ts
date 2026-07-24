@@ -65,10 +65,16 @@ export type PricingType = 'per-call' | 'per-token' | 'unknown'
 export interface CatalogModelPricing {
 
   type: PricingType
-  /** per-call 单价（美元/次） */
+  /** per-call 单价（供应商积分/次；yunwu 语义下 1 供应商积分 = ¥0.5） */
   pricePerCall?: number
   /** per-token 倍率 */
   tokenRatio?: number
+  /** per-token 官方定价：每 1M 输入 tokens 价格（供应商积分） */
+  officialPriceInput?: number
+  /** per-token 官方定价：每 1M 输出 tokens 价格（供应商积分） */
+  officialPriceOutput?: number
+  /** per-token 输出补全倍率 */
+  completionRatio?: number
   /** 平台分组 */
   enableGroups?: string[]
   /** 计价数据来源 */

@@ -22,6 +22,8 @@ import {
   getPromptTimeoutText,
 } from '../shared/prompt-timeout.js'
 import type { GenerationCost } from '../shared/billing.js'
+import { computePostGenerationCost, computeSupplierCreditsFromCatalog, estimatePreGenerationCost } from '../shared/billing.js'
+import type { CatalogModelForPricing } from '../shared/billing.js'
 import type {
   GenerationDisplayInfo,
   ImageRequestContext,
@@ -45,6 +47,12 @@ export interface ExecuteGenerationOptions {
   stylePreset?: string
 }
 
+/** 计价所需的目录快照访问器（不含完整 ImageCatalogService 依赖）。 */
+interface CatalogAccessor {
+  current: { models: CatalogModelForPricing[] } | null
+  billingInfo: { supplierCredits?: number | null } | null
+}
+
 export interface CreateImageGenerationHandlersParams {
   ctx: Context
   service: AiImageGeneratorService
@@ -52,6 +60,8 @@ export interface CreateImageGenerationHandlersParams {
   logger: ReturnType<Context['logger']>
   /** 始终返回最新 Config 引用（在热重载时由入口 acceptor 覆盖闭包） */
   getConfig: () => Config
+  /** 目录快照访问器（用于定价读取 & 计费 delta 日志） */
+  catalog: CatalogAccessor
 }
 
 export interface ImageGenerationHandlers {
@@ -100,7 +110,7 @@ const SECURITY_BLOCK_KEYWORDS = [
 export function createImageGenerationHandlers(
   params: CreateImageGenerationHandlersParams,
 ): ImageGenerationHandlers {
-  const { service, userManager, logger, getConfig } = params
+  const { service, userManager, logger, getConfig, catalog } = params
 
   // ---------------------------------------------------------------------------
   // 内部工具
@@ -326,7 +336,15 @@ export function createImageGenerationHandlers(
     })
 
     try {
-      const estimatedCost = options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
+      // ── 目录快照（生成前锁定，确保预估价和结算价使用同一份目录数据） ──
+      const catalogModels = catalog.current?.models ?? []
+      if (!catalogModels.length) {
+        return formatUserScopedText(session, '模型目录尚未就绪，请稍后重试', userId, userName)
+      }
+      const modelIdForPricing = options.requestContext?.modelId ?? options.displayInfo?.modelId ?? ''
+      const estimatedCost = modelIdForPricing
+        ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels)
+        : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
 
       // 1. 积分预检
       const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost, platform)
@@ -350,6 +368,9 @@ export function createImageGenerationHandlers(
         ? ['开始生成', '', `- 类型｜${options.styleName}`, ...statusParts].join('\n')
         : `开始生成｜${options.styleName}`
       await session.send(formatUserScopedText(session, startMessage, userId, userName))
+
+      // 计费 delta 日志：生成前快照
+      const preCredits = catalog.billingInfo?.supplierCredits ?? null
 
       // 3. 流式回调：每生成一张就发送
       const generatedImages: string[] = []
@@ -430,15 +451,41 @@ export function createImageGenerationHandlers(
         }
       }
 
-      // 6. 成功发送后按实际图片数扣费并记录用量
+      // 6. 成功发送后按模型定价规则计算实际成本并扣费
       let usageResult: Awaited<ReturnType<AiImageGeneratorService['settleReservation']>> | undefined
       if (generatedImages.length > 0) {
         try {
+          const modelId = options.requestContext?.modelId ?? ''
+          // TODO: accumulate tokens across multi-call batches
+          const totalTokens = service.lastProviderUsage
+
+          // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
+          const groupRatio = typeof config.yunwuGroupRatio === 'number' && config.yunwuGroupRatio > 0 ? config.yunwuGroupRatio : 1
+          const supplierCredits = computeSupplierCreditsFromCatalog(modelId, totalTokens, catalogModels, groupRatio)
+          const actualCost = computePostGenerationCost(supplierCredits, config)
+
+          // audit trail：完整记录定价计算过程，事后可追溯
+          const postCredits = catalog.billingInfo?.supplierCredits ?? null
+          logger.info(
+            'settlement-audit model=%s pricingType=%s totalTokens=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
+            modelId,
+            catalogModels.find(m => m.id === modelId)?.pricing?.type ?? 'unknown',
+            totalTokens,
+            supplierCredits,
+            config.creditsPerCny,
+            config.pricingMarkupPercent,
+            actualCost,
+            generatedImages.length,
+            preCredits,
+            postCredits,
+            preCredits != null && postCredits != null ? postCredits - preCredits : 'n/a',
+          )
+
           usageResult = await service.settleReservation(
             requestId,
             generatedImages.length,
             options.styleName,
-            { routeId: options.requestContext?.routeId ?? null, modelId: options.requestContext?.modelId ?? null },
+            { routeId: options.requestContext?.routeId ?? null, modelId, usageTokens: totalTokens, actualCost },
           )
         } catch (recordError) {
           logger.error('记录用量失败', {
@@ -487,11 +534,18 @@ export function createImageGenerationHandlers(
               '生成完成',
               '',
               `- 图片｜${generatedImages.length} 张`,
-              `- 本次消耗｜${service.formatCredits(usageResult?.settledCredits ?? 0)}`,
             ]
+            if (usageResult?.isTrial) {
+              const trialLimit = config.trialImageLimit ?? 3
+              const used = trialLimit - (summary.trialRemaining ?? trialLimit)
+              const trialDisplay = Math.min(used, trialLimit)
+              const remaining = Math.max(0, trialLimit - trialDisplay)
+              lines.push(`- 试用额度｜${trialDisplay}/${trialLimit} 张（本次免费）`)
+            } else {
+              lines.push(`- 本次消耗｜${service.formatCredits(usageResult?.settledCredits ?? 0)}`)
+            }
             if (config.showQuotaInImageCommands) {
               lines.push(
-                `- 今日免费｜${service.formatCredits(summary.dailyFreeRemaining)}`,
                 `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
                 `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
               )

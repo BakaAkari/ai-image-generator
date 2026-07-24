@@ -14,10 +14,21 @@ function normalizePricing(item: YunwuModelItem, pricing?: YunwuPricingItem): Cat
   if (pricing) {
     const type: CatalogModelPricing['type'] =
       pricing.quota_type === 0 ? 'per-token' : pricing.quota_type === 1 ? 'per-call' : 'unknown'
+    const official: Record<string, number> = {}
+    if (pricing.official_price && typeof pricing.official_price === 'string') {
+      try {
+        const parsed = JSON.parse(pricing.official_price)
+        if (typeof parsed.input === 'number') official.input = parsed.input
+        if (typeof parsed.output === 'number') official.output = parsed.output
+      } catch { /* ignore malformed */ }
+    }
     return {
       type,
       pricePerCall: type === 'per-call' && typeof pricing.model_price === 'number' ? pricing.model_price : undefined,
       tokenRatio: type === 'per-token' && typeof pricing.model_ratio === 'number' ? pricing.model_ratio : undefined,
+      officialPriceInput: type === 'per-token' && official.input ? official.input : undefined,
+      officialPriceOutput: type === 'per-token' && official.output ? official.output : undefined,
+      completionRatio: type === 'per-token' && typeof pricing.completion_ratio === 'number' ? pricing.completion_ratio : undefined,
       enableGroups: Array.isArray(pricing.enable_groups) ? pricing.enable_groups : undefined,
       source: 'remote-pricing',
     }

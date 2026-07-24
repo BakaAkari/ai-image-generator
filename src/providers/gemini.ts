@@ -157,7 +157,8 @@ export class GeminiProvider extends BaseImageProvider {
           })
         )
 
-        const images = parseGeminiResponse(response, this.name, this.logger)
+        const { images, totalTokens } = parseGeminiResponse(response, this.name, this.logger)
+        this.lastTotalTokens = totalTokens
         if (images.length === 0) {
           this.logger.warn(
             'provider=%s event=empty_response current=%d total=%d',
@@ -271,9 +272,14 @@ function parseGeminiResponse(
   rawResponse: unknown,
   providerName: string,
   logger: { debug: Function; warn: Function; error: Function; info?: Function }
-): string[] {
+): { images: string[]; totalTokens: number | null } {
   const response = (rawResponse ?? {}) as {
     error?: { message?: string }
+    usageMetadata?: {
+      promptTokenCount?: number
+      candidatesTokenCount?: number
+      totalTokenCount?: number
+    }
     promptFeedback?: {
       blockReason?: string
       blockReasonMessage?: string
@@ -377,7 +383,8 @@ function parseGeminiResponse(
     }
   }
 
-  return images
+  const totalTokens = response.usageMetadata?.totalTokenCount ?? null
+  return { images, totalTokens }
 }
 
 function isContentFilterText(message: string): boolean {

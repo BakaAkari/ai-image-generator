@@ -67,7 +67,7 @@ function buildParameterHelp(config: Config): string {
     '',
     '积分：',
     '- 每个模型必须配置固定价或目录成本加成策略；无法报价时拒绝生成',
-    `- 每日免费｜${config.dailyFreeCredits ?? 0} ${config.creditUnitName || '积分'}`,
+    `- 新用户试用｜${config.trialImageLimit ?? 3} 张免费`,
     '- 受限模型仍需白名单或管理员权限；白名单不代表免费',
   ]
 

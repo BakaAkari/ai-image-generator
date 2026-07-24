@@ -4,7 +4,7 @@ import path from 'node:path'
 import { ChatLunaBridgeManager } from './bridge/chatluna/manager.js'
 import { ImageCatalogService } from './catalog/image-catalog.js'
 import { registerConsoleService } from './console/service.js'
-import { mergeConfig, readConfig, writeConfig } from './console/config-store.js'
+import { mergeConfig, mergeGlobalRuntimeFields, readConfig, writeConfig } from './console/config-store.js'
 import type { ActiveSupplier } from './catalog/types.js'
 import { YesImBotBridgeManager } from './bridge/yesimbot/manager.js'
 import { registerAllCommands } from './commands/index.js'
@@ -16,7 +16,7 @@ import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { UserManager } from './services/UserManager.js'
 import { Config as ConfigSchema } from './shared/config.js'
 import type { Config as PluginConfig } from './shared/config.js'
-import { migrateConfig } from './config/migration.js'
+
 import { PLUGIN_NAME } from './shared/constants.js'
 
 /**
@@ -63,7 +63,9 @@ providerRegistry.register('gemini', createGeminiProvider)
 export async function apply(ctx: Context, config: Config) {
   const logger = ctx.logger(name)
 
-  // koishi.yml 只作为首次启动的 bootstrap；aka-tools 后续以 settings.json 为唯一持久化事实源。
+  // 业务字段以 settings.json 为持久化事实源（saved-wins）；apiTimeout / catalogRefreshHours /
+  // logLevel 三个全局运行项归 Koishi 原插件设置页所有，config-store 在读取时会用
+  // bootstrap 值覆盖 settings.json 中的旧值，确保 Koishi Config 页保存后重启仍生效。
   const persistedConfig = await readConfig(ctx, config)
   Object.assign(config, persistedConfig)
 
@@ -86,29 +88,26 @@ export async function apply(ctx: Context, config: Config) {
 
   // 3. Orchestrator —— 闭包持有 currentConfig，热重载时由 acceptor 覆盖
   let currentConfig = config
-  let migrationLogged = false
-  const handlers = createImageGenerationHandlers({
-    ctx,
-    service,
-    userManager,
-    logger,
-    getConfig: () => currentConfig,
-  })
 
   // 3b. 动态模型目录 —— 按激活供应商拉取模型清单 + 计价
   const catalog = new ImageCatalogService(ctx, logger, dataDir)
 
-  // 目录 → service：计价自动换算 + 映射校验
-  service.catalogPricingLookup = (modelId: string) => {
-    const model = catalog.current?.models.find(m => m.id === modelId)
-    return model?.pricing
-  }
+  // 目录只负责模型与 route；运行时自动定价完全读取 config.modelCostProbes。
   service.catalogRouteLookup = (modelId: string) => {
     const model = catalog.current?.models.find(m => m.id === modelId)
     const route = model?.routes[0]
     if (!route || (route.protocol !== 'openai' && route.protocol !== 'gemini')) return undefined
     return { routeId: route.id, protocol: route.protocol }
   }
+
+  const handlers = createImageGenerationHandlers({
+    ctx,
+    service,
+    userManager,
+    logger,
+    getConfig: () => currentConfig,
+    catalog,
+  })
 
   // Schema.dynamic 选项源：模型映射的 modelId 下拉来自动态目录。
   // 机制同 chatluna：ctx.schema.set(name, Schema.union(...))，目录刷新后重建。
@@ -128,7 +127,7 @@ export async function apply(ctx: Context, config: Config) {
         Schema.union(models.map(m =>
           Schema.const(m.id).description(
             m.pricing.type === 'per-call' && m.pricing.pricePerCall != null
-              ? `${m.id}（$${m.pricing.pricePerCall.toFixed(3)}/次）`
+              ? `${m.id}（${m.pricing.pricePerCall.toFixed(2)} 供应商积分/次）`
               : m.pricing.type === 'per-token'
                 ? `${m.id}（token 计费 ×${m.pricing.tokenRatio ?? '?'}）`
                 : m.id,
@@ -142,22 +141,10 @@ export async function apply(ctx: Context, config: Config) {
     }
   }
 
-  // 目录刷新后：重校验映射，失效时告警
+  // 目录刷新后：重校验映射
   const revalidate = () => {
     const models = catalog.current?.models ?? []
     if (!models.length) return
-    const migration = migrateConfig(currentConfig, modelId => {
-      const pricing = models.find(model => model.id === modelId)?.pricing
-      return pricing?.type === 'per-call' && pricing.pricePerCall != null ? 'catalog-quote' : 'unknown'
-    })
-    if (migration.migrated && migration.actions.some(action => action.startsWith('migrated ') || action.startsWith('disabled '))) {
-      currentConfig = migration.config
-      service.updateConfig(currentConfig)
-      if (!migrationLogged) {
-        migrationLogged = true
-        logger.warn('模型收费策略已迁移：%s', migration.actions.join('；'))
-      }
-    }
     const invalid = service.revalidateMappings(models)
     if (invalid.length) {
       logger.warn('模型映射校验：%d 个映射在当前供应商目录中不可用：%s', invalid.length, invalid.join('、'))
@@ -302,8 +289,11 @@ export async function apply(ctx: Context, config: Config) {
     void yesimbotBridgeManager.sync(currentConfig.yesimbotEnabled)
   }
 
-  // 保留经典配置页热更新兼容；aka-tools 自身不会再走 scope.update。
-  ctx.accept((next: Config) => applyRuntimeConfig(next))
+  // Koishi 原插件设置页只拥有 apiTimeout/catalogRefreshHours/logLevel；其它字段
+  // 归 settings.json 所有。ctx.accept 会拿到完整（且带默认值）的 Config，
+  // 因此必须先用 mergeGlobalRuntimeFields 剥掉业务字段，再喂给 applyRuntimeConfig，
+  // 避免 Koishi 默认值覆盖 aka-tools 面板已保存的运行态。
+  ctx.accept((next: Config) => applyRuntimeConfig(mergeGlobalRuntimeFields(currentConfig, next)))
 
   // 8. 插件卸载时的清理
   ctx.on('dispose' as any, async () => {

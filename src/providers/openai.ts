@@ -50,6 +50,7 @@ interface OpenAIImagesResponse {
     url?: string
     revised_prompt?: string
   }>
+  usage?: { total_tokens?: number }
 }
 
 /**
@@ -205,7 +206,8 @@ export class OpenAIProvider extends BaseImageProvider {
           })
         )
 
-        const images = parseOpenAIImagesResponse(response)
+        const { images, totalTokens } = parseOpenAIImagesResponse(response)
+        this.lastTotalTokens = totalTokens
         if (images.length === 0) {
           this.logger.warn(
             'provider=%s event=create_empty_response current=%d total=%d',
@@ -317,7 +319,8 @@ export class OpenAIProvider extends BaseImageProvider {
           this.callEditApi(apiBase, prompt, size, imageDataList)
         )
 
-        const images = parseOpenAIImagesResponse(response)
+        const { images, totalTokens } = parseOpenAIImagesResponse(response)
+        this.lastTotalTokens = totalTokens
         if (images.length === 0) {
           this.logger.warn(
             'provider=%s event=edit_empty_response current=%d total=%d',
@@ -441,7 +444,7 @@ export class OpenAIProvider extends BaseImageProvider {
 
 // -------- 模块级工具 --------
 
-function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): string[] {
+function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): { images: string[]; totalTokens: number | null } {
   if (!response) {
     throw new ParseError('OpenAI Images API 响应为空', { providerName: 'openai' })
   }
@@ -457,7 +460,7 @@ function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): 
   }
 
   const data = response.data
-  if (!Array.isArray(data)) return []
+  if (!Array.isArray(data)) return { images: [], totalTokens: null }
 
   const images: string[] = []
   for (const item of data) {
@@ -468,7 +471,8 @@ function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): 
       images.push(item.url)
     }
   }
-  return images
+  const totalTokens = response.usage?.total_tokens ?? null
+  return { images, totalTokens }
 }
 
 function isContentFilter(message: string): boolean {

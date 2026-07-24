@@ -1,43 +1,45 @@
 import type { Config } from '../shared/config.js'
 import type { ModelMappingConfig } from '../shared/types.js'
 
-export type CatalogQuoteAvailability = 'catalog-quote' | 'unknown'
-export type CatalogQuoteLookup = (modelId: string) => CatalogQuoteAvailability
-
 export interface MigrationResult {
   config: Config
   migrated: boolean
   actions: string[]
 }
 
-export function migrateConfig(config: Config, quoteLookup: CatalogQuoteLookup = () => 'unknown'): MigrationResult {
+/**
+ * 0.9.1 迁移目标：
+ * - `costMarkup`（倍率）→ `pricingMarkupPercent`（百分比）
+ * - 旧全局 provider 字段清理
+ */
+export function migrateConfig(config: Config): MigrationResult {
   const actions: string[] = []
+  let changed = false
   const clone = structuredClone(config)
   const mappings = (clone.modelMappings ?? []) as ModelMappingConfig[]
 
   for (const mapping of mappings) {
-    if (mapping.supplier) { delete mapping.supplier; actions.push('removed legacy supplier from mapping') }
-    if (mapping.protocol) { delete mapping.protocol; actions.push('removed legacy protocol from mapping') }
-    if (mapping.provider) { delete mapping.provider; actions.push('removed legacy provider from mapping') }
+    if (mapping.supplier) { delete mapping.supplier; actions.push('removed legacy supplier from mapping'); changed = true }
+    if (mapping.protocol) { delete mapping.protocol; actions.push('removed legacy protocol from mapping'); changed = true }
+    if (mapping.provider) { delete mapping.provider; actions.push('removed legacy provider from mapping'); changed = true }
+  }
 
-    if (!mapping.chargePolicy) {
-      if (typeof mapping.creditCostPerImage === 'number' && Number.isFinite(mapping.creditCostPerImage)) {
-        mapping.chargePolicy = { type: 'fixed', creditsPerImage: mapping.creditCostPerImage }
-        actions.push(`migrated fixed charge policy for ${mapping.modelId}`)
-      } else if (quoteLookup(mapping.modelId) === 'catalog-quote') {
-        mapping.chargePolicy = { type: 'cost-plus', acceptEstimated: false }
-        actions.push(`migrated cost-plus charge policy for ${mapping.modelId}`)
-      } else {
-        mapping.chargePolicy = { type: 'disabled', reason: 'pricing unavailable' }
-        actions.push(`disabled mapping without pricing for ${mapping.modelId}`)
-      }
+  // costMarkup（倍率）→ pricingMarkupPercent（百分比）
+  if (typeof clone.pricingMarkupPercent !== 'number' || !Number.isFinite(clone.pricingMarkupPercent)) {
+    if (typeof clone.costMarkup === 'number' && Number.isFinite(clone.costMarkup) && clone.costMarkup > 0) {
+      clone.pricingMarkupPercent = Math.max(0, Math.round((clone.costMarkup - 1) * 100 * 100) / 100)
+      actions.push(`migrated costMarkup ${clone.costMarkup} → pricingMarkupPercent ${clone.pricingMarkupPercent}`)
+      changed = true
     }
   }
 
-  if (mappings.length === 0) actions.push('modelMappings empty; explicit configuration required')
-  if (clone.provider) { delete clone.provider; actions.push('removed legacy global provider field') }
+  if ('costMarkup' in clone) { delete clone.costMarkup; actions.push('removed legacy costMarkup'); changed = true }
+  if ('creditExchangeRate' in clone) { delete clone.creditExchangeRate; actions.push('removed legacy creditExchangeRate'); changed = true }
 
-  return { config: clone, migrated: actions.length > 0, actions }
+  if (mappings.length === 0) actions.push('modelMappings empty; explicit configuration required')
+  if (clone.provider) { delete clone.provider; actions.push('removed legacy global provider field'); changed = true }
+
+  return { config: clone, migrated: changed, actions }
 }
 
 export function sanitizeModelMapping(mapping: ModelMappingConfig): ModelMappingConfig {
@@ -45,7 +47,6 @@ export function sanitizeModelMapping(mapping: ModelMappingConfig): ModelMappingC
     suffix: mapping.suffix,
     modelId: mapping.modelId,
     restricted: mapping.restricted,
-    chargePolicy: mapping.chargePolicy,
     creditCostPerImage: mapping.creditCostPerImage,
   }
 }

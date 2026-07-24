@@ -8,9 +8,9 @@
 export type ActiveSupplier = 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
 
 export interface ImageModelPricing {
-  /** per-call = 按次固定价（美元）；per-token = 按 token 倍率 */
+  /** per-call = 按次固定供应商积分；per-token = 按 token 倍率 */
   type: 'per-call' | 'per-token' | 'unknown'
-  /** per-call 单价（美元/次） */
+  /** per-call 单价（供应商积分/次；1 供应商积分 = ¥0.5） */
   pricePerCall?: number
   /** per-token 倍率（相对平台基础价） */
   tokenRatio?: number

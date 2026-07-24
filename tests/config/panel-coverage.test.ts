@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import {
+  GLOBAL_RUNTIME_FIELDS,
   LEGACY_FIELDS,
   PROVIDER_SETTINGS_FIELDS,
   USER_EDITABLE_FIELDS,
@@ -59,6 +60,18 @@ describe('aka-tools panel field coverage', () => {
       expect(topLevelBinding.test(PAGE_VUE), `page.vue must not bind cfg.${field}`).toBe(false)
     }
   })
+
+  test('global runtime fields (owned by Koishi config page) are NOT bound in aka-tools panel', () => {
+    for (const field of GLOBAL_RUNTIME_FIELDS) {
+      const topLevelBinding = new RegExp(`cfg\\.${field}(?![A-Za-z0-9_])`)
+      expect(topLevelBinding.test(PAGE_VUE), `page.vue must not bind cfg.${field}`).toBe(false)
+    }
+  })
+
+  test('USER_EDITABLE_FIELDS and GLOBAL_RUNTIME_FIELDS are disjoint', () => {
+    const overlap = USER_EDITABLE_FIELDS.filter(f => (GLOBAL_RUNTIME_FIELDS as readonly string[]).includes(f))
+    expect(overlap, `fields must be owned by exactly one panel: ${overlap.join(', ')}`).toEqual([])
+  })
 })
 
 describe('normalizeConfig defaults', () => {
@@ -102,5 +115,20 @@ describe('normalizeConfig defaults', () => {
     normalized.modelMappings[0].suffix = 'mut'
     expect(raw.adminUsers).toEqual(['a'])
     expect(raw.modelMappings[0].suffix).toBe('x')
+  })
+
+  test('carries every GLOBAL_RUNTIME_FIELDS value through untouched (avoids overwriting Koishi-managed settings on save)', () => {
+    const raw = { apiTimeout: 123, catalogRefreshHours: 9, logLevel: 'detail' }
+    const normalized = normalizeConfig(raw)
+    for (const field of GLOBAL_RUNTIME_FIELDS) {
+      expect(normalized[field], `normalizeConfig must preserve ${field}`).toBe((raw as any)[field])
+    }
+  })
+
+  test('does not synthesize defaults for GLOBAL_RUNTIME_FIELDS when raw is empty (Koishi Config Schema owns those defaults)', () => {
+    const normalized = normalizeConfig({})
+    for (const field of GLOBAL_RUNTIME_FIELDS) {
+      expect(normalized[field], `normalizeConfig({}) must not synthesize ${field}`).toBeUndefined()
+    }
   })
 })

@@ -55,7 +55,7 @@ const SETUP_GUIDE = [
   '图像排行榜 [-n 数量]              查看用户生成和消耗排行',
   '',
   '常用参数：-n 1-4、-1k/-2k/-4k、-1:1/-4:3/-16:9/-9:16、-add 补充要求、-模型后缀。',
-  '权限说明：受限模型需要管理员或模型白名单；白名单不代表免费。管理员、永久会员和豁免平台跳过扣费与限流，但仍记录统计。',
+  '权限说明：受限模型需要管理员或模型白名单；白名单不代表免费。管理员和永久会员跳过扣费与限流，但仍记录统计。',
 ].join('\n')
 
 export interface Config {
@@ -67,12 +67,37 @@ export interface Config {
   activeSupplier?: 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
   /** 模型目录自动刷新间隔（小时） */
   catalogRefreshHours?: number
-  /** 积分汇率：1 美元 = N 积分（目录计价自动换算用） */
+  /**
+   * @deprecated 0.9.1 起不再参与运行时自动定价。保留仅供旧配置反序列化与迁移读取。
+   * 新公式由 `creditsPerCny`（1 元人民币对应的平台积分）+ `pricingMarkupPercent`（盈利加成）驱动。
+   */
   creditExchangeRate?: number
-  /** 定价加成倍率（成本 × N = 用户积分价） */
+  /**
+   * @deprecated 0.9.1 起改为百分比字段 `pricingMarkupPercent`（例如 1.3 → 30）。
+   * migration 会读到此字段一次性折算，之后不再参与计费。
+   */
   costMarkup?: number
-  /** yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50） */
+  /**
+   * 全局盈利加成百分比。用户扣费 = 平台积分成本 × (1 + pricingMarkupPercent/100)。
+   * 例如 30 表示在成本上加 30%；0 表示无加成。
+   */
+  pricingMarkupPercent?: number
+  /**
+   * @deprecated 1.0.0 起不再用于运行时自动定价。保留字段以兼容旧配置反序列化。
+   * 此字段未来版本可能移除。
+   */
+  modelCostProbes?: Record<string, never>
+  /**
+   * @deprecated 0.9.1 起固定为 0.5（1 供应商积分 = ¥0.5），不再作为运营字段。
+   * 保留 interface 字段用于旧配置反序列化兼容。
+   */
   yunwuCreditToRmb?: number
+  /** yunwu API Key 所属分组倍率（目录报价 × 倍率 = 参考供应商积分成本）。默认 1。 */
+  yunwuGroupRatio?: number
+  /**
+   * @deprecated 0.9.1 起改为 yunwuGroupRatio 数字倍率。保留旧字符串字段用于
+   * 一次性向数字迁移（映射到 catalog groupRatio；映射失败回退 1）。
+   */
   yunwuGroup?: string
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
@@ -100,12 +125,11 @@ export interface Config {
   creditUnitName: string
   /** @deprecated 0.9.0 仅用于旧配置读取，不参与运行时计费。 */
   defaultCreditCostPerImage?: number
-  dailyFreeCredits: number
+  trialImageLimit: number
   showCreditCostInResult: boolean
   creditsPerCny?: number
   showEstimatedCny?: boolean
   minRechargeCredits?: number
-  unlimitedPlatforms: string[]
   rateLimitWindow: number
   rateLimitMax: number
 
@@ -207,31 +231,11 @@ const ActiveSupplierSchema = Schema.object({
   ])
     .default('yunwu')
     .description('激活供应商（互斥）：模型目录从该供应商动态获取'),
-  catalogRefreshHours: Schema.number()
-    .default(6)
-    .min(1)
-    .max(72)
-    .step(1)
-    .description('模型目录自动刷新间隔（小时）；聊天命令"图像模型"可手动刷新'),
-  creditExchangeRate: Schema.number()
-    .default(1000)
-    .min(0)
-    .step(1)
-    .description('积分汇率：1 美元 = N 积分；模型映射积分价留空时按目录计价自动换算'),
-    yunwuCreditToRmb: Schema.number()
-      .default(0.5)
+    yunwuGroupRatio: Schema.number()
+      .default(1)
       .min(0.01)
-      .max(100)
       .step(0.01)
-      .description('yunwu 积分→人民币换算（默认 0.5 = 100积分=¥50）。仅影响 aka-tools 成本展示，不参与计费。'),
-    yunwuGroup: Schema.string()
-      .default('default')
-      .description('yunwu API Key 所属分组，影响成本计算中的分组倍率。在 yunwu 后台 API 令牌页面查看。'),
-  costMarkup: Schema.number()
-    .default(1.3)
-    .min(0.1)
-    .step(0.05)
-    .description('定价加成倍率：目录成本 × N = 向用户收取的积分价'),
+      .description('yunwu API Key 所属分组倍率（例如 1 / 2.4 / 3.6），在 yunwu 后台 API 令牌页面查看'),
 }).description('🛰️ 激活供应商 / 动态模型目录')
 
 // ----------------------------------------------------------------------------
@@ -269,20 +273,6 @@ const CONFIG_GROUPS = [
           .default(false)
           .description('限制项')
           .role('table-cell', { width: 10 }),
-        chargePolicy: Schema.union([
-          Schema.object({
-            type: Schema.const('fixed').required(),
-            creditsPerImage: Schema.number().min(0).max(100000).step(0.01).required(),
-          }).description('固定积分/张'),
-          Schema.object({
-            type: Schema.const('cost-plus').required(),
-            acceptEstimated: Schema.boolean().default(false),
-          }).description('目录成本 × 汇率 × 加成；拒绝无明确公式的估算'),
-          Schema.object({
-            type: Schema.const('disabled').required(),
-            reason: Schema.string().default('pricing unavailable'),
-          }).description('禁用'),
-        ]).description('显式收费策略'),
         creditCostPerImage: Schema.number()
           .hidden()
           .description('旧字段，仅用于迁移'),
@@ -354,21 +344,27 @@ const CONFIG_GROUPS = [
     defaultCreditCostPerImage: Schema.number()
       .hidden()
       .description('旧字段，仅用于配置迁移；不参与运行时计费'),
-    dailyFreeCredits: Schema.number()
-      .default(5)
+    trialImageLimit: Schema.number()
+      .default(3)
       .min(0)
-      .max(100000)
-      .step(0.01)
-      .description('普通用户每天免费积分，支持小数'),
+      .max(100)
+      .step(1)
+      .description('新用户可免费生成的图片张数，0 为禁用'),
     showCreditCostInResult: Schema.boolean()
       .default(true)
       .description('生成完成后显示本次消耗和剩余积分'),
     creditsPerCny: Schema.number()
-      .default(0)
+      .default(10)
       .min(0)
       .max(100000)
       .step(0.01)
-      .description('经营参考：1 元对应多少积分；0 表示不估算，支持小数'),
+      .description('自动定价核心：1 元人民币 = N 平台积分。同时用作管理员余额/充值提示的人民币折算'),
+    pricingMarkupPercent: Schema.number()
+      .default(30)
+      .min(0)
+      .max(10000)
+      .step(1)
+      .description('自动定价核心：全局盈利加成百分比（30 表示在成本上加价 30%）'),
     showEstimatedCny: Schema.boolean()
       .default(false)
       .description('管理员查询时显示余额估算金额'),
@@ -378,9 +374,6 @@ const CONFIG_GROUPS = [
       .max(1000000)
       .step(0.01)
       .description('充值提示用最低积分，支持小数；不限制管理员输入'),
-    unlimitedPlatforms: Schema.array(Schema.string())
-      .default(['lark'])
-      .description('这些平台跳过积分扣费和限流'),
     rateLimitWindow: Schema.number()
       .default(300)
       .min(60)
@@ -457,12 +450,6 @@ const CONFIG_GROUPS = [
 
   // ⚙️ 运行与诊断
   Schema.object({
-    logLevel: Schema.union([
-      Schema.const('simple').description('simple'),
-      Schema.const('detail').description('detail'),
-    ])
-      .default('simple')
-      .description('日志级别；simple 记录关键流程，detail 增加脱敏请求诊断'),
     showQuotaInImageCommands: Schema.boolean()
       .default(true)
       .description('生成完成后额外显示剩余积分明细（需先开启"显示本次消耗"）'),
@@ -472,21 +459,32 @@ const CONFIG_GROUPS = [
       .max(4)
       .step(1)
       .description('未填写 -n 时默认生成的图片数量'),
-    apiTimeout: Schema.number()
-      .default(60)
-      .min(10)
-      .max(600)
-      .step(10)
-      .description('上游请求超时时间，单位秒'),
-  }).description('🧰 运行与诊断').collapse(),
+  }).description('🧰 业务运行参数（aka-tools 面板管理）').collapse(),
 ] as const
 
 /**
- * 统一隐藏所有顶层 Schema 分组：
- * - Koishi 原插件配置页不再显示任何业务分组，所有编辑走 aka-tools 面板。
- * - 每个分组都被 hidden + collapse，兼容 Koishi 不同渲染实现下的隐藏语义。
- * - 保留字段本体、默认值和描述，运行期 interface / bootstrap 解析 / 迁移不受影响。
+ * Koishi 原插件配置页只保留三个全局运行项，其余业务分组一律 hidden + collapse。
+ * - GlobalRuntimeSchema：apiTimeout / catalogRefreshHours / logLevel，由 Koishi
+ *   原插件设置页（写入 koishi.yml）独占管理。aka-tools 面板不绑定这些字段，
+ *   且 config-store 保证 settings.json 中的旧值不会在重启时覆盖 Koishi 当前值。
+ * - CONFIG_GROUPS：业务字段由 aka-tools 页面独占编辑并写入 settings.json；
+ *   业务字段以 settings.json 为持久化事实源，重启时按 saved-wins 合并回 bootstrap。
+ *   隐藏后运行期 interface、默认值、bootstrap 解析与迁移不受影响。
  */
-export const Config = Schema.intersect(
-  (CONFIG_GROUPS as readonly Schema[]).map((group) => group.hidden().collapse()),
-) as unknown as Schema<Config>
+const GlobalRuntimeSchema = Schema.object({
+  apiTimeout: Schema.number()
+    .default(240).min(10).max(600).step(10)
+    .description('所有图像供应商请求的全局超时时间，单位秒'),
+  catalogRefreshHours: Schema.number()
+    .default(6).min(1).max(72).step(1)
+    .description('后台模型目录自动刷新间隔，单位小时'),
+  logLevel: Schema.union([
+    Schema.const('simple').description('simple：仅记录关键流程'),
+    Schema.const('detail').description('detail：增加脱敏请求诊断'),
+  ]).default('simple').description('插件全局日志级别'),
+}).description('⚙️ 全局运行设置')
+
+export const Config = Schema.intersect([
+  GlobalRuntimeSchema,
+  ...(CONFIG_GROUPS as readonly Schema[]).map((group) => group.hidden().collapse()),
+]) as unknown as Schema<Config>

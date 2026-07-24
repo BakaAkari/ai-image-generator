@@ -265,7 +265,7 @@ async function runGetQuotaTool(
   )
   return Success({
     userName: summary.userName || session.userId,
-    dailyFreeRemaining: aiGenerator.formatCredits(summary.dailyFreeRemaining),
+    dailyFreeRemaining: aiGenerator.formatCredits(summary.trialRemaining),
     purchasedCredits: aiGenerator.formatCredits(summary.purchasedCredits),
     totalAvailable: aiGenerator.formatCredits(summary.totalAvailable),
     totalImagesGenerated: summary.totalImagesGenerated,
@@ -340,6 +340,8 @@ function buildRequestContextAndCost(
   let modelMapping: ModelMappingConfig | undefined
   if (modelSuffix) {
     modelMapping = (config.modelMappings || []).find((item) => item.suffix === modelSuffix)
+  } else {
+    modelMapping = (config.modelMappings || [])[0]
   }
 
   if (modelMapping) {

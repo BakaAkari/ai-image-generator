@@ -35,6 +35,9 @@ export abstract class BaseImageProvider implements ImageProvider {
   /** Provider 标识，由子类设定 */
   abstract readonly name: string
 
+  /** 最近一次生成调用返回的 usage.total_tokens（后生成定价用）。null 表示未获取到或调用尚未完成。 */
+  lastTotalTokens: number | null = null
+
   protected readonly ctx: Context
   protected readonly logger: Logger
   protected readonly apiKey: string

@@ -270,7 +270,7 @@ async function runGetQuotaTool(
   )
   return formatToolJson({
     userName: summary.userName || userId,
-    dailyFreeRemaining: aiGenerator.formatCredits(summary.dailyFreeRemaining),
+    dailyFreeRemaining: aiGenerator.formatCredits(summary.trialRemaining),
     purchasedCredits: aiGenerator.formatCredits(summary.purchasedCredits),
     totalAvailable: aiGenerator.formatCredits(summary.totalAvailable),
     totalImagesGenerated: summary.totalImagesGenerated,
@@ -455,9 +455,9 @@ function buildRequestContextAndCost(
   const modelSuffix = typeof input.modelSuffix === 'string' ? input.modelSuffix.trim() : ''
   let modelMapping: ModelMappingConfig | undefined
   if (modelSuffix) {
-    modelMapping = (config.modelMappings || []).find(
-      (item) => item.suffix === modelSuffix,
-    )
+    modelMapping = (config.modelMappings || []).find(item => item.suffix === modelSuffix)
+  } else {
+    modelMapping = (config.modelMappings || [])[0]
   }
 
   if (modelMapping) {
@@ -637,7 +637,7 @@ async function formatQuotaSummary(aiGenerator: AiImageGeneratorService, userId: 
   const summary = await aiGenerator.getQuotaSummary(userId, userName)
   return {
     totalAvailable: aiGenerator.formatCredits(summary.totalAvailable),
-    dailyFreeRemaining: aiGenerator.formatCredits(summary.dailyFreeRemaining),
+    dailyFreeRemaining: aiGenerator.formatCredits(summary.trialRemaining),
     purchasedCredits: aiGenerator.formatCredits(summary.purchasedCredits),
   }
 }

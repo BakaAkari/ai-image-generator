@@ -29,7 +29,9 @@ export interface RegisterCatalogCommandsParams {
 
 function formatPrice(m: ImageModelInfo): string {
   const p = m.pricing
-  if (p.type === 'per-call' && p.pricePerCall != null) return `$${p.pricePerCall.toFixed(4)}/次`
+  // yunwu /api/pricing 的 model_price 语义是“供应商积分/次”（上游计费单位，
+  // 1 供应商积分 = ¥0.5）；这里只做展示，不参与运行时用户计价。
+  if (p.type === 'per-call' && p.pricePerCall != null) return `${p.pricePerCall.toFixed(2)} 供应商积分/次`
   if (p.type === 'per-token' && p.tokenRatio != null) return `token×${p.tokenRatio}`
   return '计价未知'
 }
@@ -76,14 +78,14 @@ export function registerCatalogCommands(params: RegisterCatalogCommandsParams) {
     .command('图像额度', '查看平台侧累计消耗与限额（new-api 系供应商）')
     .action(async () => {
       const billing = catalog.billingInfo
-      if (!billing || billing.totalUsageUsd == null) {
+      const credits = billing?.supplierCredits ?? billing?.platformCredits ?? billing?.totalUsageUsd ?? null
+      if (!billing || credits == null) {
         return '当前供应商不支持消耗查询，或尚未获取到数据（稍后重试）'
       }
-      const lines = [`💰 平台消耗（key：${billing.tokenName ?? '未知'}）`]
-      lines.push(`  累计消耗：$${billing.totalUsageUsd.toFixed(2)}`)
+      const lines = [`💰 供应商消耗（key：${billing.tokenName ?? '未知'}）`]
+      lines.push(`  累计供应商积分：${credits.toFixed(2)}（≈¥${(credits * 0.5).toFixed(2)}）`)
       if (billing.hardLimitUsd != null) {
-        const pct = (billing.totalUsageUsd / billing.hardLimitUsd) * 100
-        lines.push(`  限额：$${billing.hardLimitUsd.toFixed(2)}（已用 ${pct.toFixed(1)}%）`)
+        lines.push(`  Key 限额：$${billing.hardLimitUsd.toFixed(2)}`)
       }
       return lines.join('\n')
     })

@@ -25,9 +25,7 @@ class AsyncLock {
 }
 
 export interface CreditBalanceV2 {
-  dailyFreeCreditsUsed: number
-  dailyFreeCreditsLimitSnapshot: number
-  dailyResetDate: string
+  trialImagesUsed: number
   purchasedCredits: number
   totalGrantedCredits: number
   totalConsumedCredits: number
@@ -72,7 +70,7 @@ export interface UsersStoreV2 {
 }
 
 export interface CreditBalanceSnapshotV2 {
-  dailyFreeRemaining: number
+  trialRemaining: number
   purchasedCredits: number
   totalAvailable: number
   totalGrantedCredits: number
@@ -129,7 +127,7 @@ export interface RechargeRecordV2 {
 export interface CreditSummary {
   userId: string
   userName: string
-  dailyFreeRemaining: number
+  trialRemaining: number
   purchasedCredits: number
   totalAvailable: number
   totalGrantedCredits: number
@@ -141,26 +139,16 @@ export interface CreditSummary {
   estimatedCny?: number
 }
 
-export interface CreditConsumeResult {
-  userData: UserAccountV2
-  ledgerEvent?: CreditLedgerEventV2
-  freeUsed: number
-  purchasedUsed: number
-  isExempt: boolean
-}
-
 export interface CreditReservation {
   reservationId: string
   userId: string
   userName: string
   cost: GenerationCost
   reservedCredits: number
-  reservedFreeCredits: number
-  reservedPurchasedCredits: number
   status: 'active' | 'settled' | 'released'
   createdAt: number
   expiresAt: number
-  exempt: boolean
+  isTrial: boolean
   result?: CreditReservationResult
 }
 
@@ -389,20 +377,46 @@ export class UserManager {
       }
       await this.atomicWriteFile(this.usersFile, JSON.stringify(this.usersCache, null, 2))
     } catch (error) {
-      this.logger.error('保存用户积分数据失败', error)
-      throw error
+      // 持久化失败不中断业务：数据仍在内存缓存中，下次成功写入即可恢复
+      this.logger.error('保存用户积分数据失败（内存缓存仍有效，将在下次操作重试）', error)
     }
   }
 
   private async atomicWriteFile(path: string, content: string): Promise<void> {
-    await fs.mkdir(dirname(path), { recursive: true })
-    const tempFile = `${path}.tmp`
-    await fs.writeFile(tempFile, content, 'utf-8')
-    await fs.rename(tempFile, path)
-  }
+    const dir = dirname(path)
+    await fs.mkdir(dir, { recursive: true })
 
-  private todayKey(): string {
-    return new Date().toISOString().slice(0, 10)
+    // 验证目录确实存在
+    try { await fs.access(dir) } catch {
+      await fs.mkdir(dir, { recursive: true })
+    }
+
+    const tempFile = `${path}.tmp`
+    const bakFile = `${path}.bak`
+
+    // 3 次重试 + 递增延迟
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fs.writeFile(tempFile, content, 'utf-8')
+        // 验证 tmp 已写入
+        await fs.access(tempFile)
+        await fs.rename(tempFile, path)
+        return
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 100 * (attempt + 1)))
+          continue
+        }
+        // 最后一次失败：写 .bak 降级，不抛异常
+        this.logger.warn('atomicWriteFile 重试 3 次后仍失败 (path=%s)，降级写入 .bak', path)
+        try {
+          await fs.writeFile(bakFile, content, 'utf-8')
+        } catch {
+          this.logger.error('atomicWriteFile .bak 降级写入也失败', err)
+        }
+        throw err
+      }
+    }
   }
 
   private createUserAccount(userId: string, userName: string, config?: Config): UserAccountV2 {
@@ -413,9 +427,7 @@ export class UserManager {
       createdAt: now,
       updatedAt: now,
       balance: {
-        dailyFreeCreditsUsed: 0,
-        dailyFreeCreditsLimitSnapshot: roundCredits(config?.dailyFreeCredits ?? 0),
-        dailyResetDate: this.todayKey(),
+        trialImagesUsed: 0,
         purchasedCredits: 0,
         totalGrantedCredits: 0,
         totalConsumedCredits: 0,
@@ -430,14 +442,9 @@ export class UserManager {
     }
   }
 
-  private ensureDailyReset(userData: UserAccountV2, config: Config): boolean {
-    const today = this.todayKey()
-    if (userData.balance.dailyResetDate === today) return false
-    userData.balance.dailyResetDate = today
-    userData.balance.dailyFreeCreditsUsed = 0
-    userData.balance.dailyFreeCreditsLimitSnapshot = roundCredits(config.dailyFreeCredits ?? 0)
-    userData.updatedAt = new Date().toISOString()
-    return true
+  private getTrialRemaining(userData: UserAccountV2, config: Config): number {
+    const limit = config.trialImageLimit ?? 3
+    return Math.max(0, limit - userData.balance.trialImagesUsed)
   }
 
   async getUserData(userId: string, userName: string, config?: Config): Promise<UserAccountV2> {
@@ -515,8 +522,7 @@ export class UserManager {
         if (reservation.status !== 'active' || reservation.expiresAt > now) continue
         const user = this.usersCache!.users[reservation.userId]
         if (!user) continue
-        user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - reservation.reservedFreeCredits)
-        user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedPurchasedCredits)
+        user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedCredits)
         const result: CreditReservationResult = {
           reservationId: reservation.reservationId,
           reservedCredits: reservation.reservedCredits,
@@ -546,44 +552,56 @@ export class UserManager {
     config: Config,
     platform?: string,
     ttlMs = 15 * 60 * 1000,
-  ): Promise<{ allowed: boolean; message?: string; reservationId?: string }> {
+  ): Promise<{ allowed: boolean; message?: string; reservationId?: string; isTrial?: boolean }> {
     await this.loadUsersStore()
     await this.loadReservations()
     return await this.dataLock.acquire(async () => {
       const existing = this.creditReservations.get(reservationId)
       if (existing) return { allowed: existing.status === 'active', reservationId }
-      const exempt = this.isAdmin(userId, config) || this.isPermanentMember(userId, config) || Boolean(platform && config.unlimitedPlatforms?.includes(platform))
       let user = this.usersCache!.users[userId]
       if (!user) {
         user = this.createUserAccount(userId, userName, config)
         this.usersCache!.users[userId] = user
       }
-      this.ensureDailyReset(user, config)
+      const exempt = this.isAdmin(userId, config) || this.isPermanentMember(userId, config)
       const total = exempt ? 0 : roundCredits(cost.totalCredits)
-      const freeAvailable = this.getDailyFreeRemaining(user, config)
+
+      // 试用额度检查：trialImageLimit > 0 且用户尚未用完所有试用次数
+      const trialRemaining = this.getTrialRemaining(user, config)
+      const isTrial = !exempt && config.trialImageLimit > 0 && trialRemaining > 0
+
+      if (isTrial) {
+        // 试用图片跳过积分检查，直接预授权
+        this.creditReservations.set(reservationId, {
+          reservationId, userId, userName, cost,
+          reservedCredits: 0,
+          status: 'active',
+          createdAt: Date.now(),
+          expiresAt: Date.now() + Math.max(60_000, ttlMs),
+          isTrial: true,
+        })
+        await this.saveUsersStoreInternal()
+        this.updateRateLimit(userId)
+        return { allowed: true, reservationId, isTrial: true }
+      }
+
+      // 正常积分检查
       const purchasedAvailable = roundCredits(user.balance.purchasedCredits)
-      if (roundCredits(freeAvailable + purchasedAvailable) < total) {
+      if (purchasedAvailable < total) {
         return { allowed: false, message: `积分不足｜本次需要 ${total} ${config.creditUnitName}` }
       }
-      let remaining = total
-      const reservedFreeCredits = Math.min(freeAvailable, remaining)
-      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed + reservedFreeCredits)
-      remaining = roundCredits(remaining - reservedFreeCredits)
-      const reservedPurchasedCredits = Math.min(purchasedAvailable, remaining)
-      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits - reservedPurchasedCredits)
+      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits - total)
       this.creditReservations.set(reservationId, {
         reservationId, userId, userName, cost,
         reservedCredits: total,
-        reservedFreeCredits,
-        reservedPurchasedCredits,
         status: 'active',
         createdAt: Date.now(),
         expiresAt: Date.now() + Math.max(60_000, ttlMs),
-        exempt,
+        isTrial: false,
       })
       await this.saveUsersStoreInternal()
       this.updateRateLimit(userId)
-      return { allowed: true, reservationId }
+      return { allowed: true, reservationId, isTrial: false }
     })
   }
 
@@ -593,37 +611,59 @@ export class UserManager {
     commandName: string,
     config: Config,
     evidence: Record<string, unknown> | null,
-  ): Promise<CreditReservationResult> {
+  ): Promise<CreditReservationResult & { isTrial?: boolean }> {
     await this.loadUsersStore()
     await this.loadReservations()
     return await this.dataLock.acquire(async () => {
       const reservation = this.creditReservations.get(reservationId)
       if (!reservation) throw new Error(`预授权不存在：${reservationId}`)
-      if (reservation.result) return reservation.result
+      if (reservation.result) return reservation.result as CreditReservationResult & { isTrial?: boolean }
       const user = this.usersCache!.users[reservation.userId]
       if (!user) throw new Error(`预授权用户不存在：${reservation.userId}`)
       const delivered = Math.max(0, Math.min(reservation.cost.numImages, Math.floor(actualImages || 0)))
-      const settledCredits = reservation.exempt ? 0 : roundCredits(reservation.cost.creditCostPerImage * delivered)
+
+      if (reservation.isTrial) {
+        // 试用：仅增加计数器，不涉及积分
+        user.balance.trialImagesUsed += delivered
+        user.statistics.totalImagesGenerated += delivered
+        user.statistics.totalGenerationRequests += 1
+        if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
+        user.updatedAt = new Date().toISOString()
+        const result: CreditReservationResult & { isTrial: boolean } = {
+          reservationId,
+          reservedCredits: reservation.reservedCredits,
+          settledCredits: 0,
+          releasedCredits: 0,
+          actualImages: delivered,
+          status: 'settled',
+          isTrial: true,
+        }
+        reservation.status = 'settled'
+        reservation.result = result
+        await this.saveUsersStoreInternal()
+        return result
+      }
+
+      // 后生成定价：优先使用 evidence.actualCost（真实消耗），否则退回预授权估算
+      const actualCost = typeof evidence?.actualCost === 'number' && evidence.actualCost > 0 ? evidence.actualCost : null
+      const costPerImage = actualCost ?? reservation.cost.creditCostPerImage
+      const settledCredits = roundCredits(costPerImage * delivered)
       const releasedCredits = roundCredits(reservation.reservedCredits - settledCredits)
       const before = this.snapshotBalance(user, config)
-      const usedFree = Math.min(reservation.reservedFreeCredits, settledCredits)
-      const usedPurchased = roundCredits(settledCredits - usedFree)
-      const releaseFree = roundCredits(reservation.reservedFreeCredits - usedFree)
-      const releasePurchased = roundCredits(reservation.reservedPurchasedCredits - usedPurchased)
-      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - releaseFree)
-      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + releasePurchased)
+      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + releasedCredits)
       user.balance.totalConsumedCredits = roundCredits(user.balance.totalConsumedCredits + settledCredits)
       user.statistics.totalImagesGenerated += delivered
       user.statistics.totalGenerationRequests += 1
       if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
       user.updatedAt = new Date().toISOString()
-      const result: CreditReservationResult = {
+      const result: CreditReservationResult & { isTrial?: boolean } = {
         reservationId,
         reservedCredits: reservation.reservedCredits,
         settledCredits,
         releasedCredits,
         actualImages: delivered,
         status: 'settled',
+        isTrial: false,
       }
       reservation.status = 'settled'
       reservation.result = result
@@ -660,8 +700,9 @@ export class UserManager {
       if (reservation.result) return reservation.result
       const user = this.usersCache!.users[reservation.userId]
       if (!user) throw new Error(`预授权用户不存在：${reservation.userId}`)
-      user.balance.dailyFreeCreditsUsed = roundCredits(user.balance.dailyFreeCreditsUsed - reservation.reservedFreeCredits)
-      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedPurchasedCredits)
+      if (!reservation.isTrial) {
+        user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + reservation.reservedCredits)
+      }
       user.updatedAt = new Date().toISOString()
       const result: CreditReservationResult = {
         reservationId,
@@ -695,7 +736,6 @@ export class UserManager {
         userData = this.createUserAccount(userId, userName, config)
         this.usersCache!.users[userId] = userData
       }
-      this.ensureDailyReset(userData, config)
       const now = new Date().toISOString()
       userData.userName = userName || userData.userName
       userData.updatedAt = now
@@ -727,7 +767,6 @@ export class UserManager {
         userData = this.createUserAccount(userId, userName, config)
         this.usersCache!.users[userId] = userData
       }
-      this.ensureDailyReset(userData, config)
       const before = this.snapshotBalance(userData, config)
       userData.userName = userName || userData.userName
       userData.balance.purchasedCredits = roundCredits(userData.balance.purchasedCredits + normalizedAmount)
@@ -779,7 +818,6 @@ export class UserManager {
         userData = this.createUserAccount(userId, userName, config)
         this.usersCache!.users[userId] = userData
       }
-      this.ensureDailyReset(userData, config)
       const before = this.snapshotBalance(userData, config)
       const deduct = roundCredits(Math.min(userData.balance.purchasedCredits, normalizedAmount))
       if (deduct <= 0) {
@@ -831,14 +869,13 @@ export class UserManager {
   }
 
   buildCreditSummary(userData: UserAccountV2, config: Config): CreditSummary {
-    this.ensureDailyReset(userData, config)
-    const dailyFreeRemaining = this.getDailyFreeRemaining(userData, config)
+    const trialRemaining = this.getTrialRemaining(userData, config)
     const purchasedCredits = roundCredits(userData.balance.purchasedCredits)
-    const totalAvailable = roundCredits(dailyFreeRemaining + purchasedCredits)
+    const totalAvailable = roundCredits(purchasedCredits)
     const summary: CreditSummary = {
       userId: userData.userId,
       userName: userData.userName,
-      dailyFreeRemaining,
+      trialRemaining,
       purchasedCredits,
       totalAvailable,
       totalGrantedCredits: roundCredits(userData.balance.totalGrantedCredits),
@@ -854,18 +891,13 @@ export class UserManager {
     return summary
   }
 
-  private getDailyFreeRemaining(userData: UserAccountV2, config: Config): number {
-    const limit = roundCredits(userData.balance.dailyFreeCreditsLimitSnapshot ?? config.dailyFreeCredits ?? 0)
-    return roundCredits(Math.max(0, limit - userData.balance.dailyFreeCreditsUsed))
-  }
-
   private snapshotBalance(userData: UserAccountV2, config: Config): CreditBalanceSnapshotV2 {
-    const dailyFreeRemaining = this.getDailyFreeRemaining(userData, config)
+    const trialRemaining = this.getTrialRemaining(userData, config)
     const purchasedCredits = roundCredits(userData.balance.purchasedCredits)
     return {
-      dailyFreeRemaining,
+      trialRemaining,
       purchasedCredits,
-      totalAvailable: roundCredits(dailyFreeRemaining + purchasedCredits),
+      totalAvailable: roundCredits(purchasedCredits),
       totalGrantedCredits: roundCredits(userData.balance.totalGrantedCredits),
       totalConsumedCredits: roundCredits(userData.balance.totalConsumedCredits),
       totalRefundedCredits: roundCredits(userData.balance.totalRefundedCredits),

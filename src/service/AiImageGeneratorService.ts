@@ -10,7 +10,7 @@ import { Service } from 'koishi'
 
 import type { Config, ProviderSettingsConfig } from '../shared/config.js'
 import type { GenerationCost } from '../shared/billing.js'
-import { calculateGenerationCost, formatCredits, scaleGenerationCost } from '../shared/billing.js'
+import { computePostGenerationCost, formatCredits, scaleGenerationCost } from '../shared/billing.js'
 import type {
   GeneratedImageRecord,
   GenerationDisplayInfo,
@@ -170,6 +170,8 @@ export class AiImageGeneratorService extends Service {
     }
 
     const providerInstance = this.providerRegistry.createProvider(provider, this.ctx, factoryConfig)
+    // 重置前一次用量追踪
+    this.lastProviderUsage = null
     const result = await providerInstance.generateImages(
       prompt,
       imageUrls,
@@ -178,10 +180,14 @@ export class AiImageGeneratorService extends Service {
       onImageGenerated,
     )
 
+    // 后生成定价：捕获 provider 返回的 usage.total_tokens
+    this.lastProviderUsage = providerInstance.lastTotalTokens
+
     this.pluginLogger.info('requestProviderImages 完成', {
       supplier,
       provider,
       resultCount: result.length,
+      lastTotalTokens: this.lastProviderUsage,
     })
 
     return result
@@ -402,20 +408,26 @@ export class AiImageGeneratorService extends Service {
     return this.userManager.releaseReservation(requestId, this.pluginConfig, reason)
   }
 
-  /** 目录计价查询函数（由 index.ts 注入；未注入时自动换算不生效） */
-  public catalogPricingLookup: ((modelId: string) => { type: string; pricePerCall?: number; tokenRatio?: number } | undefined) | undefined
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
+  /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
+  lastProviderUsage: number | null = null
+
   public catalogRouteLookup: ((modelId: string) => { routeId: string; protocol: ProviderType } | undefined) | undefined
 
+  /**
+   * 后生成定价构建：使用慷慨预留金额（200 平台积分）替代预计算成本。
+   */
   buildGenerationSetup(numImages: number, modifiers?: ImageGenerationModifiers) {
     const requestContext: ImageRequestContext = { numImages }
     const modelMapping = modifiers?.modelMapping
-    const generationCost = calculateGenerationCost({
+
+    // 使用慷慨预留金额（200 平台积分），不再预计算 exact cost
+    const generationCost: GenerationCost = {
+      totalCredits: 200,
+      creditCostPerImage: 200 / numImages,
       numImages,
-      modelMapping,
-      config: this.pluginConfig,
-      catalogPricingLookup: this.catalogPricingLookup,
-    })
+      costSource: 'post-generation',
+    }
 
     if (modelMapping) {
       const resolvedRoute = this.resolveModelRoute(modelMapping)
@@ -445,16 +457,16 @@ export class AiImageGeneratorService extends Service {
     return { requestContext, displayInfo, generationCost }
   }
 
+  /**
+   * @deprecated 0.9.1 不再用于运行时定价。保留兼容 bridge。
+   */
   calculateGenerationCost(numImages: number, requestContext?: ImageRequestContext): GenerationCost {
-    const modelMapping = requestContext?.modelId
-      ? this.pluginConfig.modelMappings?.find(mapping => mapping.modelId === requestContext.modelId)
-      : undefined
-    return calculateGenerationCost({
+    return {
+      totalCredits: 200,
+      creditCostPerImage: 200 / numImages,
       numImages,
-      modelMapping,
-      config: this.pluginConfig,
-      catalogPricingLookup: this.catalogPricingLookup,
-    })
+      costSource: 'post-generation',
+    }
   }
 
   scaleGenerationCost(cost: GenerationCost, actualImages: number): GenerationCost {

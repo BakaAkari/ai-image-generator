@@ -20,11 +20,6 @@ export type ImageProvider = 'openai-compatible' | 'gemini-official' | 'gpt-offic
 /** 模型映射可覆盖的运行时协议。 */
 export type ApiFormat = ProviderType
 
-export type ModelChargePolicy =
-  | { type: 'fixed'; creditsPerImage: number }
-  | { type: 'cost-plus'; acceptEstimated: boolean }
-  | { type: 'disabled'; reason: string }
-
 export interface ModelMappingConfig {
   suffix: string
   modelId: string
@@ -36,8 +31,6 @@ export interface ModelMappingConfig {
   provider?: ProviderType
   /** 是否为受限模型，仅模型白名单内的用户可调用 */
   restricted?: boolean
-  /** 显式用户收费策略。 */
-  chargePolicy?: ModelChargePolicy
   /** @deprecated 0.9.0 迁移为 chargePolicy.fixed，保留一版只读兼容。 */
   creditCostPerImage?: number
 }

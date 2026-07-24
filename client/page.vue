@@ -32,8 +32,8 @@
           <div class="stat-label">目录更新</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{{ billingUsage }}</div>
-          <div class="stat-label">平台累计消耗</div>
+          <div class="stat-value">{{ supplierCreditsDisplay }}</div>
+          <div class="stat-label">供应商累计积分</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">{{ billingLimit }}</div>
@@ -97,12 +97,9 @@
               <el-input v-model="cfg.providerSettings.geminiOfficialApiKey" type="password" show-password />
             </el-form-item>
           </template>
-          <el-form-item label="目录刷新间隔（小时）">
-            <el-input-number v-model="cfg.catalogRefreshHours" :min="1" :max="72" />
-          </el-form-item>
-          <el-form-item label="yunwu 分组">
-            <el-input v-model="cfg.yunwuGroup" placeholder="default" style="width: 200px" />
-            <div style="font-size:0.75rem;color:var(--fg3)">在 yunwu 后台 API 令牌页面查看。影响成本计算的倍率。留空=default(×1)</div>
+          <el-form-item label="yunwu 分组倍率">
+            <el-input-number v-model="cfg.yunwuGroupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 200px" />
+            <div style="font-size:0.75rem;color:var(--fg3)">直接填分组倍率数字（例如 1、2.4、3.6），在 yunwu 后台 API 令牌页面查看。默认 1 对应 default 分组。</div>
           </el-form-item>
         </el-form>
       </k-card>
@@ -120,24 +117,16 @@
         </template>
         <el-table :data="filteredCatalog" max-height="360" size="small" class="dark-table">
           <el-table-column prop="id" label="模型" min-width="200" sortable />
-          <el-table-column label="yunwu 成本" width="130">
+          <el-table-column label="yunwu 目录成本" width="150">
             <template #default="{ row }">
               <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)' }">{{ row.yunwuCost?.label ?? '—' }}</span>
+              <div class="hint" style="margin: 0.2rem 0 0; font-size: 0.7rem;">仅参考，运行时以目录价格为准</div>
             </template>
           </el-table-column>
           <el-table-column label="模式" width="140">
             <template #default="{ row }">
               <el-tag v-for="m in row.modes" :key="m" size="small" class="mode-tag">{{ modeLabel(m) }}</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="计价" width="160">
-            <template #default="{ row }">{{ row.catalogPrice.label }}</template>
-          </el-table-column>
-          <el-table-column label="成本报价" width="190">
-            <template #default="{ row }">{{ row.costQuote.label }}</template>
-          </el-table-column>
-          <el-table-column label="运营收费" width="190">
-            <template #default="{ row }">{{ row.chargePolicy.label }}</template>
           </el-table-column>
         </el-table>
         <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
@@ -160,7 +149,7 @@
             <el-button size="small" @click="addMapping">添加映射</el-button>
           </div>
         </template>
-        <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认禁用，必须显式选择固定积分或目录成本加成。</div>
+        <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认自动定价，基于目录价格估算。</div>
         <el-table :data="cfg.modelMappings" size="small">
           <el-table-column label="排序" width="70">
             <template #default="{ $index }">
@@ -176,16 +165,6 @@
               <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
                 <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
               </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="收费策略" min-width="260">
-            <template #default="{ row }">
-              <el-select v-model="row.chargePolicy.type" size="small" style="width: 110px">
-                <el-option value="disabled" label="禁用" />
-                <el-option value="fixed" label="固定积分" />
-                <el-option value="cost-plus" label="目录加成" />
-              </el-select>
-              <el-input-number v-if="row.chargePolicy.type === 'fixed'" v-model="row.chargePolicy.creditsPerImage" size="small" :min="0" :step="0.5" style="width: 110px; margin-left: 6px" />
             </template>
           </el-table-column>
           <el-table-column label="受限" width="70">
@@ -204,21 +183,184 @@
         </el-table>
       </k-card>
 
-      <!-- ══ ④ 积分与运营 ══ -->
+      <!-- ══ ④ Prompt 预设 ══ -->
+      <k-card class="section">
+        <template #header>
+          <div class="card-header">
+            <span>Prompt 预设</span>
+            <div class="header-actions">
+              <el-button size="small" @click="addStylePreset(null)">添加未分组预设</el-button>
+              <el-button size="small" type="primary" @click="addStyleGroup">添加分组</el-button>
+            </div>
+          </div>
+        </template>
+        <div class="hint">分组仅用于后台分类管理；聊天中仍直接使用预设的命令名调用，不生成父级命令、不改变运行逻辑。</div>
+
+        <!-- 未分组：固定第一块，绑定 cfg.styles -->
+        <div class="preset-section">
+          <div class="preset-section-header">
+            <span class="preset-section-title">未分组</span>
+            <el-button size="small" @click="addStylePreset(null)">添加预设</el-button>
+          </div>
+          <div v-if="!cfg.styles.length" class="hint">尚无未分组预设。</div>
+          <el-collapse v-else>
+            <el-collapse-item
+              v-for="(style, i) in cfg.styles"
+              :key="`ungrouped::${i}::${style.commandName || 'unnamed'}`"
+              :title="style.commandName || `预设 ${i + 1}`"
+            >
+              <el-form label-width="110px">
+                <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
+                <el-form-item label="生成模式">
+                  <el-radio-group v-model="style.mode">
+                    <el-radio-button value="text-to-image">文生图</el-radio-button>
+                    <el-radio-button value="image-to-image">图生图</el-radio-button>
+                    <el-radio-button value="compose-image">合成图</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item label="模型后缀">
+                  <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
+                    <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
+                <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
+                <el-form-item label="移动到">
+                  <el-select
+                    :model-value="''"
+                    placeholder="选择目标分组"
+                    :disabled="!moveTargets(null).length"
+                    style="width: 220px"
+                    @change="movePreset(null, i, $event)"
+                  >
+                    <el-option v-for="t in moveTargets(null)" :key="`ungrouped-mv-${t.value}`" :value="t.value" :label="t.label" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(null, i)">删除此预设</el-button></el-form-item>
+              </el-form>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 分组：分组容器本身可折叠，组内预设也可逐项展开 -->
+        <el-collapse class="prompt-groups-collapse">
+          <el-collapse-item
+            v-for="groupName in styleGroupNames"
+            :key="`group-${groupName}`"
+            :name="groupName"
+            :title="`${groupName}（${cfg.styleGroups[groupName].prompts.length}）`"
+            class="preset-section"
+          >
+            <div class="preset-section-header">
+              <el-input
+                :model-value="groupName"
+                size="small"
+                style="width: 220px"
+                @change="renameStyleGroup(groupName, String($event))"
+              />
+              <div class="header-actions">
+                <el-button size="small" @click="addStylePreset(groupName)">添加预设</el-button>
+                <el-button size="small" type="danger" @click="removeStyleGroup(groupName)">删除分组</el-button>
+              </div>
+            </div>
+            <div v-if="!cfg.styleGroups[groupName].prompts.length" class="hint">该分组暂无预设。</div>
+            <el-collapse v-else>
+              <el-collapse-item
+                v-for="(style, i) in cfg.styleGroups[groupName].prompts"
+                :key="`${groupName}::${i}::${style.commandName || 'unnamed'}`"
+                :title="style.commandName || `预设 ${i + 1}`"
+              >
+                <el-form label-width="110px">
+                  <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
+                  <el-form-item label="生成模式">
+                    <el-radio-group v-model="style.mode">
+                      <el-radio-button value="text-to-image">文生图</el-radio-button>
+                      <el-radio-button value="image-to-image">图生图</el-radio-button>
+                      <el-radio-button value="compose-image">合成图</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="模型后缀">
+                    <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
+                      <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
+                  <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
+                  <el-form-item label="移动到">
+                    <el-select
+                      :model-value="''"
+                      placeholder="选择目标分组"
+                      :disabled="!moveTargets(groupName).length"
+                      style="width: 220px"
+                      @change="movePreset(groupName, i, $event)"
+                    >
+                      <el-option v-for="t in moveTargets(groupName)" :key="`${groupName}-mv-${t.value}`" :value="t.value" :label="t.label" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(groupName, i)">删除此预设</el-button></el-form-item>
+                </el-form>
+              </el-collapse-item>
+            </el-collapse>
+          </el-collapse-item>
+        </el-collapse>
+      </k-card>
+
+      <!-- ══ ⑤ 积分与运营 ══ -->
       <k-card title="积分与运营" class="section">
-        <el-form label-width="200px">
-          <el-form-item label="积分单位名称"><el-input v-model="cfg.creditUnitName" style="width: 160px" /></el-form-item>
-          <el-form-item label="每日免费积分"><el-input-number v-model="cfg.dailyFreeCredits" :min="0" :step="1" /></el-form-item>
-          <el-form-item label="积分汇率（1 美元 = N 积分）"><el-input-number v-model="cfg.creditExchangeRate" :min="0" :step="100" /></el-form-item>
-          <el-form-item label="定价加成倍率"><el-input-number v-model="cfg.costMarkup" :min="0.1" :step="0.05" /></el-form-item>
-          <el-form-item label="yunwu 积分→人民币"><el-input-number v-model="cfg.yunwuCreditToRmb" :min="0.01" :max="100" :step="0.01" /><div style="font-size:0.75rem;color:var(--fg3)">默认 0.5（100积分=¥50）。仅用于 aka-tools 成本展示，不参与计费。</div></el-form-item>
-          <el-form-item label="1 元 = N 积分（经营参考）"><el-input-number v-model="cfg.creditsPerCny" :min="0" :step="10" /></el-form-item>
-          <el-form-item label="生成结果中显示消耗"><el-switch v-model="cfg.showCreditCostInResult" /></el-form-item>
-          <el-form-item label="显示剩余积分明细"><el-switch v-model="cfg.showQuotaInImageCommands" /><div class="hint">需先开启"生成结果中显示消耗"。</div></el-form-item>
-          <el-form-item label="管理员余额显示估算金额"><el-switch v-model="cfg.showEstimatedCny" /></el-form-item>
-          <el-form-item label="充值提示最低积分"><el-input-number v-model="cfg.minRechargeCredits" :min="0" :max="1000000" :step="1" /></el-form-item>
-          <el-form-item label="限流窗口（秒）"><el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" /></el-form-item>
-          <el-form-item label="窗口内最大请求数"><el-input-number v-model="cfg.rateLimitMax" :min="1" :max="20" /></el-form-item>
+        <el-form label-width="260px">
+          <el-divider content-position="left">A · 平台积分规则</el-divider>
+          <el-form-item label="平台积分单位名称">
+            <el-input v-model="cfg.creditUnitName" style="width: 160px" />
+            <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
+          </el-form-item>
+          <el-form-item label="试用图片张数（每用户）">
+            <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
+            <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
+          </el-form-item>
+
+          <el-divider content-position="left">B · 自动定价（供应商积分 → 平台积分 → 用户售价）</el-divider>
+          <el-form-item label="1 元人民币 = N 平台积分">
+            <el-input-number v-model="cfg.creditsPerCny" :min="0.01" :step="1" :precision="2" />
+            <div class="hint">人民币与平台积分的换算比例；同时用作管理员余额/充值提示的估值。</div>
+          </el-form-item>
+          <el-form-item label="全局盈利加成 %">
+            <el-input-number v-model="cfg.pricingMarkupPercent" :min="0" :max="10000" :step="1" :precision="2" />
+            <div class="hint">用户扣费 = 平台积分成本 × (1 + N/100)。例如 30 表示在成本上加价 30%。</div>
+          </el-form-item>
+          <el-form-item label="供应商 → 人民币汇率">
+            <el-input :model-value="'1 供应商积分 = ¥0.50'" readonly style="width: 220px" />
+            <div class="hint">yunwu 官方约定值，不作为可配置项；修改需要新版本发布。</div>
+          </el-form-item>
+          <div class="hint" style="margin-left: 16px">
+            公式：用户扣费 = 供应商积分 × 0.5 × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
+            修改本区两项后无需重新探测，扣费会即时按持久化的探测结果重算。
+          </div>
+
+          <el-divider content-position="left">C · 人民币展示</el-divider>
+          <el-form-item label="管理员余额是否显示人民币估值">
+            <el-switch v-model="cfg.showEstimatedCny" />
+          </el-form-item>
+          <el-form-item label="充值提示最低积分">
+            <el-input-number v-model="cfg.minRechargeCredits" :min="0" :max="1000000" :step="1" />
+            <div class="hint">用户查询提示中显示的最小充值积分档位；不限制管理员输入。</div>
+          </el-form-item>
+
+          <el-divider content-position="left">D · 生成结果展示</el-divider>
+          <el-form-item label="生成结束时显示本次消耗">
+            <el-switch v-model="cfg.showCreditCostInResult" />
+          </el-form-item>
+          <el-form-item label="附带显示剩余积分明细">
+            <el-switch v-model="cfg.showQuotaInImageCommands" />
+            <div class="hint">需先开启上方"生成结束时显示本次消耗"。</div>
+          </el-form-item>
+
+          <el-divider content-position="left">E · 请求限流</el-divider>
+          <el-form-item label="限流统计窗口（秒）">
+            <el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" />
+          </el-form-item>
+          <el-form-item label="窗口内最大请求数（每用户）">
+            <el-input-number v-model="cfg.rateLimitMax" :min="1" :max="20" />
+          </el-form-item>
         </el-form>
       </k-card>
 
@@ -228,68 +370,6 @@
           <el-form-item label="拦截统计窗口（秒）"><el-input-number v-model="cfg.securityBlockWindow" :min="60" :max="3600" :step="60" /></el-form-item>
           <el-form-item label="窗口内拦截警示阈值"><el-input-number v-model="cfg.securityBlockWarningThreshold" :min="1" :max="10" /></el-form-item>
         </el-form>
-      </k-card>
-
-      <!-- ══ ⑤ Prompt 预设 / 快捷命令 ══ -->
-      <k-card class="section">
-        <template #header>
-          <div class="card-header">
-            <span>Prompt 预设 / 快捷命令</span>
-            <el-button size="small" @click="addStyle">添加预设</el-button>
-          </div>
-        </template>
-        <el-collapse>
-          <el-collapse-item v-for="(style, i) in cfg.styles" :key="i" :title="style.commandName || `预设 ${i + 1}`">
-            <el-form label-width="110px">
-              <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
-              <el-form-item label="生成模式">
-                <el-radio-group v-model="style.mode">
-                  <el-radio-button value="text-to-image">文生图</el-radio-button>
-                  <el-radio-button value="image-to-image">图生图</el-radio-button>
-                  <el-radio-button value="compose-image">合成图</el-radio-button>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item label="模型后缀">
-                <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
-                  <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
-              <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
-              <el-form-item><el-button type="danger" size="small" @click="cfg.styles.splice(i, 1)">删除此预设</el-button></el-form-item>
-            </el-form>
-          </el-collapse-item>
-        </el-collapse>
-      </k-card>
-
-      <!-- ══ Prompt 分组 ══ -->
-      <k-card class="section">
-        <template #header>
-          <div class="card-header">
-            <span>Prompt 分组</span>
-            <el-button size="small" @click="addStyleGroup">添加分组</el-button>
-          </div>
-        </template>
-        <div class="hint">用于管理旧版分组快捷命令；每个分组内的预设会继续注册为聊天命令。</div>
-        <el-collapse>
-          <el-collapse-item v-for="groupName in styleGroupNames" :key="groupName" :title="groupName">
-            <el-form label-width="100px">
-              <el-form-item label="分组名称">
-                <el-input :model-value="groupName" style="width: 220px" @change="renameStyleGroup(groupName, String($event))" />
-              </el-form-item>
-              <el-form-item label="预设 JSON">
-                <el-input
-                  :model-value="formatStyleGroupPrompts(groupName)"
-                  type="textarea"
-                  :rows="8"
-                  @change="updateStyleGroupPrompts(groupName, String($event))"
-                />
-                <div class="hint">格式为 Prompt 预设数组；保存前会校验为 JSON 数组。</div>
-              </el-form-item>
-              <el-form-item><el-button type="danger" size="small" @click="removeStyleGroup(groupName)">删除分组</el-button></el-form-item>
-            </el-form>
-          </el-collapse-item>
-        </el-collapse>
       </k-card>
 
       <!-- ══ ⑥ 用户与权限 ══ -->
@@ -303,9 +383,6 @@
           </el-form-item>
           <el-form-item label="受限模型白名单">
             <el-select v-model="cfg.modelWhitelistUsers" multiple filterable allow-create default-first-option style="width: 420px" />
-          </el-form-item>
-          <el-form-item label="豁免平台（跳过扣费限流）">
-            <el-select v-model="cfg.unlimitedPlatforms" multiple filterable allow-create default-first-option style="width: 420px" />
           </el-form-item>
         </el-form>
       </k-card>
@@ -332,18 +409,12 @@
         </el-form>
       </k-card>
 
-      <!-- ══ ⑧ 运行与诊断 ══ -->
-      <k-card title="运行与诊断" class="section">
+      <!-- ══ ⑧ 生成默认值 ══ -->
+      <k-card title="生成默认值" class="section">
         <el-form label-width="200px">
-          <el-form-item label="日志级别">
-            <el-radio-group v-model="cfg.logLevel">
-              <el-radio-button value="simple">simple</el-radio-button>
-              <el-radio-button value="detail">detail</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
           <el-form-item label="默认生成张数"><el-input-number v-model="cfg.defaultNumImages" :min="1" :max="4" /></el-form-item>
-          <el-form-item label="上游超时（秒）"><el-input-number v-model="cfg.apiTimeout" :min="10" :max="600" :step="10" /></el-form-item>
         </el-form>
+        <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
       </k-card>
 
       <div class="bottom-spacer"></div>
@@ -418,61 +489,124 @@ const catalogAge = computed(() => {
   const min = Math.round((Date.now() - t) / 60000)
   return min < 60 ? `${min} 分钟前` : `${Math.round(min / 60)} 小时前`
 })
-const billingUsage = computed(() => state.value?.billing?.totalUsageUsd != null ? `$${state.value.billing.totalUsageUsd.toFixed(2)}` : '—')
+const supplierCreditsDisplay = computed(() => {
+  const billing = state.value?.billing
+  const credits = billing?.supplierCredits ?? billing?.platformCredits ?? billing?.totalUsageUsd
+  return typeof credits === 'number' ? credits.toFixed(2) : '—'
+})
 const billingLimit = computed(() => state.value?.billing?.hardLimitUsd != null ? `$${state.value.billing.hardLimitUsd.toFixed(0)}` : '—')
 
 function modeLabel(m: string) {
   return { 'text-to-image': '文生图', 'image-to-image': '图生图', 'compose-image': '合成图' }[m] ?? m
 }
 function modelOptionLabel(m: any) {
-  return `${m.id}（${m.catalogPrice?.label ?? '目录价格未知'}）`
+  return `${m.id}（${m.yunwuCost?.label ?? '成本未知'}）`
 }
 function mappingValid(row: any) {
-  return selectableModels.value.some((m: any) => m.id === row.modelId) && row.chargePolicy?.type !== 'disabled'
+  return selectableModels.value.some((m: any) => m.id === row.modelId)
 }
 
 function addMapping() {
-  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false, chargePolicy: { type: 'disabled', reason: '请显式配置收费策略' } })
+  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false })
 }
 function moveMapping(i: number, dir: number) {
   const arr = cfg.value.modelMappings
   const [item] = arr.splice(i, 1)
   arr.splice(i + dir, 0, item)
 }
-function addStyle() {
-  cfg.value.styles.push({ commandName: '', mode: 'image-to-image', modelSuffix: '', description: '', prompt: '' })
+// Prompt 预设 / 分组：groupName === null 表示未分组，绑定 cfg.styles；
+// 其他分组绑定 cfg.styleGroups[groupName].prompts。分组仅用于后台分类，
+// 聊天命令仍以每个预设自己的 commandName 直接调用（不生成父命令）。
+const styleGroupNames = computed(() => Object.keys(cfg.value?.styleGroups ?? {}))
+
+function makeEmptyPreset() {
+  return { commandName: '', mode: 'image-to-image', modelSuffix: '', description: '', prompt: '' }
 }
 
-const styleGroupNames = computed(() => Object.keys(cfg.value?.styleGroups ?? {}))
+function getPresetArray(groupName: string | null): any[] | null {
+  if (groupName == null) return cfg.value.styles
+  const group = cfg.value.styleGroups?.[groupName]
+  if (!group) return null
+  if (!Array.isArray(group.prompts)) group.prompts = []
+  return group.prompts
+}
+
+function addStylePreset(groupName: string | null = null) {
+  const arr = getPresetArray(groupName)
+  if (!arr) {
+    ElMessage.error(`分组不存在：${groupName}`)
+    return
+  }
+  arr.push(makeEmptyPreset())
+}
+
+function removeStylePreset(groupName: string | null, index: number) {
+  const arr = getPresetArray(groupName)
+  if (!arr || index < 0 || index >= arr.length) return
+  arr.splice(index, 1)
+}
+
+function moveTargets(currentGroupName: string | null) {
+  const targets: Array<{ value: string; label: string }> = []
+  if (currentGroupName !== null) targets.push({ value: '__ungrouped__', label: '未分组' })
+  for (const name of styleGroupNames.value) {
+    if (name !== currentGroupName) targets.push({ value: name, label: name })
+  }
+  return targets
+}
+
+function movePreset(sourceGroup: string | null, index: number, rawTarget: string) {
+  if (!rawTarget) return
+  const targetGroup = rawTarget === '__ungrouped__' ? null : rawTarget
+  if (sourceGroup === targetGroup) return
+  const sourceArr = getPresetArray(sourceGroup)
+  if (!sourceArr || index < 0 || index >= sourceArr.length) return
+  const targetArr = getPresetArray(targetGroup)
+  if (!targetArr) {
+    ElMessage.error(`目标分组不存在：${targetGroup}`)
+    return
+  }
+  const [item] = sourceArr.splice(index, 1)
+  targetArr.push(item)
+  ElMessage.success(`已移动到 ${targetGroup ?? '未分组'}`)
+}
+
 function addStyleGroup() {
   let index = 1
   let name = `分组${index}`
   while (cfg.value.styleGroups[name]) name = `分组${++index}`
   cfg.value.styleGroups = { ...cfg.value.styleGroups, [name]: { prompts: [] } }
 }
+
 function removeStyleGroup(name: string) {
+  const group = cfg.value.styleGroups?.[name]
+  if (!group) return
+  const prompts = Array.isArray(group.prompts) ? group.prompts : []
+  if (prompts.length > 0) {
+    cfg.value.styles.push(...prompts.map((p: any) => ({ ...p })))
+    ElMessage.info(`分组 "${name}" 内 ${prompts.length} 个预设已移至未分组`)
+  }
   const next = { ...cfg.value.styleGroups }
   delete next[name]
   cfg.value.styleGroups = next
 }
+
 function renameStyleGroup(oldName: string, rawName: string) {
-  const name = rawName.trim()
-  if (!name || name === oldName || cfg.value.styleGroups[name]) return
-  const next: Record<string, any> = {}
-  for (const [key, value] of Object.entries(cfg.value.styleGroups)) next[key === oldName ? name : key] = value
-  cfg.value.styleGroups = next
-}
-function formatStyleGroupPrompts(name: string) {
-  return JSON.stringify(cfg.value.styleGroups?.[name]?.prompts ?? [], null, 2)
-}
-function updateStyleGroupPrompts(name: string, raw: string) {
-  try {
-    const prompts = JSON.parse(raw)
-    if (!Array.isArray(prompts)) throw new Error('预设必须是数组')
-    cfg.value.styleGroups[name] = { prompts }
-  } catch (error) {
-    ElMessage.error(`Prompt 分组 JSON 无效：${error instanceof Error ? error.message : String(error)}`)
+  const name = String(rawName ?? '').trim()
+  if (!name) {
+    ElMessage.error('分组名不能为空')
+    return
   }
+  if (name === oldName) return
+  if (cfg.value.styleGroups[name]) {
+    ElMessage.error(`分组名重复：${name}`)
+    return
+  }
+  const next: Record<string, any> = {}
+  for (const [key, value] of Object.entries(cfg.value.styleGroups)) {
+    next[key === oldName ? name : key] = value
+  }
+  cfg.value.styleGroups = next
 }
 
 async function refreshCatalog() {
@@ -557,4 +691,11 @@ async function saveAll() {
 .unsupported-block { margin-top: 0.75rem; }
 .extra-headers { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
 .extra-header-row { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
+.probe-cell { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+.probe-line { font-size: 0.75rem; line-height: 1.2; }
+.probe-line.probe-ok { color: var(--el-color-success); }
+.probe-line.probe-err { color: var(--el-color-danger); }
+.preset-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
+.preset-section-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.preset-section-title { font-weight: 600; color: var(--fg1); }
 </style>

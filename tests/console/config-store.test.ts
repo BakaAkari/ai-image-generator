@@ -3,17 +3,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { mergeConfig, readConfig, writeConfig } from '../../src/console/config-store.js'
+import { GLOBAL_RUNTIME_FIELDS, mergeConfig, mergeGlobalRuntimeFields, readConfig, writeConfig } from '../../src/console/config-store.js'
 import type { Config } from '../../src/shared/config.js'
 
 function baseConfig(): Config {
   return {
     activeSupplier: 'yunwu',
     catalogRefreshHours: 6,
-    creditExchangeRate: 1000,
-    costMarkup: 1.3,
+    pricingMarkupPercent: 30,
     yunwuCreditToRmb: 0.5,
-    dailyFreeCredits: 1,
+    trialImageLimit: 1,
     defaultCreditCostPerImage: 0.3,
     defaultNumImages: 1,
     logLevel: 'simple',
@@ -58,11 +57,11 @@ describe('aka-tools JSON config store', () => {
     const ctx = { baseDir } as any
     const dataDir = join(baseDir, 'data/aka-ai-image-generator')
     await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }))
-    await writeFile(join(dataDir, 'settings.json'), JSON.stringify({ dailyFreeCredits: 42, modelMappings: [{ suffix: 'new', modelId: 'gpt-image-2' }] }))
+    await writeFile(join(dataDir, 'settings.json'), JSON.stringify({ trialImageLimit: 42, modelMappings: [{ suffix: 'new', modelId: 'gpt-image-2' }] }))
 
     const loaded = await readConfig(ctx, baseConfig())
 
-    expect(loaded.dailyFreeCredits).toBe(42)
+    expect(loaded.trialImageLimit).toBe(42)
     expect(loaded.modelMappings).toEqual([{ suffix: 'new', modelId: 'gpt-image-2' }])
     expect(loaded.providerSettings?.openaiCompatibleApiKey).toBe('secret')
   })
@@ -80,12 +79,12 @@ describe('aka-tools JSON config store', () => {
   it('writes complete JSON atomically and can read it back', async () => {
     const baseDir = await mkdtemp(join(tmpdir(), 'aka-config-'))
     const ctx = { baseDir } as any
-    const saved = { ...baseConfig(), dailyFreeCredits: 77 }
+    const saved = { ...baseConfig(), trialImageLimit: 77 }
 
     await writeConfig(ctx, saved)
 
     const raw = JSON.parse(await readFile(join(baseDir, 'data/aka-ai-image-generator/settings.json'), 'utf8'))
-    expect(raw.dailyFreeCredits).toBe(77)
+    expect(raw.trialImageLimit).toBe(77)
     expect(await readConfig(ctx, baseConfig())).toEqual(saved)
   })
 
@@ -123,5 +122,140 @@ describe('aka-tools JSON config store', () => {
 
     expect(next.providerSettings?.openaiCompatibleApiKey).toBe('secret')
     expect(next.providerSettings?.openaiCompatibleExtraHeaders).toEqual({ 'X-New': 'value' })
+  })
+
+  it('pins global runtime fields to the koishi bootstrap on restart, even when settings.json holds older values', async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), 'aka-config-'))
+    const ctx = { baseDir } as any
+    const dataDir = join(baseDir, 'data/aka-ai-image-generator')
+    await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }))
+    await writeFile(
+      join(dataDir, 'settings.json'),
+      JSON.stringify({
+        apiTimeout: 999,
+        catalogRefreshHours: 72,
+        logLevel: 'detail',
+        trialImageLimit: 42,
+      }),
+    )
+
+    const bootstrap = { ...baseConfig(), apiTimeout: 45, catalogRefreshHours: 3, logLevel: 'simple' } as Config
+    const loaded = await readConfig(ctx, bootstrap)
+
+    expect(loaded.apiTimeout).toBe(45)
+    expect(loaded.catalogRefreshHours).toBe(3)
+    expect(loaded.logLevel).toBe('simple')
+    expect(loaded.trialImageLimit).toBe(42)
+  })
+
+  it('drops incoming global runtime fields from the aka-tools payload so they cannot overwrite current values', () => {
+    const current = { ...baseConfig(), apiTimeout: 45, catalogRefreshHours: 3, logLevel: 'simple' } as Config
+    const next = mergeConfig(current, {
+      apiTimeout: 999,
+      catalogRefreshHours: 72,
+      logLevel: 'detail',
+      trialImageLimit: 88,
+    } as Partial<Config>)
+
+    expect(next.apiTimeout).toBe(45)
+    expect(next.catalogRefreshHours).toBe(3)
+    expect(next.logLevel).toBe('simple')
+    expect(next.trialImageLimit).toBe(88)
+  })
+
+  it('keeps business fields saved-wins even when global fields exist in bootstrap', async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), 'aka-config-'))
+    const ctx = { baseDir } as any
+    const dataDir = join(baseDir, 'data/aka-ai-image-generator')
+    await import('node:fs/promises').then(fs => fs.mkdir(dataDir, { recursive: true }))
+    await writeFile(
+      join(dataDir, 'settings.json'),
+      JSON.stringify({
+        trialImageLimit: 42,
+        chatlunaContextHistorySize: 77,
+      }),
+    )
+
+    const bootstrap = { ...baseConfig(), trialImageLimit: 1, chatlunaContextHistorySize: 20 } as Config
+    const loaded = await readConfig(ctx, bootstrap)
+
+    expect(loaded.trialImageLimit).toBe(42)
+    expect(loaded.chatlunaContextHistorySize).toBe(77)
+  })
+
+  it('exports GLOBAL_RUNTIME_FIELDS as the exact set of Koishi-managed fields', () => {
+    expect([...GLOBAL_RUNTIME_FIELDS].sort()).toEqual(['apiTimeout', 'catalogRefreshHours', 'logLevel'])
+  })
+
+  describe('mergeGlobalRuntimeFields (Koishi Config page ownership boundary)', () => {
+    it('only updates the three global runtime fields, ignoring incoming business defaults', () => {
+      const current = {
+        ...baseConfig(),
+        apiTimeout: 45,
+        catalogRefreshHours: 3,
+        logLevel: 'simple',
+        trialImageLimit: 42,
+        modelMappings: [{ suffix: 'saved', modelId: 'm-1' }],
+      } as Config
+      const incoming = {
+        apiTimeout: 90,
+        catalogRefreshHours: 12,
+        logLevel: 'detail',
+        trialImageLimit: 1,
+        modelMappings: [],
+        chatlunaContextHistorySize: 999,
+        providerSettings: { openaiCompatibleApiKey: 'stomp' },
+      } as unknown as Config
+      const next = mergeGlobalRuntimeFields(current, incoming)
+
+      expect(next.apiTimeout).toBe(90)
+      expect(next.catalogRefreshHours).toBe(12)
+      expect(next.logLevel).toBe('detail')
+      expect(next.trialImageLimit).toBe(42)
+      expect(next.modelMappings).toEqual([{ suffix: 'saved', modelId: 'm-1' }])
+      expect(next.chatlunaContextHistorySize).toBe(current.chatlunaContextHistorySize)
+      expect(next.providerSettings?.openaiCompatibleApiKey).toBe('secret')
+    })
+
+    it('leaves current global values untouched when incoming omits the fields', () => {
+      const current = {
+        ...baseConfig(),
+        apiTimeout: 45,
+        catalogRefreshHours: 3,
+        logLevel: 'simple',
+      } as Config
+      const next = mergeGlobalRuntimeFields(current, { trialImageLimit: 7 } as Partial<Config>)
+
+      expect(next.apiTimeout).toBe(45)
+      expect(next.catalogRefreshHours).toBe(3)
+      expect(next.logLevel).toBe('simple')
+      expect(next.trialImageLimit).toBe(current.trialImageLimit)
+    })
+
+    it('leaves current global values untouched when incoming explicitly sends undefined', () => {
+      const current = { ...baseConfig(), apiTimeout: 45, catalogRefreshHours: 3, logLevel: 'simple' } as Config
+      const incoming = { apiTimeout: undefined, catalogRefreshHours: undefined, logLevel: undefined } as Partial<Config>
+      const next = mergeGlobalRuntimeFields(current, incoming)
+
+      expect(next.apiTimeout).toBe(45)
+      expect(next.catalogRefreshHours).toBe(3)
+      expect(next.logLevel).toBe('simple')
+    })
+
+    it('accepts partial updates: only the field that changed moves', () => {
+      const current = { ...baseConfig(), apiTimeout: 45, catalogRefreshHours: 3, logLevel: 'simple' } as Config
+      const next = mergeGlobalRuntimeFields(current, { catalogRefreshHours: 8 } as Partial<Config>)
+
+      expect(next.apiTimeout).toBe(45)
+      expect(next.catalogRefreshHours).toBe(8)
+      expect(next.logLevel).toBe('simple')
+    })
+
+    it('does not mutate the current config in place', () => {
+      const current = { ...baseConfig(), apiTimeout: 45 } as Config
+      const snapshot = JSON.parse(JSON.stringify(current))
+      mergeGlobalRuntimeFields(current, { apiTimeout: 999, trialImageLimit: 1 } as Partial<Config>)
+      expect(current).toEqual(snapshot)
+    })
   })
 })

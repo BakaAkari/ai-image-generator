@@ -39,6 +39,31 @@ export function rowsToObject(rows: Array<{ key: string; value: string }>): Recor
 }
 
 /**
+ * 深拷贝并防御脏 styleGroups：
+ * - 非对象/数组 → {}
+ * - 每个 entry：key 必须是非空字符串；value 必须是对象
+ * - prompts 非数组 → []
+ * - 每个 preset 复制为独立对象，避免 v-model 直接改到远端引用
+ */
+export function normalizeStyleGroups(raw: unknown): Record<string, { prompts: any[] }> {
+  const out: Record<string, { prompts: any[] }> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+    const key = typeof rawKey === 'string' ? rawKey.trim() : ''
+    if (!key) continue
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) continue
+    const rawPrompts = (rawValue as { prompts?: unknown }).prompts
+    const prompts = Array.isArray(rawPrompts)
+      ? rawPrompts
+          .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+          .map((item) => ({ ...item }))
+      : []
+    out[key] = { prompts }
+  }
+  return out
+}
+
+/**
  * Merge raw remote config with client-side defaults for every user-editable
  * field. Any field absent from `raw` is filled in so v-model bindings never
  * hit `undefined` and saves cannot silently drop fields.
@@ -49,32 +74,43 @@ export function normalizeConfig(raw: any): any {
   c.setupGuide = source.setupGuide ?? ''
   const rawHeaders = source.providerSettings?.openaiCompatibleExtraHeaders
   c.providerSettings = {
-    openaiCompatibleApiKey: source.providerSettings?.openaiCompatibleApiKey ?? '',
+    openaiCompatibleApiKey: source.openaiCompatibleApiKey ?? '',
     openaiCompatibleApiBase: source.providerSettings?.openaiCompatibleApiBase ?? '',
-    gptOfficialApiKey: source.providerSettings?.gptOfficialApiKey ?? '',
-    geminiOfficialApiKey: source.providerSettings?.geminiOfficialApiKey ?? '',
+    gptOfficialApiKey: source.gptOfficialApiKey ?? '',
+    geminiOfficialApiKey: source.geminiOfficialApiKey ?? '',
     openaiCompatibleExtraHeaders: sanitizeHeaders(rawHeaders),
   }
   c.activeSupplier ??= 'yunwu'
-  c.catalogRefreshHours ??= 6
-  c.creditExchangeRate ??= 1000
-  c.costMarkup ??= 1.3
-  c.yunwuCreditToRmb ??= 0.5
-  c.yunwuGroup ??= 'default'
+  // 定价字段：pricingMarkupPercent 从旧 costMarkup 迁移（1.3→30）；creditsPerCny 保持已存值
+  // 或用 10 作为兜底默认，不主动覆盖本地已有值。creditExchangeRate 仅作旧配置读取。
+  if (typeof c.pricingMarkupPercent !== 'number' || !Number.isFinite(c.pricingMarkupPercent)) {
+    if (typeof c.costMarkup === 'number' && Number.isFinite(c.costMarkup) && c.costMarkup > 0) {
+      c.pricingMarkupPercent = Math.max(0, Math.round((c.costMarkup - 1) * 100 * 100) / 100)
+    } else {
+      c.pricingMarkupPercent = 30
+    }
+  }
+  delete c.creditExchangeRate
+  delete c.costMarkup
+  if (typeof c.creditsPerCny !== 'number' || !Number.isFinite(c.creditsPerCny) || c.creditsPerCny <= 0) {
+    c.creditsPerCny = 10
+  }
+  // yunwu 分组倍率：默认 1（default 分组）。旧字符串 yunwuGroup 只用于后端一次性
+  // 数字化迁移，面板不再暴露、也不需要在此重新合成默认值。
+  if (typeof c.yunwuGroupRatio !== 'number' || !Number.isFinite(c.yunwuGroupRatio) || c.yunwuGroupRatio <= 0) {
+    c.yunwuGroupRatio = 1
+  }
   c.creditUnitName ??= '积分'
-  c.dailyFreeCredits ??= 5
+  c.trialImageLimit ??= 3
   c.showCreditCostInResult ??= true
   c.showQuotaInImageCommands ??= true
   c.showEstimatedCny ??= false
   c.minRechargeCredits ??= 0
-  c.creditsPerCny ??= 0
   c.rateLimitWindow ??= 300
   c.rateLimitMax ??= 3
   c.securityBlockWindow ??= 600
   c.securityBlockWarningThreshold ??= 3
-  c.logLevel ??= 'simple'
   c.defaultNumImages ??= 1
-  c.apiTimeout ??= 60
   c.chatlunaEnabled ??= false
   c.chatlunaContextInjectionEnabled ??= true
   c.chatlunaExposeQuotaTool ??= true
@@ -85,15 +121,17 @@ export function normalizeConfig(raw: any): any {
   c.yesimbotEnabled ??= false
   c.yesimbotExposeQuotaTool ??= true
   c.yesimbotExposeStyleListTool ??= true
-  c.modelMappings = Array.isArray(source.modelMappings) ? source.modelMappings.map((m: any) => ({
-    ...m,
-    chargePolicy: m?.chargePolicy ?? { type: 'disabled', reason: 'pricing unavailable' },
-  })) : []
-  c.styles = Array.isArray(source.styles) ? source.styles.map((s: any) => ({ ...s })) : []
-  c.styleGroups = source.styleGroups && typeof source.styleGroups === 'object'
-    ? JSON.parse(JSON.stringify(source.styleGroups))
-    : {}
-  for (const key of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers', 'unlimitedPlatforms']) {
+  c.modelMappings = Array.isArray(source.modelMappings) ? source.modelMappings.map((m: any) => {
+    return { ...m }
+  }) : []
+  // modelCostProbes is no longer used by the panel after probe removal
+  c.styles = Array.isArray(source.styles)
+    ? source.styles
+        .filter((s: unknown): s is Record<string, unknown> => !!s && typeof s === 'object' && !Array.isArray(s))
+        .map((s: Record<string, unknown>) => ({ ...s }))
+    : []
+  c.styleGroups = normalizeStyleGroups(source.styleGroups)
+  for (const key of ['adminUsers', 'permanentMembers', 'modelWhitelistUsers']) {
     c[key] = Array.isArray(source[key]) ? [...source[key]] : []
   }
   return c
@@ -107,11 +145,8 @@ export function normalizeConfig(raw: any): any {
 export const USER_EDITABLE_FIELDS = [
   'setupGuide',
   'activeSupplier',
-  'catalogRefreshHours',
-  'creditExchangeRate',
-  'costMarkup',
-  'yunwuCreditToRmb',
-  'yunwuGroup',
+  'pricingMarkupPercent',
+  'yunwuGroupRatio',
   'providerSettings',
   'styles',
   'styleGroups',
@@ -119,12 +154,11 @@ export const USER_EDITABLE_FIELDS = [
   'defaultNumImages',
   'modelMappings',
   'creditUnitName',
-  'dailyFreeCredits',
+  'trialImageLimit',
   'showCreditCostInResult',
   'creditsPerCny',
   'showEstimatedCny',
   'minRechargeCredits',
-  'unlimitedPlatforms',
   'rateLimitWindow',
   'rateLimitMax',
   'securityBlockWindow',
@@ -132,7 +166,6 @@ export const USER_EDITABLE_FIELDS = [
   'adminUsers',
   'permanentMembers',
   'modelWhitelistUsers',
-  'logLevel',
   'chatlunaEnabled',
   'chatlunaContextInjectionEnabled',
   'chatlunaExposeQuotaTool',
@@ -143,7 +176,17 @@ export const USER_EDITABLE_FIELDS = [
   'yesimbotEnabled',
   'yesimbotExposeQuotaTool',
   'yesimbotExposeStyleListTool',
+] as const
+
+/**
+ * 全局运行项：apiTimeout / catalogRefreshHours / logLevel 由 Koishi 原插件设置页
+ * 独占管理，aka-tools 不再绑定这些字段。normalizeConfig 通过 `{ ...source }`
+ * 透传，保证从面板保存的 payload 里保留当前运行值，避免 mergeConfig 后覆盖。
+ */
+export const GLOBAL_RUNTIME_FIELDS = [
   'apiTimeout',
+  'catalogRefreshHours',
+  'logLevel',
 ] as const
 
 export const PROVIDER_SETTINGS_FIELDS = [
@@ -166,4 +209,8 @@ export const LEGACY_FIELDS = [
   'openaiCompatibleExtraHeaders',
   'gptOfficialApiKey',
   'geminiOfficialApiKey',
+  'yunwuGroup',
+  'yunwuCreditToRmb',
+  'creditExchangeRate',
+  'costMarkup',
 ] as const
