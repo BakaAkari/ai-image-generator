@@ -26,6 +26,7 @@ class AsyncLock {
 
 export interface CreditBalanceV2 {
   trialImagesUsed: number
+  trialDate?: string
   purchasedCredits: number
   totalGrantedCredits: number
   totalConsumedCredits: number
@@ -428,6 +429,7 @@ export class UserManager {
       updatedAt: now,
       balance: {
         trialImagesUsed: 0,
+        trialDate: new Date().toISOString().slice(0, 10),
         purchasedCredits: 0,
         totalGrantedCredits: 0,
         totalConsumedCredits: 0,
@@ -444,6 +446,11 @@ export class UserManager {
 
   private getTrialRemaining(userData: UserAccountV2, config: Config): number {
     const limit = config.trialImageLimit ?? 3
+    const today = new Date().toISOString().slice(0, 10)
+    if (userData.balance.trialDate !== today) {
+      userData.balance.trialImagesUsed = 0
+      userData.balance.trialDate = today
+    }
     return Math.max(0, limit - userData.balance.trialImagesUsed)
   }
 
@@ -625,6 +632,7 @@ export class UserManager {
       if (reservation.isTrial) {
         // 试用：仅增加计数器，不涉及积分
         user.balance.trialImagesUsed += delivered
+        user.balance.trialDate = new Date().toISOString().slice(0, 10)
         user.statistics.totalImagesGenerated += delivered
         user.statistics.totalGenerationRequests += 1
         if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
