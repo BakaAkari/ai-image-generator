@@ -116,7 +116,7 @@ function mergeSavedWithBootstrap(bootstrap: Config, saved: Partial<Config>): Con
 
   for (const field of SECRET_FIELDS) {
     const incomingValue = savedBusiness[field]
-    if (isMaskedSecret(incomingValue)) next[field] = bootstrap[field]
+    if (incomingValue === undefined || isMaskedSecret(incomingValue)) next[field] = bootstrap[field]
   }
   return next
 }
