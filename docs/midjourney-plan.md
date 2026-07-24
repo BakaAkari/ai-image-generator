@@ -143,3 +143,7 @@ generateImages(prompt, imageUrls, numImages, options, onImageGenerated)
 | mj_describe | 0.15 | ¥0.075 |
 | mj_modal | 0.3 | ¥0.15 |
 | mj_reroll | 0.3 | ¥0.15 |
+
+## 与 Kling 的关系
+
+Kling 在 yunwu 上使用与 MJ 完全相同的异步 API（`/mj/submit/imagine` + `/mj/task/{id}/fetch`），两者共用同一个 `MjProvider`。详见 [kling-plan.md](./kling-plan.md)。
