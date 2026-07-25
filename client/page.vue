@@ -6,6 +6,9 @@
     <!-- 顶层浮动工具按钮：图像 / 视频 / 存储（Teleport 到 body，避免祖先 transform 使 fixed 失效） -->
     <Teleport to="body">
     <div class="floating-tools" v-if="isAkaToolsRoute">
+      <div class="tool-btn" :class="{ saving }" title="保存全部设置" @click="saveAll">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      </div>
       <div class="tool-btn active" title="图像生成设置">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
@@ -427,16 +430,9 @@
           <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
         </k-card>
 
-        <div class="bottom-spacer"></div>
       </div>
     </div>
 
-    <!-- 固定底部保存栏：常驻可视窗口底部，不随内容滚动 -->
-    <Teleport to="body">
-      <div class="save-bar" v-if="isAkaToolsRoute">
-        <el-button class="save-btn" type="primary" :loading="saving" @click="saveAll">保存全部设置</el-button>
-      </div>
-    </Teleport>
   </k-layout>
 </template>
 
@@ -653,19 +649,6 @@ async function saveAll() {
 /* 页面滚动容器：k-layout 内容区撑满并自行滚动 */
 .page-scroll { height: 100%; overflow-y: auto; padding: 1rem; box-sizing: border-box; }
 .page-wrapper { max-width: 860px; margin: 0 auto; }
-.bottom-spacer { height: 3.5rem; }
-
-.save-btn { flex-shrink: 0; width: auto; }
-
-</style>
-
-<style lang="scss">
-/* 固定底部保存栏：常驻可视底部，横向对齐内容区（避开左侧 ~4rem 菜单栏），不随滚动 */
-.save-bar { position: fixed; left: 4rem; right: 0; bottom: 0; z-index: 1990;
-  display: flex; justify-content: flex-end; padding: 0.6rem 1.2rem;
-  background: var(--bg0, rgba(20,20,20,0.92)); backdrop-filter: blur(6px);
-  border-top: 1px solid var(--border); }
-.save-bar .save-btn { flex-shrink: 0; width: auto; }
 
 /* 顶层浮动工具按钮组：固定定位，不占用布局区域（全局样式，Teleport 目标在组件外） */
 .floating-tools { position: fixed; top: 3.5rem; right: 1rem; z-index: 2000;
