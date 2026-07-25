@@ -375,7 +375,7 @@
                     <el-option label="飞书 (lark)" value="lark" />
                     <el-option label="QQ (onebot)" value="onebot" />
                   </el-select>
-                  <div class="hint">选定平台上的所有图像生成不消耗积分和试用额度。</div>
+                  <div class="hint">从列表选择或手动输入平台 ID。平台 ID 对应 Koishi 适配器标识（如 lark=飞书、onebot=QQ），可在 Koishi 插件配置中确认。</div>
                 </el-form-item>
 
                 <el-divider content-position="left">请求限流</el-divider>
