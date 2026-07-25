@@ -571,6 +571,23 @@ export class UserManager {
         this.usersCache!.users[userId] = user
       }
       const exempt = this.isAdmin(userId, config) || this.isPermanentMember(userId, config)
+
+      // 免计费平台：指定平台上的生成完全免费，不消耗积分和试用额度
+      const isFreePlatform = platform != null && Array.isArray(config.freePlatforms) && config.freePlatforms.includes(platform)
+      if (isFreePlatform) {
+        this.creditReservations.set(reservationId, {
+          reservationId, userId, userName, cost,
+          reservedCredits: 0,
+          status: 'active',
+          createdAt: Date.now(),
+          expiresAt: Date.now() + Math.max(60_000, ttlMs),
+          isTrial: true,
+        })
+        await this.saveUsersStoreInternal()
+        this.updateRateLimit(userId)
+        return { allowed: true, reservationId, isTrial: true }
+      }
+
       const total = exempt ? 0 : roundCredits(cost.totalCredits)
 
       // 试用额度检查：trialImageLimit > 0 且用户尚未用完所有试用次数

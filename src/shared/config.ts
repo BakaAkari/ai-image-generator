@@ -126,6 +126,8 @@ export interface Config {
   /** @deprecated 0.9.0 仅用于旧配置读取，不参与运行时计费。 */
   defaultCreditCostPerImage?: number
   trialImageLimit: number
+  /** 免计费平台列表：这些平台上的生成不消耗积分和试用额度 */
+  freePlatforms?: string[]
   showCreditCostInResult: boolean
   creditsPerCny?: number
   showEstimatedCny?: boolean
@@ -346,7 +348,10 @@ const CONFIG_GROUPS = [
       .min(0)
       .max(100)
       .step(1)
-      .description('新用户可免费生成的图片张数，0 为禁用'),
+      .description('每用户每天可免费生成的图片张数，0 为禁用'),
+    freePlatforms: Schema.array(Schema.string())
+      .default(['lark'])
+      .description('免计费平台列表（平台标识：lark = 飞书，onebot = QQ）'),
     showCreditCostInResult: Schema.boolean()
       .default(true)
       .description('生成完成后显示本次消耗和剩余积分'),

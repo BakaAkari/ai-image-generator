@@ -369,6 +369,15 @@
             <k-card class="section" shadow="never">
               <el-form label-width="200px">
 
+                <el-divider content-position="left">免计费设置</el-divider>
+                <el-form-item label="免计费平台">
+                  <el-select v-model="cfg.freePlatforms" multiple filterable allow-create default-first-option placeholder="输入平台 ID 后回车" style="width: 100%">
+                    <el-option label="飞书 (lark)" value="lark" />
+                    <el-option label="QQ (onebot)" value="onebot" />
+                  </el-select>
+                  <div class="hint">选定平台上的所有图像生成不消耗积分和试用额度。</div>
+                </el-form-item>
+
                 <el-divider content-position="left">请求限流</el-divider>
                 <el-form-item label="限流统计窗口（秒）">
                   <el-input-number v-model="cfg.rateLimitWindow" :min="60" :max="3600" :step="30" />

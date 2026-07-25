@@ -102,6 +102,7 @@ export function normalizeConfig(raw: any): any {
   }
   c.creditUnitName ??= '积分'
   c.trialImageLimit ??= 3
+  c.freePlatforms ??= ['lark']
   c.showCreditCostInResult ??= true
   c.showQuotaInImageCommands ??= true
   c.showEstimatedCny ??= false
@@ -155,6 +156,7 @@ export const USER_EDITABLE_FIELDS = [
   'modelMappings',
   'creditUnitName',
   'trialImageLimit',
+  'freePlatforms',
   'showCreditCostInResult',
   'creditsPerCny',
   'showEstimatedCny',
