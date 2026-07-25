@@ -121,7 +121,6 @@ export interface RechargeRecordV2 {
     userName: string
   }
   externalPaymentNote?: string
-  estimatedCny?: number
   ledgerSequence: number
 }
 
@@ -137,7 +136,6 @@ export interface CreditSummary {
   totalImagesGenerated: number
   totalGenerationRequests: number
   lastUsedAt?: string
-  estimatedCny?: number
 }
 
 export interface CreditReservation {
@@ -810,7 +808,6 @@ export class UserManager {
         amount: normalizedAmount,
         reason: reason || '管理员充值',
         operator,
-        ...(config.creditsPerCny ? { estimatedCny: roundCredits(normalizedAmount / config.creditsPerCny) } : {}),
         ledgerSequence: event.sequence,
       }
       await this.appendJsonLine(this.rechargeRecordsFile, rechargeRecord)
@@ -909,9 +906,6 @@ export class UserManager {
       totalImagesGenerated: userData.statistics.totalImagesGenerated,
       totalGenerationRequests: userData.statistics.totalGenerationRequests,
       ...(userData.lastUsedAt ? { lastUsedAt: userData.lastUsedAt } : {}),
-    }
-    if (config.showEstimatedCny && config.creditsPerCny && config.creditsPerCny > 0) {
-      summary.estimatedCny = roundCredits(totalAvailable / config.creditsPerCny)
     }
     return summary
   }

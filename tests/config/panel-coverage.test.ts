@@ -38,8 +38,6 @@ describe('aka-tools panel field coverage', () => {
     const REQUIRED = [
       'openaiCompatibleExtraHeaders',
       'showQuotaInImageCommands',
-      'showEstimatedCny',
-      'minRechargeCredits',
       'securityBlockWindow',
       'securityBlockWarningThreshold',
       'chatlunaContextHistorySize',

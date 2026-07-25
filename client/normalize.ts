@@ -105,8 +105,6 @@ export function normalizeConfig(raw: any): any {
   c.freePlatforms ??= ['lark']
   c.showCreditCostInResult ??= true
   c.showQuotaInImageCommands ??= true
-  c.showEstimatedCny ??= false
-  c.minRechargeCredits ??= 0
   c.rateLimitWindow ??= 300
   c.rateLimitMax ??= 3
   c.securityBlockWindow ??= 600
@@ -159,8 +157,6 @@ export const USER_EDITABLE_FIELDS = [
   'freePlatforms',
   'showCreditCostInResult',
   'creditsPerCny',
-  'showEstimatedCny',
-  'minRechargeCredits',
   'rateLimitWindow',
   'rateLimitMax',
   'securityBlockWindow',

@@ -31,6 +31,9 @@ export interface ConsoleServiceDeps {
   writeConfig: (config: Config) => Promise<void>
   applyConfig: (config: Config) => Promise<void> | void
   mergeConfig: (current: Config, incoming: Partial<Config>) => Config
+  service?: AiImageGeneratorService
+  resolveCredentials?: (config: Config) => CatalogCredentials
+  knownPlatforms?: Set<string>
 }
 
 export function registerConsoleService(deps: ConsoleServiceDeps) {
@@ -40,7 +43,7 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
   consoleService.addListener('image-generator/get-state', async () => {
     const snapshot = catalog.current
     const billing = catalog.billingInfo
-    return buildConsoleState(getConfig(), snapshot ? {
+    const state = buildConsoleState(getConfig(), snapshot ? {
       supplier: snapshot.supplier,
       fetchedAt: snapshot.fetchedAt,
       error: snapshot.error,
@@ -48,6 +51,9 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
       unsupportedModels: snapshot.unsupportedModels,
       groupRatio: snapshot.groupRatio,
     } : null, billing)
+    // 自动收集已知平台 ID（从运行时的 session.platform 获取）
+    const knownPlatforms = Array.from(deps.knownPlatforms ?? new Set<string>())
+    return { ...state, knownPlatforms }
   })
 
   consoleService.addListener('image-generator/save-config', async (config: Config) => {

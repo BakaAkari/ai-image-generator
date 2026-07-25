@@ -417,15 +417,6 @@
                   <el-form-item label="暴露风格列表工具"><el-switch v-model="cfg.yesimbotExposeStyleListTool" /></el-form-item>
                 </template>
 
-                <el-divider content-position="left">人民币展示</el-divider>
-                <el-form-item label="管理员余额是否显示人民币估值">
-                  <el-switch v-model="cfg.showEstimatedCny" />
-                </el-form-item>
-                <el-form-item label="充值提示最低积分">
-                  <el-input-number v-model="cfg.minRechargeCredits" :min="0" :max="1000000" :step="1" />
-                  <div class="hint">用户查询提示中显示的最小充值积分档位；不限制管理员输入。</div>
-                </el-form-item>
-
               </el-form>
             </k-card>
           </el-collapse-item>

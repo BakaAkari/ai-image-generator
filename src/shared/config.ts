@@ -130,8 +130,6 @@ export interface Config {
   freePlatforms?: string[]
   showCreditCostInResult: boolean
   creditsPerCny?: number
-  showEstimatedCny?: boolean
-  minRechargeCredits?: number
   rateLimitWindow: number
   rateLimitMax: number
 
@@ -367,15 +365,6 @@ const CONFIG_GROUPS = [
       .max(10000)
       .step(1)
       .description('自动定价核心：全局盈利加成百分比（30 表示在成本上加价 30%）'),
-    showEstimatedCny: Schema.boolean()
-      .default(false)
-      .description('管理员查询时显示余额估算金额'),
-    minRechargeCredits: Schema.number()
-      .default(0)
-      .min(0)
-      .max(1000000)
-      .step(0.01)
-      .description('充值提示用最低积分，支持小数；不限制管理员输入'),
     rateLimitWindow: Schema.number()
       .default(300)
       .min(60)

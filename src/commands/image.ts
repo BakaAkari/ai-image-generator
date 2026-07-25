@@ -174,9 +174,6 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         `- 历史消耗｜${service.formatCredits(summary.totalConsumedCredits)}`,
         `- 累计充值｜${service.formatCredits(summary.totalGrantedCredits)}`,
       ]
-      if (isAdmin && summary.estimatedCny !== undefined) {
-        lines.push(`- 余额估算｜约 ${summary.estimatedCny} 元`)
-      }
       return lines.join('\n')
     })
 

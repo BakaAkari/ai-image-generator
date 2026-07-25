@@ -24,8 +24,6 @@ function baseConfig(): Config {
     creditUnitName: '积分',
     showCreditCostInResult: true,
     showQuotaInImageCommands: true,
-    showEstimatedCny: false,
-    minRechargeCredits: 0,
     creditsPerCny: 100,
     modelMappings: [],
     styles: [],
@@ -92,8 +90,6 @@ describe('aka-tools JSON config store', () => {
     const current = baseConfig()
     const next = mergeConfig(current, {
       showQuotaInImageCommands: false,
-      showEstimatedCny: true,
-      minRechargeCredits: 12,
       securityBlockWindow: 900,
       securityBlockWarningThreshold: 5,
       chatlunaContextHistorySize: 42,
@@ -102,8 +98,6 @@ describe('aka-tools JSON config store', () => {
     } as Partial<Config>)
 
     expect(next.showQuotaInImageCommands).toBe(false)
-    expect(next.showEstimatedCny).toBe(true)
-    expect(next.minRechargeCredits).toBe(12)
     expect(next.securityBlockWindow).toBe(900)
     expect(next.securityBlockWarningThreshold).toBe(5)
     expect(next.chatlunaContextHistorySize).toBe(42)
