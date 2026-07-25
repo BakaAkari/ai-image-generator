@@ -45,9 +45,62 @@
           </div>
         </div>
 
-        <!-- ══ ① 模型 ══ -->
+        <!-- ══ ① 凭证 ══ -->
         <el-collapse v-model="panelActive">
-          <el-collapse-item title="① 模型" name="models">
+          <el-collapse-item title="① 供应商与凭证" name="credentials">
+            <k-card class="section" shadow="never">
+              <div class="supplier-picker">
+                <div
+                  v-for="s in supplierOptions" :key="s.value"
+                  class="supplier-option" :class="{ active: cfg.activeSupplier === s.value, disabled: s.disabled }"
+                  @click="!s.disabled && (cfg.activeSupplier = s.value)"
+                >
+                  <div class="supplier-name">{{ s.label }}</div>
+                  <div class="supplier-desc">{{ s.desc }}</div>
+                </div>
+              </div>
+              <el-form label-width="180px" class="cred-form">
+                <template v-if="cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
+                  <el-form-item :label="cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'">
+                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiKey" type="password" show-password placeholder="sk-..." />
+                  </el-form-item>
+                  <el-form-item label="Base URL">
+                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'" />
+                  </el-form-item>
+                  <el-form-item label="额外请求头">
+                    <div class="extra-headers">
+                      <div v-for="(row, i) in extraHeadersRows" :key="i" class="extra-header-row">
+                        <el-input v-model="row.key" size="small" placeholder="Header 名" style="width: 200px" @input="syncExtraHeaders" />
+                        <el-input v-model="row.value" size="small" placeholder="值（字符串）" style="flex: 1" @input="syncExtraHeaders" />
+                        <el-button link type="danger" size="small" @click="removeExtraHeader(i)">删</el-button>
+                      </div>
+                      <el-button size="small" @click="addExtraHeader">添加请求头</el-button>
+                      <div class="hint">键和值都会强制转成字符串；空键或空值会在保存前被丢弃。</div>
+                    </div>
+                  </el-form-item>
+                </template>
+                <template v-else-if="cfg.activeSupplier === 'openai-official'">
+                  <el-form-item label="OpenAI API Key">
+                    <el-input v-model="cfg.providerSettings.gptOfficialApiKey" type="password" show-password placeholder="sk-..." />
+                  </el-form-item>
+                </template>
+                <template v-else>
+                  <el-form-item label="Gemini API Key">
+                    <el-input v-model="cfg.providerSettings.geminiOfficialApiKey" type="password" show-password />
+                  </el-form-item>
+                </template>
+                <el-form-item label="yunwu 分组倍率">
+                  <el-input-number v-model="cfg.yunwuGroupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 200px" />
+                  <div style="font-size:0.75rem;color:var(--fg3)">直接填分组倍率数字（例如 1、2.4、3.6），在 yunwu 后台 API 令牌页面查看。默认 1 对应 default 分组。</div>
+                </el-form-item>
+              </el-form>
+            </k-card>
+          </el-collapse-item>
+        </el-collapse>
+
+        <!-- ══ ② 模型 ══ -->
+        <el-collapse v-model="panelActive">
+          <el-collapse-item title="② 模型" name="models">
             <!-- 模型目录 -->
             <k-card class="section" shadow="never">
               <template #header>
@@ -135,111 +188,9 @@
           </el-collapse-item>
         </el-collapse>
 
-        <!-- ══ ② 定价 ══ -->
+        <!-- ══ ③ Prompt 预设 ══ -->
         <el-collapse v-model="panelActive">
-          <el-collapse-item title="② 定价" name="pricing">
-            <k-card class="section" shadow="never">
-              <el-form label-width="260px">
-                <el-divider content-position="left">A · 平台积分</el-divider>
-                <el-form-item label="平台积分单位名称">
-                  <el-input v-model="cfg.creditUnitName" style="width: 160px" />
-                  <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
-                </el-form-item>
-                <el-form-item label="试用图片张数（每用户）">
-                  <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
-                  <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
-                </el-form-item>
-
-                <el-divider content-position="left">B · 自动定价（供应商积分 → 平台积分 → 用户售价）</el-divider>
-                <el-form-item label="1 元人民币 = N 平台积分">
-                  <el-input-number v-model="cfg.creditsPerCny" :min="0.01" :step="1" :precision="2" />
-                  <div class="hint">人民币与平台积分的换算比例；同时用作管理员余额/充值提示的估值。</div>
-                </el-form-item>
-                <el-form-item label="全局盈利加成 %">
-                  <el-input-number v-model="cfg.pricingMarkupPercent" :min="0" :max="10000" :step="1" :precision="2" />
-                  <div class="hint">用户扣费 = 平台积分成本 × (1 + N/100)。例如 30 表示在成本上加价 30%。</div>
-                </el-form-item>
-                <el-form-item label="供应商 → 人民币汇率">
-                  <el-input :model-value="'1 供应商积分 = ¥0.50'" readonly style="width: 220px" />
-                  <div class="hint">yunwu 官方约定值，不作为可配置项；修改需要新版本发布。</div>
-                </el-form-item>
-                <div class="hint" style="margin-left: 16px">
-                  公式：用户扣费 = 供应商积分 × 0.5 × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
-                  修改本区两项后无需重新探测，扣费会即时按持久化的探测结果重算。
-                </div>
-
-                <el-collapse>
-                  <el-collapse-item title="C · 展示偏好">
-                    <el-form-item label="生成结束时显示本次消耗">
-                      <el-switch v-model="cfg.showCreditCostInResult" />
-                    </el-form-item>
-                    <el-form-item label="附带显示剩余积分明细">
-                      <el-switch v-model="cfg.showQuotaInImageCommands" />
-                      <div class="hint">需先开启上方"生成结束时显示本次消耗"。</div>
-                    </el-form-item>
-                  </el-collapse-item>
-                </el-collapse>
-              </el-form>
-            </k-card>
-          </el-collapse-item>
-        </el-collapse>
-
-        <!-- ══ ③ 凭证 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="③ 供应商与凭证" name="credentials">
-            <k-card class="section" shadow="never">
-              <div class="supplier-picker">
-                <div
-                  v-for="s in supplierOptions" :key="s.value"
-                  class="supplier-option" :class="{ active: cfg.activeSupplier === s.value, disabled: s.disabled }"
-                  @click="!s.disabled && (cfg.activeSupplier = s.value)"
-                >
-                  <div class="supplier-name">{{ s.label }}</div>
-                  <div class="supplier-desc">{{ s.desc }}</div>
-                </div>
-              </div>
-              <el-form label-width="180px" class="cred-form">
-                <template v-if="cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
-                  <el-form-item :label="cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'">
-                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiKey" type="password" show-password placeholder="sk-..." />
-                  </el-form-item>
-                  <el-form-item label="Base URL">
-                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'" />
-                  </el-form-item>
-                  <el-form-item label="额外请求头">
-                    <div class="extra-headers">
-                      <div v-for="(row, i) in extraHeadersRows" :key="i" class="extra-header-row">
-                        <el-input v-model="row.key" size="small" placeholder="Header 名" style="width: 200px" @input="syncExtraHeaders" />
-                        <el-input v-model="row.value" size="small" placeholder="值（字符串）" style="flex: 1" @input="syncExtraHeaders" />
-                        <el-button link type="danger" size="small" @click="removeExtraHeader(i)">删</el-button>
-                      </div>
-                      <el-button size="small" @click="addExtraHeader">添加请求头</el-button>
-                      <div class="hint">键和值都会强制转成字符串；空键或空值会在保存前被丢弃。</div>
-                    </div>
-                  </el-form-item>
-                </template>
-                <template v-else-if="cfg.activeSupplier === 'openai-official'">
-                  <el-form-item label="OpenAI API Key">
-                    <el-input v-model="cfg.providerSettings.gptOfficialApiKey" type="password" show-password placeholder="sk-..." />
-                  </el-form-item>
-                </template>
-                <template v-else>
-                  <el-form-item label="Gemini API Key">
-                    <el-input v-model="cfg.providerSettings.geminiOfficialApiKey" type="password" show-password />
-                  </el-form-item>
-                </template>
-                <el-form-item label="yunwu 分组倍率">
-                  <el-input-number v-model="cfg.yunwuGroupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 200px" />
-                  <div style="font-size:0.75rem;color:var(--fg3)">直接填分组倍率数字（例如 1、2.4、3.6），在 yunwu 后台 API 令牌页面查看。默认 1 对应 default 分组。</div>
-                </el-form-item>
-              </el-form>
-            </k-card>
-          </el-collapse-item>
-        </el-collapse>
-
-        <!-- ══ ④ Prompt 预设 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="④ Prompt 预设" name="presets">
+          <el-collapse-item title="③ Prompt 预设" name="presets">
             <k-card class="section" shadow="never">
               <template #header>
                 <div class="card-header">
@@ -363,7 +314,56 @@
           </el-collapse-item>
         </el-collapse>
 
-        <!-- ══ ⑤ 运营 ══ -->
+        <!-- ══ ③ 运营 ══ -->
+        <!-- ══ ④ 定价 ══ -->
+        <el-collapse v-model="panelActive">
+          <el-collapse-item title="④ 定价" name="pricing">
+            <k-card class="section" shadow="never">
+              <el-form label-width="260px">
+                <el-divider content-position="left">A · 平台积分</el-divider>
+                <el-form-item label="平台积分单位名称">
+                  <el-input v-model="cfg.creditUnitName" style="width: 160px" />
+                  <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
+                </el-form-item>
+                <el-form-item label="试用图片张数（每用户）">
+                  <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
+                  <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
+                </el-form-item>
+
+                <el-divider content-position="left">B · 自动定价（供应商积分 → 平台积分 → 用户售价）</el-divider>
+                <el-form-item label="1 元人民币 = N 平台积分">
+                  <el-input-number v-model="cfg.creditsPerCny" :min="0.01" :step="1" :precision="2" />
+                  <div class="hint">人民币与平台积分的换算比例；同时用作管理员余额/充值提示的估值。</div>
+                </el-form-item>
+                <el-form-item label="全局盈利加成 %">
+                  <el-input-number v-model="cfg.pricingMarkupPercent" :min="0" :max="10000" :step="1" :precision="2" />
+                  <div class="hint">用户扣费 = 平台积分成本 × (1 + N/100)。例如 30 表示在成本上加价 30%。</div>
+                </el-form-item>
+                <el-form-item label="供应商 → 人民币汇率">
+                  <el-input :model-value="'1 供应商积分 = ¥0.50'" readonly style="width: 220px" />
+                  <div class="hint">yunwu 官方约定值，不作为可配置项；修改需要新版本发布。</div>
+                </el-form-item>
+                <div class="hint" style="margin-left: 16px">
+                  公式：用户扣费 = 供应商积分 × 0.5 × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
+                  修改本区两项后无需重新探测，扣费会即时按持久化的探测结果重算。
+                </div>
+
+                <el-collapse>
+                  <el-collapse-item title="C · 展示偏好">
+                    <el-form-item label="生成结束时显示本次消耗">
+                      <el-switch v-model="cfg.showCreditCostInResult" />
+                    </el-form-item>
+                    <el-form-item label="附带显示剩余积分明细">
+                      <el-switch v-model="cfg.showQuotaInImageCommands" />
+                      <div class="hint">需先开启上方"生成结束时显示本次消耗"。</div>
+                    </el-form-item>
+                  </el-collapse-item>
+                </el-collapse>
+              </el-form>
+            </k-card>
+          </el-collapse-item>
+        </el-collapse>
+
         <el-collapse v-model="panelActive">
           <el-collapse-item title="⑤ 运营" name="operations">
             <k-card class="section" shadow="never">
@@ -448,7 +448,7 @@ const isAkaToolsRoute = ref(true)
 onActivated(() => { isAkaToolsRoute.value = true })
 onDeactivated(() => { isAkaToolsRoute.value = false })
 
-const panelActive = ref(['models', 'pricing'])
+const panelActive = ref(['models'])
 
 const state = ref<any>(null)
 const cfg = ref<any>(null)
