@@ -9,6 +9,7 @@ import type { Context } from 'koishi'
 import type { Config } from '../shared/config.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
+import type { WizardHandler } from '../wizard/wizard-handler.js'
 
 import { registerCatalogCommands, type RegisterCatalogCommandsParams } from './catalog.js'
 import { registerHelpCommands } from './help.js'
@@ -20,6 +21,7 @@ export interface RegisterAllCommandsParams {
   service: AiImageGeneratorService
   handlers: ImageGenerationHandlers
   getConfig: () => Config
+  wizardHandler?: WizardHandler
 }
 
 export interface RegisteredAllCommands {

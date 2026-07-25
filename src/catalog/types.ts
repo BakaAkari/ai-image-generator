@@ -21,7 +21,7 @@ export interface ImageModelPricing {
 export interface ImageModelInfo {
   id: string
   /** 从供应商 endpoint 明确解析的可执行路由；不得由模型名推断。 */
-  routes: Array<{ id: string; protocol: 'openai' | 'gemini'; capability: string; endpointName?: string }>
+  routes: Array<{ id: string; protocol: 'openai' | 'gemini' | 'mj'; capability: string; endpointName?: string }>
   /** 支持的生成模式（按 supported_endpoint_types / 命名推断） */
   modes: Array<'text-to-image' | 'image-to-image' | 'compose-image'>
   description?: string

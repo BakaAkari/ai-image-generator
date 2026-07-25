@@ -21,6 +21,7 @@ import type {
   StyleMode,
 } from '../shared/types.js'
 import type { CreditLedgerEventV2 } from '../services/UserManager.js'
+import type { WizardHandler } from '../wizard/wizard-handler.js'
 import {
   buildModelMappingIndex,
   normalizeSuffix,
@@ -32,6 +33,7 @@ export interface RegisterImageCommandsParams {
   service: AiImageGeneratorService
   handlers: ImageGenerationHandlers
   getConfig: () => Config
+  wizardHandler?: WizardHandler
 }
 
 export interface RegisteredImageCommands {
@@ -47,11 +49,17 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.TXT_TO_IMG} [prompt:text]`, '文生图')
     .alias('t2i')
-    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
+      // 向导模式
+      const wizardHandler = params.wizardHandler
+      if (wizardHandler) {
+        return wizardHandler.handleCommand(session, COMMANDS.TXT_TO_IMG)
+      }
+
+      // 经典模式（直接生成）
       const config = getConfig()
       const modifiers = buildCommandModifiers(argv, undefined, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
@@ -75,11 +83,17 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.IMG_TO_IMG} [img] [prompt:text]`, '图生图')
     .alias('i2i')
-    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
+      // 向导模式
+      const wizardHandler = params.wizardHandler
+      if (wizardHandler) {
+        return wizardHandler.handleCommand(session, COMMANDS.IMG_TO_IMG)
+      }
+
+      // 经典模式（直接生成）
       const config = getConfig()
       const modifiers = buildCommandModifiers(argv, img, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
@@ -371,11 +385,17 @@ function registerStyleCommand(
   reservedNames.add(style.commandName)
 
   const command = ctx.command(`${style.commandName} [img] [prompt:text]`, style.description || 'Prompt 预设')
-    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
+      // 向导模式
+      const wizardHandler = params.wizardHandler
+      if (wizardHandler) {
+        return wizardHandler.handleCommand(session, style.commandName)
+      }
+
+      // 经典模式（直接生成）
       const config = getConfig()
       const modifiers = buildCommandModifiers(argv, img, config, style)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)

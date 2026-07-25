@@ -15,6 +15,8 @@ import { createMjProvider } from './providers/midjourney.js'
 import { ProviderRegistry } from './providers/registry.js'
 import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { UserManager } from './services/UserManager.js'
+import { WizardSessionManager } from './services/wizard-session.js'
+import { createWizardHandler } from './wizard/wizard-handler.js'
 import { Config as ConfigSchema } from './shared/config.js'
 import type { Config as PluginConfig } from './shared/config.js'
 
@@ -110,6 +112,23 @@ export async function apply(ctx: Context, config: Config) {
     getConfig: () => currentConfig,
     catalog,
   })
+
+  // ── Wizard 向导系统 ──────────────────────────────────────────────────────
+  const wizardSessions = new WizardSessionManager()
+  const wizardHandler = createWizardHandler({
+    ctx,
+    catalog,
+    service,
+    handlers,
+    getConfig: () => currentConfig,
+    wizardSessions,
+  })
+  // 中间件：拦截用户消息，驱动向导步骤
+  ctx.middleware(wizardHandler.getMiddleware())
+  // 定期清理过期会话
+  const wizardCleanupTimer = setInterval(() => {
+    wizardSessions.cleanup()
+  }, 60_000)
 
   // Schema.dynamic 选项源：模型映射的 modelId 下拉来自动态目录。
   // 机制同 chatluna：ctx.schema.set(name, Schema.union(...))，目录刷新后重建。
@@ -246,6 +265,7 @@ export async function apply(ctx: Context, config: Config) {
       getConfig: () => currentConfig,
       resolveCredentials,
     },
+    wizardHandler,
   })
 
   // 5. ChatLuna 桥接管理器
@@ -300,6 +320,7 @@ export async function apply(ctx: Context, config: Config) {
   // 8. 插件卸载时的清理
   ctx.on('dispose' as any, async () => {
     catalog.stop()
+    clearInterval(wizardCleanupTimer)
     await chatLunaBridgeManager.dispose()
     await yesimbotBridgeManager.dispose()
   })

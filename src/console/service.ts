@@ -11,6 +11,7 @@ import type { Context, Logger } from 'koishi'
 import type { ImageCatalogService } from '../catalog/image-catalog.js'
 import type { BillingInfo } from '../catalog/billing-info.js'
 import type { Config } from '../shared/config.js'
+import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import { buildConsoleState } from './view-model.js'
 
 type CatalogCredentials = {
