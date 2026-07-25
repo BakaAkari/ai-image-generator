@@ -68,10 +68,10 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="yunwu 目录成本" width="150">
+                <el-table-column label="预估成本" width="190">
                   <template #default="{ row }">
-                    <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)' }">{{ row.yunwuCost?.label ?? '—' }}</span>
-                    <div class="hint" style="margin: 0.2rem 0 0; font-size: 0.7rem;">仅参考，运行时以目录价格为准</div>
+                    <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)', whiteSpace: 'nowrap' }">{{ row.yunwuCost?.label ?? '—' }}</span>
+                    <div class="hint" style="margin: 0.2rem 0 0; font-size: 0.7rem; white-space: nowrap;">仅参考，运行时以目录价格为准</div>
                   </template>
                 </el-table-column>
                 <el-table-column label="模式" width="140">
