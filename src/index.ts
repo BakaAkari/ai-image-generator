@@ -55,6 +55,51 @@ export const inject = {
 export type Config = PluginConfig
 export const Config = ConfigSchema
 
+/**
+ * Resolve a path inside this installed package as a STRING path — without
+ * following symlinks.
+ *
+ * Why we cannot use `require.resolve`: when the plugin is installed via
+ * `npm link` or `file:` (npm 8+ default creates a symlink),
+ * `node_modules/koishi-plugin-aka-ai-image-generator` is a symlink to the
+ * source directory outside koishi-app's tree. Both `__dirname` and
+ * `require.resolve('koishi-plugin-aka-ai-image-generator/package.json')`
+ * transparently resolve the realpath and give us the source directory —
+ * a path that neither starts with the koishi-app root nor contains the
+ * substring `node_modules`. Koishi console's static-asset guard rejects it
+ * with 403, so the client bundle never loads.
+ *
+ * Fix: walk up from `process.cwd()` (or a small set of candidate roots)
+ * looking for `node_modules/koishi-plugin-aka-ai-image-generator/<subPath>`
+ * via string concatenation only. `path.resolve` and `fs.existsSync` do NOT
+ * dereference the symlink for existence-check purposes, so the resulting
+ * string path contains `node_modules` and passes Koishi's guard. Fall back
+ * to `__dirname` for the standalone-copy install case (npm publish tarball,
+ * production Docker image, etc.).
+ */
+function resolvePackagePath(subPath: string): string {
+  const fs = require('node:fs') as typeof import('node:fs')
+  const pkgName = 'koishi-plugin-aka-ai-image-generator'
+
+  const candidateRoots = [process.cwd(), __dirname]
+  for (const start of candidateRoots) {
+    let dir = start
+    // Walk up looking for a node_modules that contains our package.
+    // Bounded by filesystem root; typical depth is 1-3 levels.
+    for (let i = 0; i < 10; i++) {
+      const candidate = path.join(dir, 'node_modules', pkgName, subPath)
+      if (fs.existsSync(candidate)) return candidate
+      const parent = path.dirname(dir)
+      if (parent === dir) break // reached filesystem root
+      dir = parent
+    }
+  }
+
+  // Fallback: standalone-copy install (e.g. published tarball). __dirname
+  // points inside the package's own lib/ folder in this mode.
+  return path.resolve(__dirname, '..', subPath)
+}
+
 // 模块级注册表实例（生命周期与插件模块一致）
 const providerRegistry = new ProviderRegistry()
 
@@ -215,13 +260,18 @@ export async function apply(ctx: Context, config: Config) {
   // aka-tools 面板后端服务（console 可用时注册）
   ctx.inject(['console'], (ctx) => {
     // 注册 client 扩展入口（prod 指向 koishi-console build 产物 dist/）
+    const clientEntry = resolvePackagePath('client/index.ts')
+    const prodEntry = resolvePackagePath('dist')
+
     const entry = (ctx as any).console.addEntry({
-      dev: path.resolve(__dirname, '../client/index.ts'),
-      prod: path.resolve(__dirname, '../dist'),
+      dev: clientEntry,
+      prod: prodEntry,
     })
-    logger.info('aka-tools console entry registered: id=%s prod=%s exists=%s',
-      entry?.id, path.resolve(__dirname, '../dist'),
-      require('node:fs').existsSync(path.resolve(__dirname, '../dist/index.js')))
+    logger.info(
+      'aka-tools console entry registered: id=%s prod=%s exists=%s',
+      entry?.id, prodEntry,
+      require('node:fs').existsSync(path.resolve(prodEntry, 'index.js')),
+    )
     registerConsoleService({
       ctx,
       logger,

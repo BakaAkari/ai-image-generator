@@ -32,8 +32,6 @@ export interface WizardSession {
   conversationId?: string
   /** 原始命令名称（文生图/图生图/预设名） */
   commandName?: string
-  /** 当前参数收集索引 */
-  currentParamIndex?: number
 }
 
 export interface WizardStartOptions {

@@ -4,6 +4,14 @@
  * 向导驱动方式：命令触发 handleCommand 启动会话，中间件拦截后续消息，
  * 按 WizardSession.step 分派到对应处理器。全部文本/参数由 PROTOCOL_PARAMS
  * 和 catalog 驱动，无硬编码。
+ *
+ * 变更要点：
+ * - param-select 改为一次性列出所有参数，逗号分隔输入
+ * - 图生图支持分步输入（先图片后文字）
+ * - session 清理延后到 handleConfirm 开始时释放（不阻塞新命令）
+ * - 中间件只拦截有活跃会话的消息，无会话时完全放行
+ * - 所有模型均显示，无额外过滤
+ * - getProtocol → resolveProtocol 消除命名歧义
  */
 import { h } from 'koishi'
 import type { Context, Fragment, Session } from 'koishi'
@@ -48,7 +56,8 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return getModels().find(m => m.id === id)
   }
 
-  function getProtocol(modelId: string): string {
+  /** 从 route 解析协议，不再从名称猜测 */
+  function resolveProtocol(modelId: string): string {
     return getModel(modelId)?.routes[0]?.protocol ?? 'openai'
   }
 
@@ -64,7 +73,14 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     }
   }
 
-  // ─── 渲染函数（全部从 PROTOCOL_PARAMS 和 catalog 驱动） ───────────────────
+  /** 协议名 → 显示标签 */
+  const PROTOCOL_LABELS: Record<string, string> = {
+    openai: 'OPENAI',
+    gemini: 'GEMINI',
+    mj: 'MJ',
+  }
+
+  // ─── 渲染函数 ──────────────────────────────────────────────────────────────
 
   function renderModelList(): string {
     const models = getModels()
@@ -74,56 +90,58 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     for (let i = 0; i < models.length; i++) {
       const m = models[i]
       const proto = m.routes[0]?.protocol ?? 'openai'
+      const providerLabel = PROTOCOL_LABELS[proto] ?? proto.toUpperCase()
       const cost = estimateCost(m.id)
       const costText = cost > 0 ? `~${service.formatCredits(cost)}` : '免费'
       const pp = PROTOCOL_PARAMS[proto]
       const asyncTag = pp?.async
         ? ` 异步 ${pp.async.minSec}-${pp.async.maxSec}s`
         : ''
-      lines.push(`${i + 1} · ${getModelLabel(m.id)}  ${costText}${asyncTag}`)
+      lines.push(`${i + 1} · [${providerLabel}] ${getModelLabel(m.id)}  ${costText}${asyncTag}`)
     }
     return lines.join('\n')
   }
 
+  /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集 */
   function renderParamList(protocol: string): string {
     const pp = PROTOCOL_PARAMS[protocol]
     if (!pp?.params.length) return '该模型无额外参数'
 
-    // Build flat option list: enum entries each get their own line
-    const flat = buildFlatParamOptions(pp)
-    if (!flat.length) return '该模型无额外参数'
-
+    const providerLabel = PROTOCOL_LABELS[protocol] ?? protocol.toUpperCase()
     const lines: string[] = [
-      `${protocol} · 可选参数（回复数字选择，或回复「跳过」）：`,
+      `${providerLabel} · 可选参数（按顺序输入，逗号分隔，或回复「跳过」）：`,
+      '',
+      `参数顺序：${pp.params.map(p => p.label).join(' → ')}`,
       '',
     ]
-    for (let i = 0; i < flat.length; i++) {
-      const { param, optIdx } = flat[i]
-      if (param.type === 'enum') {
-        const opt = param.options![optIdx!]
-        const display = param.displayValues?.[optIdx!] ?? opt
-        const def = opt === param.default ? '  [默认]' : ''
-        lines.push(`${i + 1} · ${param.label} ${display}${def}`)
-      } else {
-        const range = param.min != null && param.max != null
-          ? `输入 ${param.min}-${param.max}`
-          : ''
-        lines.push(`${i + 1} · ${param.label} ${param.default}  ${range}`)
-      }
-    }
-    return lines.join('\n')
-  }
 
-  function buildFlatParamOptions(pp: ProtocolParams): Array<{ param: ParamDef; optIdx?: number }> {
-    const flat: Array<{ param: ParamDef; optIdx?: number }> = []
     for (const p of pp.params) {
       if (p.type === 'enum') {
-        for (let i = 0; i < (p.options?.length ?? 0); i++) flat.push({ param: p, optIdx: i })
+        const optionEntries = (p.options ?? []).map((opt, j) => {
+          const display = p.displayValues?.[j] ?? opt
+          const def = opt === p.default ? '  [默认]' : ''
+          return `${j + 1}-${display}${def}`
+        })
+        lines.push(`${p.label}：${optionEntries.join('  ')}`)
       } else {
-        flat.push({ param: p })
+        const range = p.min != null && p.max != null
+          ? `${p.min}-${p.max}`
+          : ''
+        lines.push(`${p.label}：输入 ${range}（默认 ${p.default}）`)
       }
     }
-    return flat
+
+    // 生成示例（默认值）
+    const exampleParts = pp.params.map((p, pi) => {
+      if (p.type === 'enum') {
+        const defaultIdx = (p.options ?? []).indexOf(String(p.default))
+        return String(defaultIdx >= 0 ? defaultIdx + 1 : 1)
+      }
+      return String(p.default)
+    })
+
+    lines.push('', `示例：「${exampleParts.join(',')}」= ${pp.params.map(p => p.label).join(', ')} 默认值`)
+    return lines.join('\n')
   }
 
   function renderConfirm(w: WizardSession): string {
@@ -200,7 +218,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
   /**
    * await-prompt 步骤：保存 prompt，进入模型选择。
-   * 对图生图模式，同时从消息中提取图片。
+   * 图生图模式下分两步收集：先收图片，再收描述。
    */
   async function handleAwaitPrompt(
       w: WizardSession,
@@ -208,23 +226,39 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       text: string,
       images: string[],
   ): Promise<string | void> {
-    // 图生图：如果用户发了图片，存下来
-    if (w.mode === 'image-to-image' && images.length > 0) {
-      w.imageUrls = images.slice(0, 1)
-    }
-
-    // 图生图但尚无图片：提示发图
-    if (w.mode === 'image-to-image' && !w.imageUrls?.length) {
-      if (text) {
-        // 用户只发了文字没发图片 — 存文字，但需要图片
-        w.prompt = text
-        return '请同时发送 1 张图片'
+    // 图生图：分步收集 — 先图片，后描述
+    if (w.mode === 'image-to-image') {
+      // 1) 尚未收到图片：优先存图片
+      if (!w.imageUrls?.length) {
+        if (images.length > 0) {
+          w.imageUrls = images.slice(0, 1)
+        }
+        // 仍无图片
+        if (!w.imageUrls?.length) {
+          // 用户只发了文字 — 暂存，但仍需要图片
+          if (text) w.prompt = text
+          return '请先发送 1 张图片'
+        }
+        // 现在有图片了，继续检查描述
       }
-      return '请发送 1 张图片和修改描述'
+
+      // 2) 已有图片但尚无描述
+      if (!w.prompt) {
+        if (text) {
+          w.prompt = text
+          w.step = 'model-select'
+          return renderModelList()
+        }
+        return '请输入修改描述'
+      }
+
+      // 3) 两者都已就绪
+      w.step = 'model-select'
+      return renderModelList()
     }
 
+    // 文生图
     if (!text) return '请发送画面描述'
-
     w.prompt = text
     w.step = 'model-select'
     return renderModelList()
@@ -242,9 +276,8 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
     const model = models[num - 1]
     w.modelId = model.id
-    w.protocol = getProtocol(model.id)
+    w.protocol = resolveProtocol(model.id)
     w.params = {}
-    w.currentParamIndex = 0
     w.step = 'param-select'
 
     const pp = PROTOCOL_PARAMS[w.protocol]
@@ -256,112 +289,66 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return renderParamList(w.protocol)
   }
 
-  /** param-select 步骤：逐项收集参数 */
+  /** param-select 步骤：一次性列出所有参数，逗号分隔输入 */
   async function handleParamSelect(w: WizardSession, text: string): Promise<string | void> {
     if (!w.protocol) { w.step = 'confirm'; return renderConfirm(w) }
     const pp = PROTOCOL_PARAMS[w.protocol]
     if (!pp?.params.length) { w.step = 'confirm'; return renderConfirm(w) }
 
-    const flat = buildFlatParamOptions(pp)
-    if (!flat.length) { w.step = 'confirm'; return renderConfirm(w) }
+    const params = pp.params
 
-    // 跳过 → 用默认值填所有未收集参数
+    // 「跳过」→ 全部使用默认值
     if (text === '跳过' || text === 'skip') {
-      for (const f of flat) {
-        if (!(f.param.key in w.params)) {
-          w.params[f.param.key] = f.param.default
-        }
+      for (const p of params) {
+        w.params[p.key] = p.default
       }
       w.step = 'confirm'
       return renderConfirm(w)
     }
 
-    const idx = w.currentParamIndex ?? 0
+    // 解析逗号分隔输入
+    const parts = text.split(',').map(s => s.trim()).filter(Boolean)
+    if (parts.length === 0) {
+      return '请输入逗号分隔的参数值，或回复「跳过」使用全部默认值'
+    }
 
-    // 如果这是第一轮且用户输入了数字 → 直接选择对应选项
-    if (idx === 0) {
-      const optionNum = parseInt(text, 10)
-      if (!isNaN(optionNum) && optionNum >= 1 && optionNum <= flat.length) {
-        const picked = flat[optionNum - 1]
-        setParamValue(w, picked, picked.param.default)
-        w.currentParamIndex = optionNum // 已处理前 optionNum 个
-        // 检查是否还有更多参数
-        if (w.currentParamIndex >= flat.length) {
-          // 填充剩余默认值
-          for (let i = w.currentParamIndex; i < flat.length; i++) {
-            const f = flat[i]
-            if (!(f.param.key in w.params)) {
-              setParamValue(w, f, f.param.default)
-            }
+    // 遍历参数列表，按顺序取对应位置的值；不足部分用默认值
+    for (let i = 0; i < params.length; i++) {
+      const p = params[i]
+      if (i < parts.length && parts[i]) {
+        const raw = parts[i]
+        if (p.type === 'enum') {
+          const optNum = parseInt(raw, 10)
+          if (isNaN(optNum) || optNum < 1 || optNum > (p.options?.length ?? 0)) {
+            return `"${p.label}" 请输入 1-${p.options?.length} 之间的编号`
           }
-          w.step = 'confirm'
-          return renderConfirm(w)
+          w.params[p.key] = p.options![optNum - 1]
+        } else {
+          const val = parseFloat(raw)
+          if (isNaN(val)) {
+            const range = p.min != null && p.max != null ? `（${p.min}-${p.max}）` : ''
+            return `"${p.label}" 请输入数字${range}`
+          }
+          if (p.min != null && val < p.min) return `"${p.label}" 最小值 ${p.min}`
+          if (p.max != null && val > p.max) return `"${p.label}" 最大值 ${p.max}`
+          w.params[p.key] = val
         }
-        // 提示下一个
-        return promptNextParam(flat, w.currentParamIndex)
+      } else {
+        // 未提供对应位置 → 使用默认值
+        w.params[p.key] = p.default
       }
     }
 
-    // 逐参数收集模式
-    const current = flat[idx]
-    if (!current) { w.step = 'confirm'; return renderConfirm(w) }
-
-    if (current.param.type === 'enum') {
-      // 应该选枚举值
-      const optNum = parseInt(text, 10)
-      if (isNaN(optNum) || optNum < 1 || optNum > flat.length) {
-        return `请输入 1-${flat.length} 之间的数字`
-      }
-      const picked = flat[optNum - 1]
-      if (!picked || picked.param.key !== current.param.key || picked.optIdx !== current.optIdx) {
-        return `请输入对应编号（当前参数：${current.param.label}）`
-      }
-      setParamValue(w, current, current.param.options![current.optIdx!])
-    } else {
-      const val = parseFloat(text)
-      if (isNaN(val)) {
-        const r = current.param.min != null && current.param.max != null
-          ? `请输入 ${current.param.min}-${current.param.max} 的数字`
-          : '请输入数字'
-        return r
-      }
-      if (current.param.min != null && val < current.param.min) return `最小值 ${current.param.min}，请重输`
-      if (current.param.max != null && val > current.param.max) return `最大值 ${current.param.max}，请重输`
-      setParamValue(w, current, val)
-    }
-
-    w.currentParamIndex = idx + 1
-
-    // 检查是否收集完毕
-    if ((w.currentParamIndex ?? 0) >= flat.length) {
-      w.step = 'confirm'
-      return renderConfirm(w)
-    }
-
-    return promptNextParam(flat, w.currentParamIndex ?? 0)
+    w.step = 'confirm'
+    return renderConfirm(w)
   }
 
-  function setParamValue(w: WizardSession, f: { param: ParamDef; optIdx?: number }, value: string | number): void {
-    w.params[f.param.key] = value
-  }
-
-  function promptNextParam(flat: Array<{ param: ParamDef; optIdx?: number }>, idx: number): string {
-    const next = flat[idx]
-    if (next.param.type === 'enum') {
-      const opt = next.param.options![next.optIdx!]
-      const display = next.param.displayValues?.[next.optIdx!] ?? opt
-      const def = opt === next.param.default ? '  [默认]' : ''
-      return `${next.param.label} ${display}${def}`
-    }
-    const r = next.param.min != null && next.param.max != null ? `（${next.param.min}-${next.param.max}）` : ''
-    return `${next.param.label} · 输入数值${r}，默认 ${next.param.default}`
-  }
-
-  /** confirm 步骤：确认 → 生成；取消 → 退出 */
+  /** confirm 步骤：确认 → 清理会话 → 生成；取消 → 退出 */
   async function handleConfirm(session: Session, w: WizardSession, text: string): Promise<string | void> {
     const t = text.trim().toLowerCase()
     if (t === '确认' || t === 'confirm' || t === 'y' || t === 'yes') {
-      w.step = 'generating'
+      // 先清理向导会话，释放用户状态（用户可立刻发新命令）
+      wizardSessions.cancel(w.userId)
 
       // 构造 prompt（拼接 MJ 风格后缀参数）
       let finalPrompt = w.prompt ?? ''
@@ -382,9 +369,6 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const requestContext: Record<string, unknown> = {}
       if (w.modelId) requestContext.modelId = w.modelId
       if (w.protocol) requestContext.provider = w.protocol
-      if (w.imageUrls?.length && w.mode === 'image-to-image') {
-        // no extra context needed
-      }
 
       // 非 prompt 追加参数放入上下文
       if (w.protocol) {
@@ -405,10 +389,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         }
       }
 
-      // 清理向导会话
-      wizardSessions.cancel(w.userId)
-
-      // 调用编排器
+      // 调用编排器（失败时 orchestrator 已有的错误处理会发消息给用户）
       if (w.mode === 'text-to-image') {
         return handlers.executeTextToImage(
           session,
@@ -490,10 +471,10 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 行内 prompt
     const inlinePrompt = parsed.text?.trim()
     if (inlinePrompt) {
-      // 图生图但无图 → 仍需要图片
+      // 图生图但无图 → 仍需图片
       if (mode === 'image-to-image' && !w.imageUrls?.length) {
         w.prompt = inlinePrompt
-        return Promise.resolve('请发送 1 张图片')
+        return Promise.resolve('请先发送 1 张图片')
       }
       w.prompt = inlinePrompt
       w.step = 'model-select'
@@ -502,7 +483,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
     // 图生图无图 → 提示发图
     if (mode === 'image-to-image' && !w.imageUrls?.length) {
-      return Promise.resolve('请发送 1 张图片和修改描述')
+      return Promise.resolve('请先发送 1 张图片')
     }
 
     return Promise.resolve('请发送画面描述')
@@ -513,8 +494,10 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const userId = session.userId
       if (!userId) return next()
 
+      // 仅处理有活跃向导会话的消息；无会话则完全放行
       const w = wizardSessions.get(userId)
-      if (!w || w.step === 'generating') return next()
+      if (!w) return next()
+      if (w.step === 'generating') return next()
 
       const parsed = parseMessageImagesAndText(session.content ?? '')
       const text = (parsed.text ?? '').trim()
@@ -526,18 +509,25 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         return '已退出生成向导'
       }
       if (text === '上一步' || text === 'back') {
+        if (w.step === 'await-prompt') {
+          if (w.mode === 'image-to-image' && w.imageUrls?.length && !w.prompt) {
+            return '上一步：请重新发送 1 张图片'
+          }
+          return '已在第一步，无法返回'
+        }
         if (w.step === 'model-select') {
+          w.prompt = undefined
           w.step = 'await-prompt'
-          return '请重新发送画面描述'
+          return w.mode === 'image-to-image'
+            ? (w.imageUrls?.length ? '请输入修改描述' : '请先发送 1 张图片')
+            : '请重新发送画面描述'
         }
         if (w.step === 'param-select') {
-          w.currentParamIndex = 0
           w.params = {}
           w.step = 'model-select'
           return renderModelList()
         }
         if (w.step === 'confirm') {
-          w.currentParamIndex = 0
           w.params = {}
           w.step = 'param-select'
           return w.protocol ? renderParamList(w.protocol) : renderModelList()
