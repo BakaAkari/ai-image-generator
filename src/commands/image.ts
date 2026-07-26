@@ -56,7 +56,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       // 向导模式
       const wizardHandler = params.wizardHandler
       if (wizardHandler) {
-        return wizardHandler.handleCommand(session, COMMANDS.TXT_TO_IMG)
+        return wizardHandler.handleCommand(session, COMMANDS.TXT_TO_IMG, argv, undefined, prompt)
       }
 
       // 经典模式（直接生成）
@@ -90,7 +90,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       // 向导模式
       const wizardHandler = params.wizardHandler
       if (wizardHandler) {
-        return wizardHandler.handleCommand(session, COMMANDS.IMG_TO_IMG)
+        return wizardHandler.handleCommand(session, COMMANDS.IMG_TO_IMG, argv, img, prompt)
       }
 
       // 经典模式（直接生成）
@@ -389,15 +389,21 @@ function registerStyleCommand(
       const session = argv.session
       if (!session) return ''
 
-      // 向导模式
+      const config = getConfig()
+      const modifiers = buildCommandModifiers(argv, img, config, style)
+
+      // style 预设：有默认 prompt 且能解析到默认模型 → 一步直出图，跳过向导
+      // 反之（未配置 modelSuffix 或后缀在映射表里找不到），进入向导让用户挑模型
+      const hasDefaultModel = !!resolveStyleModelMapping(
+        style,
+        buildModelMappingIndex(config.modelMappings),
+      )
       const wizardHandler = params.wizardHandler
-      if (wizardHandler) {
-        return wizardHandler.handleCommand(session, style.commandName)
+      if (wizardHandler && !hasDefaultModel) {
+        return wizardHandler.handleCommand(session, style.commandName, argv, img, prompt)
       }
 
       // 经典模式（直接生成）
-      const config = getConfig()
-      const modifiers = buildCommandModifiers(argv, img, config, style)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
 

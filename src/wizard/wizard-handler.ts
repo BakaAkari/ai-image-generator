@@ -14,7 +14,7 @@
  * - getProtocol → resolveProtocol 消除命名歧义
  */
 import { h } from 'koishi'
-import type { Context, Fragment, Session } from 'koishi'
+import type { Argv, Context, Fragment, Session } from 'koishi'
 
 import type { Config } from '../shared/config.js'
 import { PROTOCOL_PARAMS } from '../shared/protocol-params.js'
@@ -24,7 +24,9 @@ import type { CatalogSnapshot, ImageModelInfo } from '../catalog/types.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type { WizardSession, WizardSessionManager } from '../services/wizard-session.js'
+import type { ImageGenerationModifiers, ModelMappingConfig } from '../shared/types.js'
 import { parseMessageImagesAndText } from '../utils/input.js'
+import { buildModelMappingIndex, parseStyleCommandModifiers } from '../utils/parser.js'
 
 export interface CreateWizardHandlerParams {
   ctx: Context
@@ -36,8 +38,18 @@ export interface CreateWizardHandlerParams {
 }
 
 export interface WizardHandler {
-  /** 从命令 action 调用，启动向导并返回首条提示 */
-  handleCommand(session: Session, commandName: string): Promise<string | void>
+  /**
+   * 从命令 action 调用，启动向导并返回首条提示。
+   * argv/imgParam/prompt 若提供，会用于正确切分 flags 与 prompt 文本，
+   * 避免向导把命令词或 `-16:9` 等参数 flag 塞进最终 prompt。
+   */
+  handleCommand(
+    session: Session,
+    commandName: string,
+    argv?: Argv,
+    imgParam?: unknown,
+    prompt?: string,
+  ): Promise<string | void>
   /** Koishi 中间件：处理活跃向导的后续消息 */
   getMiddleware(): (session: Session, next: () => Promise<void | Fragment>) => Promise<void | Fragment | string>
 }
@@ -80,11 +92,32 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     mj: 'MJ',
   }
 
-  // ─── 渲染函数 ──────────────────────────────────────────────────────────────
+  /** 通过 catalog modelId 反查用户配置的 ModelMappingConfig（restricted flag 只存在于映射上） */
+  function findMappingByModelId(modelId: string): ModelMappingConfig | undefined {
+    return (getConfig().modelMappings ?? []).find(m => m.modelId === modelId)
+  }
 
-  function renderModelList(): string {
-    const models = getModels()
-    if (!models.length) return '模型目录加载中，请 10 秒后重试'
+  /** 校验用户是否可访问该模型（受限模型仅管理员/白名单）——wizard/style 都必须走这里 */
+  function checkModelAccessByModelId(userId: string, modelId: string) {
+    const mapping = findMappingByModelId(modelId)
+    return service.checkModelAccess(userId, mapping ? { modelMapping: mapping } : {})
+  }
+
+  // ─── 渲染函数（全部从 PROTOCOL_PARAMS 和 catalog 驱动） ───────────────────
+
+  /**
+   * 渲染模型列表。userId 用于过滤当前用户不可访问的受限模型；
+   * 未传 userId 时保持向后兼容，展示全部模型（点击时仍会二次校验）。
+   */
+  function renderModelList(userId?: string): string {
+    const allModels = getModels()
+    if (!allModels.length) return '模型目录加载中，请 10 秒后重试'
+
+    const models = userId
+      ? allModels.filter(m => checkModelAccessByModelId(userId, m.id).allowed)
+      : allModels
+
+    if (!models.length) return '当前无可用模型（受限模型仅管理员/白名单）'
 
     const lines: string[] = ['选择模型（回复数字）：', '']
     for (let i = 0; i < models.length; i++) {
@@ -100,6 +133,11 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       lines.push(`${i + 1} · [${providerLabel}] ${getModelLabel(m.id)}  ${costText}${asyncTag}`)
     }
     return lines.join('\n')
+  }
+
+  /** 返回当前用户可见的模型列表（用于模型选择步骤的索引一致性） */
+  function getVisibleModels(userId: string): ImageModelInfo[] {
+    return getModels().filter(m => checkModelAccessByModelId(userId, m.id).allowed)
   }
 
   /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集 */
@@ -266,7 +304,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
   /** model-select 步骤：按编号选择模型，进入参数选择 */
   async function handleModelSelect(w: WizardSession, text: string): Promise<string | void> {
-    const models = getModels()
+    const models = getVisibleModels(w.userId)
     if (!models.length) return '模型目录尚未加载，请稍后重试。回复「取消」退出向导'
 
     const num = parseInt(text, 10)
@@ -275,6 +313,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     }
 
     const model = models[num - 1]
+
+    // 二次校验：受限模型只对管理员/白名单开放
+    const access = checkModelAccessByModelId(w.userId, model.id)
+    if (!access.allowed) {
+      return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+    }
+
     w.modelId = model.id
     w.protocol = resolveProtocol(model.id)
     w.params = {}
@@ -347,6 +392,15 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   async function handleConfirm(session: Session, w: WizardSession, text: string): Promise<string | void> {
     const t = text.trim().toLowerCase()
     if (t === '确认' || t === 'confirm' || t === 'y' || t === 'yes') {
+      // 生成前二次校验受限模型（防止绕过 handleModelSelect）
+      if (w.modelId) {
+        const access = checkModelAccessByModelId(w.userId, w.modelId)
+        if (!access.allowed) {
+          wizardSessions.cancel(w.userId)
+          return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+        }
+      }
+
       // 先清理向导会话，释放用户状态（用户可立刻发新命令）
       wizardSessions.cancel(w.userId)
 
@@ -389,6 +443,21 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         }
       }
 
+      // 命令行 flag 已解析的参数覆盖：用户显式在命令里带了 -16:9/-1k 等就走这些值
+      if (w.preResolution && requestContext.resolution === undefined) {
+        requestContext.resolution = w.preResolution
+      }
+      if (w.preAspectRatio && requestContext.aspectRatio === undefined) {
+        requestContext.aspectRatio = w.preAspectRatio
+      }
+      // -add 追加内容并入 prompt
+      if (w.preCustomAdditions?.length) {
+        finalPrompt = [finalPrompt, ...w.preCustomAdditions]
+          .map(s => s.trim())
+          .filter(Boolean)
+          .join(' - ')
+      }
+
       // 调用编排器（失败时 orchestrator 已有的错误处理会发消息给用户）
       if (w.mode === 'text-to-image') {
         return handlers.executeTextToImage(
@@ -421,7 +490,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
   // ─── 对外接口 ──────────────────────────────────────────────────────────────
 
-  function handleCommand(session: Session, commandName: string): Promise<string | void> {
+  function handleCommand(
+    session: Session,
+    commandName: string,
+    argv?: Argv,
+    imgParam?: unknown,
+    inlineText?: string,
+  ): Promise<string | void> {
     const userId = session.userId
     if (!userId) return Promise.resolve('无法识别用户身份')
     const userName = session.username || session.author?.name || userId
@@ -435,17 +510,50 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       mode = 'image-to-image'
     }
 
-    // 从消息上下文提取图片
+    // 使用统一解析器提取 flags（-1k/-16:9/-add ...）与模型后缀，避免把命令词/flags
+    // 塞进最终 prompt。argv 缺失时回退到原始 session.content 解析（保底不影响功能）。
+    const config = getConfig()
+    const modelIndex = buildModelMappingIndex(config.modelMappings)
+    let preModifiers: ImageGenerationModifiers = { customAdditions: [] }
+    if (argv) {
+      preModifiers = parseStyleCommandModifiers(argv, imgParam, modelIndex)
+    }
+
+    // 提取图片：优先从 imgParam / quote 收集；仅在无 argv 时才回退到 raw content 解析
     let imageUrls: string[] = []
+    if (imgParam && typeof imgParam === 'object' && (imgParam as any).attrs?.src) {
+      imageUrls.push((imgParam as any).attrs.src)
+    } else if (typeof imgParam === 'string' && (imgParam.startsWith('http') || imgParam.startsWith('data:'))) {
+      imageUrls.push(imgParam)
+    }
     if (session.quote?.elements) {
       const qImages = h.select(session.quote.elements, 'img')
       for (const img of qImages) {
         if (img.attrs.src) imageUrls.push(img.attrs.src)
       }
     }
-    const parsed = parseMessageImagesAndText(session.content ?? '')
-    for (const img of parsed.images) {
-      if (img.attrs?.src) imageUrls.push(img.attrs.src)
+    if (!argv) {
+      // 回退：从原始 content 解析出图片（老路径）
+      const parsedFallback = parseMessageImagesAndText(session.content ?? '')
+      for (const img of parsedFallback.images) {
+        if (img.attrs?.src) imageUrls.push(img.attrs.src)
+      }
+    } else {
+      // 有 argv 时也再从 content 提图（Koishi argv 不总能拿到 <img>）
+      const parsedContent = parseMessageImagesAndText(session.content ?? '')
+      for (const img of parsedContent.images) {
+        if (img.attrs?.src) imageUrls.push(img.attrs.src)
+      }
+    }
+
+    // 干净的 prompt 文本：优先 argv 提供的 [prompt:text]（Koishi 已剥离 flags），
+    // 无 argv 时回退到 content 中的纯文本
+    let cleanInlinePrompt: string | undefined
+    if (typeof inlineText === 'string' && inlineText.trim()) {
+      cleanInlinePrompt = inlineText.trim()
+    } else if (!argv) {
+      const parsedFallback = parseMessageImagesAndText(session.content ?? '')
+      cleanInlinePrompt = parsedFallback.text?.trim() || undefined
     }
 
     // 启动会话
@@ -457,6 +565,11 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     if ('conflict' in result) return Promise.resolve(result.message)
     const w = result
 
+    // 记录命令行已解析的 flag 类参数
+    if (preModifiers.resolution) w.preResolution = preModifiers.resolution
+    if (preModifiers.aspectRatio) w.preAspectRatio = preModifiers.aspectRatio
+    if (preModifiers.customAdditions?.length) w.preCustomAdditions = preModifiers.customAdditions
+
     // 图生图：保存图片
     if (mode === 'image-to-image' && imageUrls.length > 0) {
       w.imageUrls = imageUrls.slice(0, 1)
@@ -465,20 +578,19 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 预设命令（带锁定 prompt）：直接进模型选择
     if (style?.prompt) {
       w.step = 'model-select'
-      return Promise.resolve(renderModelList())
+      return Promise.resolve(renderModelList(userId))
     }
 
     // 行内 prompt
-    const inlinePrompt = parsed.text?.trim()
-    if (inlinePrompt) {
-      // 图生图但无图 → 仍需图片
+    if (cleanInlinePrompt) {
+      // 图生图但无图 → 仍需要图片
       if (mode === 'image-to-image' && !w.imageUrls?.length) {
-        w.prompt = inlinePrompt
+        w.prompt = cleanInlinePrompt
         return Promise.resolve('请先发送 1 张图片')
       }
-      w.prompt = inlinePrompt
+      w.prompt = cleanInlinePrompt
       w.step = 'model-select'
-      return Promise.resolve(renderModelList())
+      return Promise.resolve(renderModelList(userId))
     }
 
     // 图生图无图 → 提示发图
@@ -503,6 +615,9 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const text = (parsed.text ?? '').trim()
       const images = parsed.images.map(i => i.attrs?.src).filter(Boolean) as string[]
 
+      // 收到向导相关消息即视为活动，刷新每步超时
+      wizardSessions.touch(w)
+
       // 向导控制命令
       if (text === '取消' || text === 'cancel') {
         wizardSessions.cancel(userId)
@@ -525,12 +640,12 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (w.step === 'param-select') {
           w.params = {}
           w.step = 'model-select'
-          return renderModelList()
+          return renderModelList(userId)
         }
         if (w.step === 'confirm') {
           w.params = {}
           w.step = 'param-select'
-          return w.protocol ? renderParamList(w.protocol) : renderModelList()
+          return w.protocol ? renderParamList(w.protocol) : renderModelList(userId)
         }
         return '已在第一步，无法返回'
       }

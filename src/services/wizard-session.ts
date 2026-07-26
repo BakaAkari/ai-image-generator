@@ -2,7 +2,7 @@
  * WizardSessionManager —— 每用户单会话向导状态管理。
  *
  * - 每用户只有一条活跃会话，新命令阻塞
- * - 会话 6 分钟（3 × timeoutMs）不活跃自动回收
+ * - 每步 2 分钟无响应自动回收（lastActivityAt 每步推进时刷新）
  * - 提供 start / get / cancel / cleanup 四个核心操作
  */
 export interface WizardSession {
@@ -24,6 +24,8 @@ export interface WizardSession {
   params: Record<string, string | number>
   /** 会话开始时间戳 */
   startedAt: number
+  /** 最近一次步骤推进（或用户交互）的时间戳，用于每步超时判定 */
+  lastActivityAt: number
   /** 锁定 prompt（style 预设场景） */
   lockedPrompt?: string
   /** 锁定模式（style 预设场景：不允许切换 文生图/图生图） */
@@ -32,6 +34,12 @@ export interface WizardSession {
   conversationId?: string
   /** 原始命令名称（文生图/图生图/预设名） */
   commandName?: string
+  /** 当前参数收集索引 */
+  currentParamIndex?: number
+  /** 命令行上已解析的图像参数（-1k/-16:9/-add ...），确认时并入 requestContext */
+  preResolution?: string
+  preAspectRatio?: string
+  preCustomAdditions?: string[]
 }
 
 export interface WizardStartOptions {
@@ -62,13 +70,15 @@ export class WizardSessionManager {
       }
     }
 
+    const now = Date.now()
     const session: WizardSession = {
       userId,
       userName,
       step: 'await-prompt',
       mode,
       params: {},
-      startedAt: Date.now(),
+      startedAt: now,
+      lastActivityAt: now,
     }
 
     // 锁定 prompt 场景（style 预设命令）：跳过 await-prompt 直接进入模型选择
@@ -90,15 +100,20 @@ export class WizardSessionManager {
     return session
   }
 
-  /** 获取用户当前会话（已超时则删除并返回 undefined） */
+  /** 获取用户当前会话（自上次活动 timeoutMs 内视为活跃，否则删除并返回 undefined） */
   get(userId: string): WizardSession | undefined {
     const s = this.sessions.get(userId)
     if (!s) return undefined
-    if (Date.now() - s.startedAt > this.timeoutMs * 3) {
+    if (Date.now() - s.lastActivityAt > this.timeoutMs) {
       this.sessions.delete(userId)
       return undefined
     }
     return s
+  }
+
+  /** 标记会话已推进/收到用户输入，刷新超时时钟 */
+  touch(session: WizardSession): void {
+    session.lastActivityAt = Date.now()
   }
 
   /** 取消/删除用户会话。返回 true 表示确实删除了会话。 */
@@ -109,9 +124,9 @@ export class WizardSessionManager {
   /** 清理过期会话 */
   cleanup(): void {
     const now = Date.now()
-    const cutoff = now - this.timeoutMs * 3
+    const cutoff = now - this.timeoutMs
     for (const [userId, s] of this.sessions) {
-      if (s.startedAt < cutoff) {
+      if (s.lastActivityAt < cutoff) {
         this.sessions.delete(userId)
       }
     }
