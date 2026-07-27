@@ -229,19 +229,25 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
 
       const parsed = parseCreditCommandInput(input || session.content || '', COMMANDS.ADMIN_RECHARGE)
       if (!parsed.target?.userId || parsed.amount === undefined || parsed.amount === 0) {
-        return '请使用｜图像充值 @用户 积分 [原因]'
+        return '请使用｜图像充值 @用户 人民币金额 [原因]'
       }
+
+      // 管理员输入的是人民币金额，按 creditsPerCny（1 元 = N 平台积分）自动折算为平台积分再入账/调整
+      const creditsPerCny = typeof config.creditsPerCny === 'number' && Number.isFinite(config.creditsPerCny) && config.creditsPerCny > 0
+        ? config.creditsPerCny
+        : 1
+      const creditsAmount = parsed.amount * creditsPerCny
 
       const operator = {
         userId: session.userId || 'unknown',
         userName: session.username || session.author?.name || session.userId || 'unknown',
       }
 
-      if (parsed.amount > 0) {
+      if (creditsAmount > 0) {
         const result = await service.grantCredits(
           parsed.target.userId,
           parsed.target.userName || parsed.target.userId,
-          parsed.amount,
+          creditsAmount,
           parsed.reason || '管理员充值',
           operator,
         )
@@ -251,13 +257,11 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
           '',
           `- 用户｜${summary.userName}`,
           `- 本次充值｜${service.formatCredits(result.ledgerEvent.amount)}`,
-          `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
           `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
-          `- 流水｜#${result.ledgerEvent.sequence}`,
         ].join('\n')
       }
 
-      const requestedAdjustment = Math.abs(parsed.amount)
+      const requestedAdjustment = Math.abs(creditsAmount)
       const result = await service.adjustCredits(
         parsed.target.userId,
         parsed.target.userName || parsed.target.userId,
@@ -271,10 +275,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
           '余额调整失败',
           '',
           `- 用户｜${summary.userName}`,
-          `- 请求调整｜-${service.formatCredits(result.requestedAmount)}`,
-          `- 实际调整｜-${service.formatCredits(result.deductedAmount)}`,
           `- 原因｜用户已购余额不足`,
-          `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
           `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
         ].join('\n')
       }
@@ -283,11 +284,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         result.isPartial ? '图像余额部分调整完成' : '图像余额调整完成',
         '',
         `- 用户｜${summary.userName}`,
-        `- 请求调整｜-${service.formatCredits(result.requestedAmount)}`,
-        `- 实际调整｜-${service.formatCredits(result.deductedAmount)}`,
-        `- 已购余额｜${service.formatCredits(summary.purchasedCredits)}`,
+        `- 本次调整｜-${service.formatCredits(result.deductedAmount)}`,
         `- 合计可用｜${service.formatCredits(summary.totalAvailable)}`,
-        `- 流水｜#${result.ledgerEvent.sequence}`,
       ].join('\n')
     })
 

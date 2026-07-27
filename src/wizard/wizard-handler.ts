@@ -103,74 +103,89 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return service.checkModelAccess(userId, mapping ? { modelMapping: mapping } : {})
   }
 
+  /** 命令行后缀展示：确保带前导 `-`（与 help.ts normalizeSuffixLabel 语义一致） */
+  function normalizeMappingSuffixLabel(value: string): string {
+    const trimmed = value.trim()
+    if (!trimmed) return '-'
+    return trimmed.startsWith('-') ? trimmed : `-${trimmed}`
+  }
+
+  /** 模型选择的唯一事实源：配置页 modelMappings，而非供应商刷新出来的全量 catalog 目录 */
+  function getConfiguredMappings(): ModelMappingConfig[] {
+    return getConfig().modelMappings ?? []
+  }
+
+  /** 用户可见的模型映射：受限模型（restricted）对非白名单/非管理员直接过滤掉，不列入选项 */
+  function getVisibleMappings(userId: string): ModelMappingConfig[] {
+    return getConfiguredMappings().filter(m => service.checkModelAccess(userId, { modelMapping: m }).allowed)
+  }
+
+  /** 模型展示名：优先用映射 suffix，映射缺失时回退 catalog 描述/modelId */
+  function getModelDisplayLabel(modelId: string): string {
+    const mapping = findMappingByModelId(modelId)
+    return mapping ? normalizeMappingSuffixLabel(mapping.suffix) : getModelLabel(modelId)
+  }
+
   // ─── 渲染函数（全部从 PROTOCOL_PARAMS 和 catalog 驱动） ───────────────────
 
   /**
-   * 渲染模型列表。userId 用于过滤当前用户不可访问的受限模型；
-   * 未传 userId 时保持向后兼容，展示全部模型（点击时仍会二次校验）。
+   * 渲染模型列表：数据源是配置页 modelMappings（用户可选模型的唯一事实源），
+   * 不是供应商刷新出来的全量目录。受限模型对非白名单/非管理员直接不列入。
+   * 无介绍文字，直接是编号列表。
    */
-  function renderModelList(userId?: string): string {
-    const allModels = getModels()
-    if (!allModels.length) return '模型目录加载中，请 10 秒后重试'
+  function renderModelList(userId: string): string {
+    const allMappings = getConfiguredMappings()
+    if (!allMappings.length) return '模型映射为空，请管理员在配置页添加模型映射'
 
-    const models = userId
-      ? allModels.filter(m => checkModelAccessByModelId(userId, m.id).allowed)
-      : allModels
+    const mappings = getVisibleMappings(userId)
+    if (!mappings.length) return '当前无可用模型（受限模型仅管理员/白名单）'
 
-    if (!models.length) return '当前无可用模型（受限模型仅管理员/白名单）'
-
-    const lines: string[] = ['选择模型（回复数字）：', '']
-    for (let i = 0; i < models.length; i++) {
-      const m = models[i]
-      const proto = m.routes[0]?.protocol ?? 'openai'
+    const lines: string[] = []
+    for (let i = 0; i < mappings.length; i++) {
+      const mapping = mappings[i]
+      const proto = resolveProtocol(mapping.modelId)
       const providerLabel = PROTOCOL_LABELS[proto] ?? proto.toUpperCase()
-      const cost = estimateCost(m.id)
+      const cost = estimateCost(mapping.modelId)
       const costText = cost > 0 ? `~${service.formatCredits(cost)}` : '免费'
       const pp = PROTOCOL_PARAMS[proto]
       const asyncTag = pp?.async
         ? ` 异步 ${pp.async.minSec}-${pp.async.maxSec}s`
         : ''
-      lines.push(`${i + 1} · [${providerLabel}] ${getModelLabel(m.id)}  ${costText}${asyncTag}`)
+      lines.push(`${i + 1} · [${providerLabel}] ${normalizeMappingSuffixLabel(mapping.suffix)}  ${costText}${asyncTag}`)
     }
     return lines.join('\n')
   }
 
-  /** 返回当前用户可见的模型列表（用于模型选择步骤的索引一致性） */
-  function getVisibleModels(userId: string): ImageModelInfo[] {
-    return getModels().filter(m => checkModelAccessByModelId(userId, m.id).allowed)
-  }
-
-  /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集 */
+  /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集；每个参数的可选项各占一行，方便区分 */
   function renderParamList(protocol: string): string {
     const pp = PROTOCOL_PARAMS[protocol]
     if (!pp?.params.length) return '该模型无额外参数'
 
     const providerLabel = PROTOCOL_LABELS[protocol] ?? protocol.toUpperCase()
     const lines: string[] = [
-      `${providerLabel} · 可选参数（按顺序输入，逗号分隔，或回复「跳过」）：`,
-      '',
-      `参数顺序：${pp.params.map(p => p.label).join(' → ')}`,
+      `${providerLabel} 参数设置`,
+      `按「${pp.params.map(p => p.label).join(' → ')}」顺序逗号分隔输入，或回复「跳过」使用全部默认值`,
       '',
     ]
 
-    for (const p of pp.params) {
+    pp.params.forEach((p, idx) => {
+      if (idx > 0) lines.push('')
       if (p.type === 'enum') {
-        const optionEntries = (p.options ?? []).map((opt, j) => {
+        lines.push(`${p.label}：`)
+        const options = p.options ?? []
+        options.forEach((opt, j) => {
           const display = p.displayValues?.[j] ?? opt
-          const def = opt === p.default ? '  [默认]' : ''
-          return `${j + 1}-${display}${def}`
+          const def = opt === p.default ? '【默认】' : ''
+          lines.push(`${j + 1} · ${display}${def}`)
         })
-        lines.push(`${p.label}：${optionEntries.join('  ')}`)
       } else {
-        const range = p.min != null && p.max != null
-          ? `${p.min}-${p.max}`
-          : ''
+        const range = p.min != null && p.max != null ? `${p.min}-${p.max}` : ''
         lines.push(`${p.label}：输入 ${range}（默认 ${p.default}）`)
       }
-    }
+    })
 
     // 生成示例（默认值）
-    const exampleParts = pp.params.map((p, pi) => {
+    const exampleParts = pp.params.map((p) => {
       if (p.type === 'enum') {
         const defaultIdx = (p.options ?? []).indexOf(String(p.default))
         return String(defaultIdx >= 0 ? defaultIdx + 1 : 1)
@@ -178,7 +193,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       return String(p.default)
     })
 
-    lines.push('', `示例：「${exampleParts.join(',')}」= ${pp.params.map(p => p.label).join(', ')} 默认值`)
+    lines.push('', `示例：${exampleParts.join(',')}（全部默认值）`)
     return lines.join('\n')
   }
 
@@ -195,7 +210,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const costText = cost > 0 ? service.formatCredits(cost) : '免费'
       const pp = w.protocol ? PROTOCOL_PARAMS[w.protocol] : undefined
       const asyncTag = pp?.async ? ` [异步 ${pp.async.minSec}-${pp.async.maxSec}s]` : ''
-      lines.push(`模型 · ${getModelLabel(w.modelId)}  ${costText}${asyncTag}`)
+      lines.push(`模型 · ${getModelDisplayLabel(w.modelId)}  ${costText}${asyncTag}`)
     }
 
     if (w.protocol) {
@@ -218,9 +233,9 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   }
 
   function renderHelp(): string {
-    const models = getModels()
+    const mappings = getConfiguredMappings()
     const styles = service.listStylePresets()
-    const protocols = new Set(models.map(m => m.routes[0]?.protocol ?? 'openai').filter(Boolean))
+    const protocols = new Set(mappings.map(m => resolveProtocol(m.modelId)).filter(Boolean))
 
     const lines: string[] = [
       '图像生成 · 使用帮助',
@@ -228,7 +243,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       '文生图                 输入描述 → 选模型 → 选参数 → 生成',
       '图生图                 发图片 → 输入描述 → 选模型 → 选参数 → 生成',
       '',
-      `当前可用模型：${models.length} 个，${protocols.size} 个协议`,
+      `当前可用模型：${mappings.length} 个，${protocols.size} 个协议`,
       '',
     ]
 
@@ -285,43 +300,43 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (text) {
           w.prompt = text
           w.step = 'model-select'
-          return renderModelList()
+          return renderModelList(w.userId)
         }
         return '请输入修改描述'
       }
 
       // 3) 两者都已就绪
       w.step = 'model-select'
-      return renderModelList()
+      return renderModelList(w.userId)
     }
 
     // 文生图
     if (!text) return '请发送画面描述'
     w.prompt = text
     w.step = 'model-select'
-    return renderModelList()
+    return renderModelList(w.userId)
   }
 
-  /** model-select 步骤：按编号选择模型，进入参数选择 */
+  /** model-select 步骤：按编号选择模型（数据源为配置页 modelMappings），进入参数选择 */
   async function handleModelSelect(w: WizardSession, text: string): Promise<string | void> {
-    const models = getVisibleModels(w.userId)
-    if (!models.length) return '模型目录尚未加载，请稍后重试。回复「取消」退出向导'
+    const mappings = getVisibleMappings(w.userId)
+    if (!mappings.length) return '模型映射为空或当前无可用模型，请管理员在配置页检查。回复「取消」退出向导'
 
     const num = parseInt(text, 10)
-    if (isNaN(num) || num < 1 || num > models.length) {
-      return `请输入 1-${models.length} 之间的数字`
+    if (isNaN(num) || num < 1 || num > mappings.length) {
+      return `请输入 1-${mappings.length} 之间的数字`
     }
 
-    const model = models[num - 1]
+    const mapping = mappings[num - 1]
 
-    // 二次校验：受限模型只对管理员/白名单开放
-    const access = checkModelAccessByModelId(w.userId, model.id)
+    // 二次校验：受限模型只对管理员/白名单开放（防止选择态与渲染态之间配置发生变化）
+    const access = service.checkModelAccess(w.userId, { modelMapping: mapping })
     if (!access.allowed) {
       return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
     }
 
-    w.modelId = model.id
-    w.protocol = resolveProtocol(model.id)
+    w.modelId = mapping.modelId
+    w.protocol = resolveProtocol(mapping.modelId)
     w.params = {}
     w.step = 'param-select'
 

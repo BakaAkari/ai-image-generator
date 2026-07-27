@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3
+
+- 模型选择向导：数据源从供应商刷新出的全量目录改为配置页 `modelMappings`（管理员维护的可选模型白名单），与经典命令模式（`-模型后缀`）统一为同一份事实源；显示改为映射 `suffix`，不再显示 catalog modelId/description。
+- 受限模型（`restricted: true`）在向导模型列表中对非白名单/非管理员直接过滤，不再列出后选中才拒绝；`model-select` 与 `confirm` 两步均做权限二次校验，防止绕过选择环节直接生成。
+- 修复向导路径重新对 `session.content` 分词导致命令词与 `-16:9`/`-1k` 等 flag 混入最终 prompt 的问题：向导 `handleCommand` 现在复用 argv 已解析的 `[prompt:text]` 与 `parseStyleCommandModifiers`，flag 单独存入 `preResolution`/`preAspectRatio`/`preCustomAdditions`，在确认阶段并入请求参数而不污染描述文字。
+- Prompt 预设（style 快捷命令）在已配置默认模型（`modelSuffix` 能解析到 `modelMappings` 条目）时跳过多步向导，保持一步直出图；未配置默认模型的预设仍进入向导选模型。
+- 向导会话超时从"整体 6 分钟绝对倒计时（`startedAt` 只设置一次）"改为"每步 2 分钟相对刷新"：新增 `lastActivityAt` 字段，中间件收到向导相关消息即 `touch()` 刷新计时。
+- 向导模型选择、参数选择两处文案去除多余介绍语，参数选择改为每个可选项独立成行展示，避免选项挤在一行不易区分。
+- 修复 `图像充值` 命令的单位语义错误：管理员输入的数值现在被解释为人民币金额，按配置 `creditsPerCny`（1 元 = N 平台积分）自动折算为平台积分后再入账/调整；此前该数值被直接当作积分数使用。命令回复精简为仅显示折算后的积分数值与合计可用余额。
+- `setupGuide` 中“图像充值”用法说明同步更新为“人民币金额”，避免管理员误判单位。
+- 修复 `openai.ts` 供应商请求路径重复拼接 `/v1`（`apiBase` 本身可能已含 `/v1`）导致的 `/v1/v1/images/...` 错误路径。
+- console 静态资源入口解析（`resolvePackagePath`）改为按 `node_modules/<pkg>/<subPath>` 字符串路径查找而非 `require.resolve`/`__dirname`，修复 npm link 软链安装场景下 Koishi console 静态资源守卫 403、客户端 bundle 不加载的问题。
+
 ## 0.9.0
 
 - Add the maintained Yunwu catalog, pricing, configuration migration, and JSON settings-store implementation.
