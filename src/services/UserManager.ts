@@ -556,6 +556,7 @@ export class UserManager {
     cost: GenerationCost,
     config: Config,
     platform?: string,
+    freeForTrialMapping?: boolean,
     ttlMs = 15 * 60 * 1000,
   ): Promise<{ allowed: boolean; message?: string; reservationId?: string; isTrial?: boolean }> {
     await this.loadUsersStore()
@@ -588,9 +589,9 @@ export class UserManager {
 
       const total = exempt ? 0 : roundCredits(cost.totalCredits)
 
-      // 试用额度检查：trialImageLimit > 0 且用户尚未用完所有试用次数
+      // 试用额度检查：必须是管理员明确标记为 freeForTrial 的映射（或豁免用户/平台）
       const trialRemaining = this.getTrialRemaining(user, config)
-      const isTrial = !exempt && config.trialImageLimit > 0 && trialRemaining > 0
+      const isTrial = !exempt && config.trialImageLimit > 0 && trialRemaining > 0 && freeForTrialMapping === true
 
       if (isTrial) {
         // 试用图片跳过积分检查，直接预授权

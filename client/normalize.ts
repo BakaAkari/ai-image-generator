@@ -97,11 +97,11 @@ export function normalizeConfig(raw: any): any {
   }
   // yunwu 分组倍率：默认 1（default 分组）。旧字符串 yunwuGroup 只用于后端一次性
   // 数字化迁移，面板不再暴露、也不需要在此重新合成默认值。
-  if (typeof c.yunwuGroupRatio !== 'number' || !Number.isFinite(c.yunwuGroupRatio) || c.yunwuGroupRatio <= 0) {
-    c.yunwuGroupRatio = 1
-  }
+  delete c.yunwuGroupRatio
+  delete c.yunwuGroup
   c.creditUnitName ??= '积分'
   c.trialImageLimit ??= 3
+  c.freeTrialModelId ??= ''
   c.freePlatforms ??= ['lark']
   c.showCreditCostInResult ??= true
   c.showQuotaInImageCommands ??= true
@@ -120,8 +120,13 @@ export function normalizeConfig(raw: any): any {
   c.yesimbotEnabled ??= false
   c.yesimbotExposeQuotaTool ??= true
   c.yesimbotExposeStyleListTool ??= true
+  // 模型映射分组倍率：默认 1
   c.modelMappings = Array.isArray(source.modelMappings) ? source.modelMappings.map((m: any) => {
-    return { ...m }
+    const copy = { ...m }
+    if (typeof copy.groupRatio !== 'number' || !Number.isFinite(copy.groupRatio) || copy.groupRatio <= 0) {
+      copy.groupRatio = 1
+    }
+    return copy
   }) : []
   // modelCostProbes is no longer used by the panel after probe removal
   c.styles = Array.isArray(source.styles)
@@ -145,7 +150,6 @@ export const USER_EDITABLE_FIELDS = [
   'setupGuide',
   'activeSupplier',
   'pricingMarkupPercent',
-  'yunwuGroupRatio',
   'providerSettings',
   'styles',
   'styleGroups',
@@ -154,6 +158,7 @@ export const USER_EDITABLE_FIELDS = [
   'modelMappings',
   'creditUnitName',
   'trialImageLimit',
+  'freeTrialModelId',
   'freePlatforms',
   'showCreditCostInResult',
   'creditsPerCny',

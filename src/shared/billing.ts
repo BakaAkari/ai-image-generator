@@ -59,14 +59,14 @@ export interface CatalogModelForPricing {
  */
 export function estimatePreGenerationCost(
   modelId: string,
-  config: { yunwuGroupRatio?: number; creditsPerCny?: number; pricingMarkupPercent?: number },
+  config: { creditsPerCny?: number; pricingMarkupPercent?: number },
   catalogModels: CatalogModelForPricing[],
+  groupRatio = 1,
 ): GenerationCost {
   const model = catalogModels.find(m => m.id === modelId)
   const pricing = model?.pricing
 
-  const groupRatio = typeof config.yunwuGroupRatio === 'number' && Number.isFinite(config.yunwuGroupRatio) && config.yunwuGroupRatio > 0
-    ? config.yunwuGroupRatio : 1
+  const safeRatio = Number.isFinite(groupRatio) && groupRatio > 0 ? groupRatio : 1
 
   let supplierCredits: number
 
@@ -75,21 +75,21 @@ export function estimatePreGenerationCost(
     const knownPrices = catalogModels
       .map(m => (m.pricing?.type === 'per-call' ? m.pricing.pricePerCall : 0) ?? 0)
       .filter((p): p is number => p > 0)
-    supplierCredits = knownPrices.length > 0 ? Math.max(...knownPrices) * groupRatio : DEFAULT_TOKEN_ESTIMATE / 500000 * groupRatio
+    supplierCredits = knownPrices.length > 0 ? Math.max(...knownPrices) * safeRatio : DEFAULT_TOKEN_ESTIMATE / 500000 * safeRatio
   } else if (pricing.type === 'per-call' && typeof pricing.pricePerCall === 'number' && pricing.pricePerCall > 0) {
-    supplierCredits = pricing.pricePerCall * groupRatio
+    supplierCredits = pricing.pricePerCall * safeRatio
   } else if (pricing.type === 'per-token') {
     // per-token 模型：使用官方定价 officialPriceOutput（每 1M tokens 的供应商积分）
     const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
       ? pricing.officialPriceOutput
       : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    supplierCredits = DEFAULT_TOKEN_ESTIMATE / 1_000_000 * outputPrice * groupRatio
+    supplierCredits = DEFAULT_TOKEN_ESTIMATE / 1_000_000 * outputPrice * safeRatio
   } else {
     // 定价类型不可识别：同 unknown 分支
     const knownPrices = catalogModels
       .map(m => (m.pricing?.type === 'per-call' ? m.pricing.pricePerCall : 0) ?? 0)
       .filter((p): p is number => p > 0)
-    supplierCredits = knownPrices.length > 0 ? Math.max(...knownPrices) * groupRatio : DEFAULT_TOKEN_ESTIMATE / 500000 * groupRatio
+    supplierCredits = knownPrices.length > 0 ? Math.max(...knownPrices) * safeRatio : DEFAULT_TOKEN_ESTIMATE / 500000 * safeRatio
   }
 
   const totalCredits = computePostGenerationCost(supplierCredits, config)
@@ -114,14 +114,15 @@ export function computeSupplierCreditsFromCatalog(
 ): number {
   const model = catalogModels.find(m => m.id === modelId)
   const pricing = model?.pricing
+  const safeRatio = Number.isFinite(groupRatio) && groupRatio > 0 ? groupRatio : 1
 
   if (!model || !pricing || pricing.type === 'unknown') {
     // unknown / 缺失：bare minimum fallback
-    return (totalTokens ?? 0) / 500000
+    return (totalTokens ?? 0) / 500000 * safeRatio
   }
 
   if (pricing.type === 'per-call' && typeof pricing.pricePerCall === 'number' && pricing.pricePerCall > 0) {
-    return pricing.pricePerCall * groupRatio
+    return pricing.pricePerCall * safeRatio
   }
 
   if (pricing.type === 'per-token') {
@@ -130,11 +131,11 @@ export function computeSupplierCreditsFromCatalog(
     const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
       ? pricing.officialPriceOutput
       : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    return tokens / 1_000_000 * outputPrice * groupRatio
+    return tokens / 1_000_000 * outputPrice * safeRatio
   }
 
   // fallback
-  return (totalTokens ?? 0) / 500000
+  return (totalTokens ?? 0) / 500000 * safeRatio
 }
 
 export interface GenerationCost {

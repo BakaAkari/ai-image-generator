@@ -76,7 +76,7 @@ describe('UserManager', () => {
 
   test('trial: skip credit consumption, increment counter', async () => {
     const u = await manager()
-    const res = await u.reserveCredits('u3', 'U', 'r1', cost(4), trialCfg)
+    const res = await u.reserveCredits('u3', 'U', 'r1', cost(4), trialCfg, undefined, true)
     expect(res.allowed).toBe(true)
     expect(res.isTrial).toBe(true)
     const result = await u.settleReservation('r1', 1, 'gen', trialCfg, { actualCost: 1.5 })

@@ -50,7 +50,6 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
       error: snapshot.error,
       models: snapshot.models,
       unsupportedModels: snapshot.unsupportedModels,
-      groupRatio: snapshot.groupRatio,
     } : null, billing)
     // 自动收集已知平台 ID（从运行时的 session.platform 获取）
     const knownPlatforms = Array.from(deps.knownPlatforms ?? new Set<string>())

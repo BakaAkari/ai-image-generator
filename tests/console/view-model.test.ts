@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'vitest'
-import { buildConsoleState, resolveYunwuGroupRatio } from '../../src/console/view-model.js'
+import { buildConsoleState, resolveMappingGroupRatio } from '../../src/console/view-model.js'
 import type { Config } from '../../src/shared/config.js'
 
 const config = {
   activeSupplier: 'yunwu',
   creditsPerCny: 10,
   pricingMarkupPercent: 30,
-  yunwuGroupRatio: 1,
   modelMappings: [
-    { suffix: 'fixed', modelId: 'per-call' },
-    { suffix: 'token', modelId: 'per-token' },
+    { suffix: 'fixed', modelId: 'per-call', groupRatio: 1 },
+    { suffix: 'token', modelId: 'per-token', groupRatio: 1 },
+    { suffix: 'vip-fixed', modelId: 'per-call', groupRatio: 2.4 },
   ],
 } as unknown as Config
 
@@ -23,7 +23,6 @@ const catalog = {
   unsupportedModels: [
     { id: 'recognize-only', unsupportedReasons: ['image recognition endpoint'] },
   ],
-  groupRatio: { default: 1, vip: 2.4 },
 }
 
 describe('buildConsoleState', () => {
@@ -45,11 +44,11 @@ describe('buildConsoleState', () => {
     expect(row.yunwuCost.label).toContain('按量')
   })
 
-  test('yunwu cost applies group ratio > 1', () => {
-    const cfg = { ...config, yunwuGroupRatio: 2.4 } as Config
-    const state = buildConsoleState(cfg, catalog as any, null)
+  test('yunwu cost applies mapping group ratio > 1', () => {
+    const state = buildConsoleState(config, catalog as any, null, [
+      { suffix: 'vip-fixed', modelId: 'per-call', groupRatio: 2.4 },
+    ])
     const row = state.catalog!.models.find(m => m.id === 'per-call')!
-    // 0.01 * 2.4 * 0.5 = 0.012 → rounded to ¥0.01
     expect(row.yunwuCost.label).toContain('×2.4')
     expect(row.yunwuCost.label.startsWith('¥')).toBe(true)
   })
@@ -66,79 +65,25 @@ describe('buildConsoleState', () => {
     expect(state.suppliers.filter(s => s.id !== 'yunwu').every(s => s.status === 'unsupported')).toBe(true)
   })
 
-  test('exposes catalog groupRatio to the client', () => {
+  test('model row carries its mapping groupRatio', () => {
     const state = buildConsoleState(config, catalog as any, null)
-    expect(state.catalog!.groupRatio).toEqual({ default: 1, vip: 2.4 })
+    const row = state.catalog!.models.find(m => m.id === 'per-call')!
+    expect(row.groupRatio).toBe(1)
   })
 })
 
-describe('resolveYunwuGroupRatio (legacy string group → numeric ratio migration)', () => {
-  test('prefers explicit yunwuGroupRatio when a positive finite number', () => {
-    const ratio = resolveYunwuGroupRatio({ yunwuGroupRatio: 3.6 } as any, { default: 1, vip: 2 })
-    expect(ratio).toBe(3.6)
+describe('resolveMappingGroupRatio', () => {
+  test('returns mapping groupRatio when positive finite', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: 3.6 })).toBe(3.6)
   })
 
-  test('maps legacy string yunwuGroup via catalog groupRatio when numeric field absent', () => {
-    const ratio = resolveYunwuGroupRatio({ yunwuGroup: 'vip' } as any, { default: 1, vip: 2.4 })
-    expect(ratio).toBe(2.4)
+  test('falls back to 1 when groupRatio missing', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm' } as any)).toBe(1)
   })
 
-  test('falls back to 1 when legacy name has no groupRatio mapping', () => {
-    const ratio = resolveYunwuGroupRatio({ yunwuGroup: 'unknown-group' } as any, { default: 1 })
-    expect(ratio).toBe(1)
-  })
-
-  test('falls back to 1 when groupRatio undefined', () => {
-    const ratio = resolveYunwuGroupRatio({ yunwuGroup: 'vip' } as any, undefined)
-    expect(ratio).toBe(1)
-  })
-
-  test('rejects zero, negative and non-finite numeric ratios (safe default 1)', () => {
-    expect(resolveYunwuGroupRatio({ yunwuGroupRatio: 0 } as any)).toBe(1)
-    expect(resolveYunwuGroupRatio({ yunwuGroupRatio: -1 } as any)).toBe(1)
-    expect(resolveYunwuGroupRatio({ yunwuGroupRatio: Number.NaN } as any)).toBe(1)
-  })
-})
-
-describe('buildConsoleState legacy yunwuGroup → yunwuGroupRatio migration (contract)', () => {
-  const legacyCatalog = {
-    supplier: 'yunwu' as const,
-    fetchedAt: 1000,
-    models: [
-      { id: 'per-call', modes: ['text-to-image'], routes: [{ id: 'r', protocol: 'openai', capability: 'text-to-image' }], pricing: { type: 'per-call', pricePerCall: 0.01 }, source: 'remote-pricing' },
-    ],
-    unsupportedModels: [],
-    groupRatio: { default: 1, vip: 2.4 },
-  }
-
-  test('writes effectiveRatio into returned config when yunwuGroupRatio is missing but legacy yunwuGroup maps in catalog', () => {
-    const cfg = { yunwuGroup: 'vip', modelMappings: [], styles: [] } as unknown as Config
-    const state = buildConsoleState(cfg, legacyCatalog as any, null)
-    expect(state.config.yunwuGroupRatio).toBe(2.4)
-  })
-
-  test('writes effectiveRatio into returned config when yunwuGroupRatio is zero (invalid)', () => {
-    const cfg = { yunwuGroup: 'vip', yunwuGroupRatio: 0, modelMappings: [], styles: [] } as unknown as Config
-    const state = buildConsoleState(cfg, legacyCatalog as any, null)
-    expect(state.config.yunwuGroupRatio).toBe(2.4)
-  })
-
-  test('leaves existing valid numeric yunwuGroupRatio untouched', () => {
-    const cfg = { yunwuGroupRatio: 3.6, modelMappings: [], styles: [] } as unknown as Config
-    const state = buildConsoleState(cfg, legacyCatalog as any, null)
-    expect(state.config.yunwuGroupRatio).toBe(3.6)
-  })
-
-  test('falls back to 1 when legacy name has no mapping and numeric field is invalid', () => {
-    const cfg = { yunwuGroup: 'no-such', yunwuGroupRatio: -1, modelMappings: [], styles: [] } as unknown as Config
-    const state = buildConsoleState(cfg, legacyCatalog as any, null)
-    expect(state.config.yunwuGroupRatio).toBe(1)
-  })
-
-  test('does not mutate the incoming config object', () => {
-    const cfg = { yunwuGroup: 'vip', modelMappings: [], styles: [] } as unknown as Config
-    const snapshot = JSON.parse(JSON.stringify(cfg))
-    buildConsoleState(cfg, legacyCatalog as any, null)
-    expect(cfg).toEqual(snapshot)
+  test('falls back to 1 for invalid groupRatio values', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: 0 } as any)).toBe(1)
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: -1 } as any)).toBe(1)
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: Number.NaN } as any)).toBe(1)
   })
 })

@@ -89,10 +89,7 @@
                     <el-input v-model="cfg.providerSettings.geminiOfficialApiKey" type="password" show-password />
                   </el-form-item>
                 </template>
-                <el-form-item label="yunwu 分组倍率">
-                  <el-input-number v-model="cfg.yunwuGroupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 200px" />
-                  <div style="font-size:0.75rem;color:var(--fg3)">直接填分组倍率数字（例如 1、2.4、3.6），在 yunwu 后台 API 令牌页面查看。默认 1 对应 default 分组。</div>
-                </el-form-item>
+
               </el-form>
             </k-card>
           </el-collapse-item>
@@ -153,32 +150,37 @@
                 </div>
               </template>
               <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认自动定价，基于目录价格估算。</div>
-              <el-table :data="cfg.modelMappings" size="small">
-                <el-table-column label="排序" width="70">
+              <el-table :data="cfg.modelMappings" size="small" style="width: 100%">
+                <el-table-column label="排序" width="60">
                   <template #default="{ $index }">
                     <el-button link size="small" :disabled="$index === 0" @click="moveMapping($index, -1)">↑</el-button>
                     <el-button link size="small" :disabled="$index === cfg.modelMappings.length - 1" @click="moveMapping($index, 1)">↓</el-button>
                   </template>
                 </el-table-column>
-                <el-table-column label="命令后缀" width="130">
+                <el-table-column label="命令后缀" width="110">
                   <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
                 </el-table-column>
-                <el-table-column label="模型" min-width="260">
+                <el-table-column label="模型" min-width="180">
                   <template #default="{ row }">
                     <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
                       <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
                     </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="受限" width="70">
+                <el-table-column label="受限" width="55">
                   <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
                 </el-table-column>
-                <el-table-column label="状态" width="90">
+                <el-table-column label="倍率" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.groupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 90px" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="70">
                   <template #default="{ row }">
                     <el-tag :type="mappingValid(row) ? 'success' : 'danger'" size="small">{{ mappingValid(row) ? '可用' : '失效' }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="" width="60">
+                <el-table-column label="" width="50">
                   <template #default="{ $index }">
                     <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
                   </template>
@@ -328,6 +330,13 @@
                 <el-form-item label="试用图片张数（每用户）">
                   <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
                   <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
+                </el-form-item>
+
+                <el-form-item label="每日免费试用模型">
+                  <el-select v-model="cfg.freeTrialModelId" clearable placeholder="选择模型映射中的 modelId" style="width: 320px">
+                    <el-option v-for="m in cfg.modelMappings" :key="m.modelId" :value="m.modelId" :label="`${m.suffix || m.modelId}（${m.modelId}）`" />
+                  </el-select>
+                  <div class="hint">只有选中的模型允许普通用户使用每日免费额度；为空时禁用每日免费。</div>
                 </el-form-item>
 
                 <el-divider content-position="left">B · 自动定价（供应商积分 → 平台积分 → 用户售价）</el-divider>
@@ -516,7 +525,7 @@ function mappingValid(row: any) {
 }
 
 function addMapping() {
-  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false })
+  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false, groupRatio: 1 })
 }
 function moveMapping(i: number, dir: number) {
   const arr = cfg.value.modelMappings

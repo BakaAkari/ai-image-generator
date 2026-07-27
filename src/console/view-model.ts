@@ -1,4 +1,5 @@
 import type { Config } from '../shared/config.js'
+import type { ModelMappingConfig } from '../shared/types.js'
 import type { BillingInfo } from '../catalog/billing-info.js'
 import { SUPPLIER_CREDIT_TO_RMB as CATALOG_SUPPLIER_CREDIT_TO_RMB } from '../catalog/billing-info.js'
 
@@ -23,10 +24,11 @@ interface CatalogInput {
 export interface ConsoleCatalogRow extends CatalogModelInput {
   selectable: boolean
   /**
-   * 供应商目录报价折算后的人民币成本（× groupRatio × 0.5）。仅参考，
+   * 供应商目录报价折算后的人民币成本（× mapping.groupRatio × 0.5）。仅参考，
    * 运行时用户扣费依赖后生成定价（usage.total_tokens）。
    */
   yunwuCost: { type: string; label: string }
+  groupRatio: number
 }
 
 export interface ImageGeneratorConsoleState {
@@ -39,19 +41,13 @@ export interface ImageGeneratorConsoleState {
     models: ConsoleCatalogRow[]
     selectableModels: ConsoleCatalogRow[]
     unsupportedModels: ConsoleCatalogRow[]
-    groupRatio?: Record<string, number>
   }
   billing: BillingInfo | null
 }
 
-export function resolveYunwuGroupRatio(config: Config, groupRatio?: Record<string, number>): number {
-  if (typeof config.yunwuGroupRatio === 'number' && Number.isFinite(config.yunwuGroupRatio) && config.yunwuGroupRatio > 0) {
-    return config.yunwuGroupRatio
-  }
-  const legacyName = config.yunwuGroup
-  if (typeof legacyName === 'string' && legacyName && groupRatio) {
-    const mapped = groupRatio[legacyName]
-    if (typeof mapped === 'number' && Number.isFinite(mapped) && mapped > 0) return mapped
+export function resolveMappingGroupRatio(mapping?: ModelMappingConfig): number {
+  if (typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0) {
+    return mapping.groupRatio
   }
   return 1
 }
@@ -68,20 +64,20 @@ export function resolvePricingParams(config: Config): { creditsPerCny: number | 
   return { creditsPerCny, markupPercent }
 }
 
-export function buildConsoleState(config: Config, catalog: CatalogInput | null, billing: BillingInfo | null): ImageGeneratorConsoleState {
-  const groupRatio = catalog?.groupRatio
-  const effectiveRatio = resolveYunwuGroupRatio(config, groupRatio)
-  const models = catalog?.models.map(model => buildRow(model, true, effectiveRatio)) ?? []
-  const unsupportedModels = catalog?.unsupportedModels?.map(model => buildRow(model, false, effectiveRatio)) ?? []
-  const rawRatio = config.yunwuGroupRatio
-  const rawRatioValid = typeof rawRatio === 'number' && Number.isFinite(rawRatio) && rawRatio > 0
-  // 旧字符串 yunwuGroup 迁移：get-state 直接把解析出的 effectiveRatio 写回 config，让前端
-  // 保存时把数字倍率持久化到 settings.json，不再依赖客户端 normalize 的默认值 1。
-  const configOut: Config = rawRatioValid
-    ? config
-    : { ...config, yunwuGroupRatio: effectiveRatio }
+export function buildConsoleState(
+  config: Config,
+  catalog: CatalogInput | null,
+  _billing: BillingInfo | null,
+  mappings?: ModelMappingConfig[],
+): ImageGeneratorConsoleState {
+  const mappingIndex = new Map<string, ModelMappingConfig>()
+  for (const m of mappings ?? config.modelMappings ?? []) {
+    if (!mappingIndex.has(m.modelId)) mappingIndex.set(m.modelId, m)
+  }
+  const models = catalog?.models.map(model => buildRow(model, true, mappingIndex.get(model.id))) ?? []
+  const unsupportedModels = catalog?.unsupportedModels?.map(model => buildRow(model, false, mappingIndex.get(model.id))) ?? []
   return {
-    config: configOut,
+    config,
     suppliers: [
       { id: 'yunwu', label: '云雾 yunwu.ai', status: 'maintained' },
       { id: 'gptgod', label: 'GPTGod（暂未适配）', status: 'unsupported' },
@@ -95,19 +91,19 @@ export function buildConsoleState(config: Config, catalog: CatalogInput | null, 
       models,
       selectableModels: models.filter(model => model.selectable),
       unsupportedModels,
-      groupRatio,
     } : null,
-    billing,
+    billing: _billing,
   }
 }
 
 function buildRow(
   model: CatalogModelInput,
   selectable: boolean,
-  groupRatio: number,
+  mapping?: ModelMappingConfig,
 ): ConsoleCatalogRow {
+  const groupRatio = resolveMappingGroupRatio(mapping)
   const yunwuCost = formatYunwuCost(model, groupRatio)
-  return { ...model, selectable, yunwuCost }
+  return { ...model, selectable, yunwuCost, groupRatio }
 }
 
 function formatYunwuCost(model: CatalogModelInput, groupRatio: number): ConsoleCatalogRow['yunwuCost'] {

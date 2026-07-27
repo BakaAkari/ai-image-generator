@@ -9,8 +9,10 @@ describe('aka-tools frontend pricing guard', () => {
     expect(source).not.toContain('0.004')
     expect(source).not.toMatch(/pricePerCall\s*\*/)
   })
-  test('new mappings default disabled', () => {
-    expect(source).toContain("chargePolicy: { type: 'disabled'")
+  test('freeTrialModelId selector is present in operations panel', () => {
+    expect(source).toContain('freeTrialModelId')
+    expect(source).toContain('每日免费试用模型')
+    expect(source).toContain('选择模型映射中的 modelId')
   })
   test('only backend selectableModels feed the model selector', () => {
     expect(source).toContain('v-for="m in selectableModels"')

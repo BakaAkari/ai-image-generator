@@ -33,6 +33,8 @@ export interface ModelMappingConfig {
   restricted?: boolean
   /** @deprecated 0.9.0 迁移为 chargePolicy.fixed，保留一版只读兼容。 */
   creditCostPerImage?: number
+  /** 该映射的分组倍率（覆盖目录分组默认值）。yunwu 后台 API 令牌页面查看。默认 1。 */
+  groupRatio?: number
 }
 
 export interface ImageGenerationModifiers {
@@ -81,6 +83,8 @@ export interface ImageRequestContext {
   /** 运行时协议通道 */
   provider?: ProviderType
   modelId?: string
+  /** 模型映射后缀；用于同一 modelId 存在多条映射时精确定位独立倍率。 */
+  modelSuffix?: string
   routeId?: string
   apiFormat?: ApiFormat
   // resolution 支持预设值 (1k/2k/4k) 或自定义尺寸 (如 '1024x2048')

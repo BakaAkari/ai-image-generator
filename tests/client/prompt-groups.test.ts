@@ -58,9 +58,9 @@ describe('normalizeStyleGroups (dirty input defence)', () => {
 
 describe('aka-tools panel Prompt 预设 card contract', () => {
   test('Prompt presets are placed directly after model mappings and before pricing settings', () => {
-    const modelMappings = PAGE_VUE.indexOf('<!-- ══ ③ 模型映射 ══ -->')
-    const promptPresets = PAGE_VUE.indexOf('<!-- ══ ④ Prompt 预设 ══ -->')
-    const pricingSettings = PAGE_VUE.indexOf('<!-- ══ ⑤ 积分与运营 ══ -->')
+    const modelMappings = PAGE_VUE.indexOf('<!-- ══ ② 模型 ══ -->')
+    const promptPresets = PAGE_VUE.indexOf('<!-- ══ ③ Prompt 预设 ══ -->')
+    const pricingSettings = PAGE_VUE.indexOf('<!-- ══ ④ 定价 ══ -->')
     expect(modelMappings).toBeGreaterThan(-1)
     expect(promptPresets).toBeGreaterThan(modelMappings)
     expect(pricingSettings).toBeGreaterThan(promptPresets)

@@ -68,6 +68,7 @@ function buildParameterHelp(config: Config): string {
     '积分：',
     '- 每个模型必须配置固定价或目录成本加成策略；无法报价时拒绝生成',
     `- 新用户试用｜${config.trialImageLimit ?? 3} 张免费`,
+    '- 每日免费仅限模型映射中勾选「每日免费」的模型；未勾选需充值后使用',
     '- 受限模型仍需白名单或管理员权限；白名单不代表免费',
   ]
 

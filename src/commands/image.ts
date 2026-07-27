@@ -64,6 +64,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const modifiers = buildCommandModifiers(argv, undefined, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+      const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+      if (!freeTrialAccess.allowed) return freeTrialAccess.message
 
       const setup = service.buildGenerationSetup(
         resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
@@ -98,6 +100,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const modifiers = buildCommandModifiers(argv, img, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+      const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+      if (!freeTrialAccess.allowed) return freeTrialAccess.message
 
       const setup = service.buildGenerationSetup(
         resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
@@ -127,6 +131,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const modifiers = buildCommandModifiers(argv, undefined, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+      const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+      if (!freeTrialAccess.allowed) return freeTrialAccess.message
 
       const setup = service.buildGenerationSetup(
         resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
@@ -404,6 +410,8 @@ function registerStyleCommand(
       // 经典模式（直接生成）
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
+      const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+      if (!freeTrialAccess.allowed) return freeTrialAccess.message
 
       const setup = service.buildGenerationSetup(
         resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),

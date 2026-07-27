@@ -39,7 +39,29 @@ export function migrateConfig(config: Config): MigrationResult {
   if (mappings.length === 0) actions.push('modelMappings empty; explicit configuration required')
   if (clone.provider) { delete clone.provider; actions.push('removed legacy global provider field'); changed = true }
 
-  return { config: clone, migrated: changed, actions }
+  // yunwuGroupRatio / yunwuGroup 迁移到 mapping.groupRatio
+  let globalRatio: number | undefined
+  if (typeof clone.yunwuGroupRatio === 'number' && Number.isFinite(clone.yunwuGroupRatio) && clone.yunwuGroupRatio > 0) {
+    globalRatio = clone.yunwuGroupRatio
+    actions.push(`read global yunwuGroupRatio=${globalRatio}`)
+  } else if (typeof clone.yunwuGroup === 'string' && clone.yunwuGroup) {
+    // yunwuGroup 字符串不在 migration 层有 catalog 信息，设为 1 等 catalog 解析时映射
+    globalRatio = 1
+    actions.push(`legacy yunwuGroup="${clone.yunwuGroup}" — will resolve via catalog at view-model time`)
+  }
+  if (globalRatio !== undefined) {
+    for (const mapping of mappings) {
+      if (mapping.groupRatio == null || typeof mapping.groupRatio !== 'number' || !Number.isFinite(mapping.groupRatio) || mapping.groupRatio <= 0) {
+        (mapping as unknown as Record<string, unknown>).groupRatio = globalRatio
+        actions.push(`set mapping ${mapping.suffix} groupRatio=${globalRatio} from global`)
+      }
+    }
+  }
+  // 清理旧字段（不报错，旧字段仍可存在于 JSON 中，interface 保留 @deprecated）
+  if ('yunwuGroupRatio' in clone) { delete clone.yunwuGroupRatio; actions.push('removed legacy yunwuGroupRatio'); changed = true }
+  if ('yunwuGroup' in clone) { delete clone.yunwuGroup; actions.push('removed legacy yunwuGroup'); changed = true }
+
+  return { config: clone as Config, migrated: changed, actions }
 }
 
 export function sanitizeModelMapping(mapping: ModelMappingConfig): ModelMappingConfig {

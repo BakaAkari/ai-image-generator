@@ -55,7 +55,8 @@ const SETUP_GUIDE = [
   '图像排行榜 [-n 数量]              查看用户生成和消耗排行',
   '',
   '常用参数：-n 1-4、-1k/-2k/-4k、-1:1/-4:3/-16:9/-9:16、-add 补充要求、-模型后缀。',
-  '权限说明：受限模型需要管理员或模型白名单；白名单不代表免费。管理员和永久会员跳过扣费与限流，但仍记录统计。',
+  '权限说明：受限模型需要管理员或模型白名单；白名单不代表免费。',
+  '免费说明：每日免费仅限管理员在 aka-tools 配置页指定的单个模型；未指定时需充值后使用。管理员和永久会员不受此限制。',
 ].join('\n')
 
 export interface Config {
@@ -92,12 +93,9 @@ export interface Config {
    * 保留 interface 字段用于旧配置反序列化兼容。
    */
   yunwuCreditToRmb?: number
-  /** yunwu API Key 所属分组倍率（目录报价 × 倍率 = 参考供应商积分成本）。默认 1。 */
+  /** @deprecated 1.1.0 起迁移到 modelMappings[n].groupRatio。保留仅用于旧配置反序列化与一次性迁移。 */
   yunwuGroupRatio?: number
-  /**
-   * @deprecated 0.9.1 起改为 yunwuGroupRatio 数字倍率。保留旧字符串字段用于
-   * 一次性向数字迁移（映射到 catalog groupRatio；映射失败回退 1）。
-   */
+  /** @deprecated 1.1.0 起迁移到 modelMappings[n].groupRatio。保留旧字符串字段用于一次性迁移。 */
   yunwuGroup?: string
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
@@ -126,6 +124,8 @@ export interface Config {
   /** @deprecated 0.9.0 仅用于旧配置读取，不参与运行时计费。 */
   defaultCreditCostPerImage?: number
   trialImageLimit: number
+  /** 每日免费试用模型：从模型映射中选择一个 modelId；为空时禁用每日免费 */
+  freeTrialModelId?: string
   /** 免计费平台列表：这些平台上的生成不消耗积分和试用额度 */
   freePlatforms?: string[]
   showCreditCostInResult: boolean
@@ -228,11 +228,6 @@ const ActiveSupplierSchema = Schema.object({
   ])
     .default('yunwu')
     .description('激活供应商（互斥）：模型目录从该供应商动态获取'),
-    yunwuGroupRatio: Schema.number()
-      .default(1)
-      .min(0.01)
-      .step(0.01)
-      .description('yunwu API Key 所属分组倍率（例如 1 / 2.4 / 3.6），在 yunwu 后台 API 令牌页面查看'),
 }).description('🛰️ 激活供应商 / 动态模型目录')
 
 // ----------------------------------------------------------------------------
@@ -273,6 +268,11 @@ const CONFIG_GROUPS = [
         creditCostPerImage: Schema.number()
           .hidden()
           .description('旧字段，仅用于迁移'),
+        groupRatio: Schema.number()
+          .default(1)
+          .min(0.01)
+          .step(0.01)
+          .description('分组倍率（覆盖目录分组默认值）'),
       }).collapse()
     )
       .role('table')
@@ -347,6 +347,9 @@ const CONFIG_GROUPS = [
       .max(100)
       .step(1)
       .description('每用户每天可免费生成的图片张数，0 为禁用'),
+    freeTrialModelId: Schema.string()
+      .default('')
+      .description('每日免费试用模型：从模型映射中选择一个 modelId；为空时禁用每日免费'),
     freePlatforms: Schema.array(Schema.string())
       .default(['lark'])
       .description('免计费平台列表（平台标识：lark = 飞书，onebot = QQ）'),

@@ -396,8 +396,8 @@ export class AiImageGeneratorService extends Service {
       .slice(0, Math.min(50, Math.max(1, Math.floor(limit || 10))))
   }
 
-  reserveCredits(userId: string, userName: string, requestId: string, cost: GenerationCost, platform?: string) {
-    return this.userManager.reserveCredits(userId, userName, requestId, cost, this.pluginConfig, platform)
+  reserveCredits(userId: string, userName: string, requestId: string, cost: GenerationCost, platform?: string, freeForTrialMapping?: boolean) {
+    return this.userManager.reserveCredits(userId, userName, requestId, cost, this.pluginConfig, platform, freeForTrialMapping)
   }
 
   settleReservation(requestId: string, actualImages: number, commandName: string, evidence: Record<string, unknown> | null) {
@@ -437,6 +437,7 @@ export class AiImageGeneratorService extends Service {
     }
     if (modelMapping?.modelId) {
       requestContext.modelId = modelMapping.modelId
+      requestContext.modelSuffix = modelMapping.suffix
     }
     if (modifiers?.resolution) {
       requestContext.resolution = modifiers.resolution
@@ -477,20 +478,54 @@ export class AiImageGeneratorService extends Service {
     return formatCredits(value, this.pluginConfig.creditUnitName)
   }
 
-  checkModelAccess(userId: string, modifiers?: ImageGenerationModifiers): ModelAccessCheckResult {
-    const mapping = modifiers?.modelMapping
-    if (!mapping?.restricted) return { allowed: true }
-
+  /** 检查模型是否对当前用户可用。若 mapping 未提供，使用配置中第一个映射作为默认。 */
+  checkModelAccess(
+    userId: string,
+    modifiers: ImageGenerationModifiers,
+  ): ModelAccessCheckResult {
+    const mapping = modifiers?.modelMapping ?? this.getFirstModelMapping()
+    if (!mapping?.modelId) return { allowed: false, message: '未配置可用模型映射' }
+    if (!mapping.restricted) return { allowed: true }
     if (this.userManager.isModelWhitelisted(userId, this.pluginConfig)) {
       return { allowed: true }
     }
-
     return {
       allowed: false,
       message: buildRestrictedModelMessage(mapping),
     }
   }
 
+  /** 检查模型是否允许该用户使用每日免费额度。豁免用户（管理员/永久会员/免计费平台）不受限制。 */
+  checkFreeTrialForModel(
+    userId: string,
+    mapping: ModelMappingConfig,
+    platform?: string,
+  ): ModelAccessCheckResult {
+    const isExempt = this.userManager.isAdmin(userId, this.pluginConfig)
+      || this.userManager.isPermanentMember(userId, this.pluginConfig)
+      || (platform != null && Array.isArray(this.pluginConfig.freePlatforms) && this.pluginConfig.freePlatforms.includes(platform))
+    if (isExempt) return { allowed: true }
+    const freeModelId = this.pluginConfig.freeTrialModelId
+    if (!freeModelId) {
+      return {
+        allowed: false,
+        message: ['未设置每日免费模型', '', '- 说明丨管理员可在 aka-tools 配置页选择每日免费试用模型'].join('\n'),
+      }
+    }
+    if (mapping.modelId === freeModelId) return { allowed: true }
+    return {
+      allowed: false,
+      message: ['模型不在免费列表', '', `- 模型丨${mapping.suffix ? (mapping.suffix.startsWith('-') ? mapping.suffix : `-${mapping.suffix}`) : '该模型'}`, '- 说明丨每日免费仅限管理员指定的模型，请换模型或充值后使用'].join('\n'),
+    }
+  }
+
+  getFirstModelMapping(): ModelMappingConfig | undefined {
+    const mappings = this.pluginConfig.modelMappings
+    if (!Array.isArray(mappings) || mappings.length === 0) return undefined
+    // 目录校验后，跳过失效映射（modelId 不在当前供应商目录中）
+    const available = mappings.filter(m => !this.unavailableModelIds.has(m.modelId))
+    return available[0] ?? mappings[0]
+  }
 
   async grantCredits(
     userId: string,
@@ -588,13 +623,8 @@ export class AiImageGeneratorService extends Service {
     }
   }
 
-  private getFirstModelMapping(): ModelMappingConfig | undefined {
-    const mappings = this.pluginConfig.modelMappings
-    if (!Array.isArray(mappings) || mappings.length === 0) return undefined
-    // 目录校验后，跳过失效映射（modelId 不在当前供应商目录中）
-    const available = mappings.filter(m => !this.unavailableModelIds.has(m.modelId))
-    return available[0] ?? mappings[0]
-  }
+  // 更下方的 private getFirstModelMapping 实现已移至上方公共方法，这里保留注释说明即可
+  // (no code here)
 
   /** 目录校验：不在当前供应商目录中的 modelId 集合（目录为空时不校验，避免误伤） */
   private unavailableModelIds = new Set<string>()

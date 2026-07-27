@@ -342,12 +342,16 @@ export function createImageGenerationHandlers(
         return formatUserScopedText(session, '模型目录尚未就绪，请稍后重试', userId, userName)
       }
       const modelIdForPricing = options.requestContext?.modelId ?? options.displayInfo?.modelId ?? ''
+      const requestedSuffix = options.requestContext?.modelSuffix
+      const mapping = config.modelMappings?.find(m => requestedSuffix ? m.suffix === requestedSuffix : m.modelId === modelIdForPricing)
+      const groupRatio = typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0
+        ? mapping.groupRatio : 1
       const estimatedCost = modelIdForPricing
-        ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels)
+        ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels, groupRatio)
         : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
 
       // 1. 积分预检
-      const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost, platform)
+      const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost, platform, mapping?.modelId === config.freeTrialModelId)
       if (!reservation.allowed) {
         return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
       }
@@ -460,7 +464,10 @@ export function createImageGenerationHandlers(
           const totalTokens = service.lastProviderUsage
 
           // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
-          const groupRatio = typeof config.yunwuGroupRatio === 'number' && config.yunwuGroupRatio > 0 ? config.yunwuGroupRatio : 1
+          const settleSuffix = options.requestContext?.modelSuffix
+          const settleMapping = config.modelMappings?.find(m => settleSuffix ? m.suffix === settleSuffix : m.modelId === modelId)
+          const groupRatio = typeof settleMapping?.groupRatio === 'number' && Number.isFinite(settleMapping.groupRatio) && settleMapping.groupRatio > 0
+            ? settleMapping.groupRatio : 1
           const supplierCredits = computeSupplierCreditsFromCatalog(modelId, totalTokens, catalogModels, groupRatio)
           const actualCost = computePostGenerationCost(supplierCredits, config)
 
