@@ -39,6 +39,14 @@ export interface UserStatisticsV2 {
   totalFailedRequests: number
   lastModelId?: string
   lastProvider?: string
+  modelUsageCounts: Record<string, number>
+}
+
+export interface ModelUsageStats {
+  totalRequests: number
+  totalImages: number
+  modelCounts: Record<string, number>
+  topModel: string | null
 }
 
 export interface UserFlagsV2 {
@@ -437,8 +445,24 @@ export class UserManager {
         totalImagesGenerated: 0,
         totalGenerationRequests: 0,
         totalFailedRequests: 0,
+        modelUsageCounts: {},
       },
       flags: {},
+    }
+  }
+
+  private ensureStatisticsShape(userData: UserAccountV2): void {
+    if (!userData.statistics) {
+      userData.statistics = {
+        totalImagesGenerated: 0,
+        totalGenerationRequests: 0,
+        totalFailedRequests: 0,
+        modelUsageCounts: {},
+      }
+      return
+    }
+    if (!userData.statistics.modelUsageCounts || typeof userData.statistics.modelUsageCounts !== 'object') {
+      userData.statistics.modelUsageCounts = {}
     }
   }
 
@@ -464,7 +488,9 @@ export class UserManager {
       })
     }
 
-    return this.usersCache!.users[userId]!
+    const user = this.usersCache!.users[userId]!
+    this.ensureStatisticsShape(user)
+    return user
   }
 
   async getExistingUserData(userId: string): Promise<UserAccountV2 | undefined> {
@@ -634,6 +660,7 @@ export class UserManager {
     commandName: string,
     config: Config,
     evidence: Record<string, unknown> | null,
+    modelId?: string,
   ): Promise<CreditReservationResult & { isTrial?: boolean }> {
     await this.loadUsersStore()
     await this.loadReservations()
@@ -643,7 +670,9 @@ export class UserManager {
       if (reservation.result) return reservation.result as CreditReservationResult & { isTrial?: boolean }
       const user = this.usersCache!.users[reservation.userId]
       if (!user) throw new Error(`预授权用户不存在：${reservation.userId}`)
+      this.ensureStatisticsShape(user)
       const delivered = Math.max(0, Math.min(reservation.cost.numImages, Math.floor(actualImages || 0)))
+      const effectiveModelId = modelId || reservation.cost.modelId
 
       if (reservation.isTrial) {
         // 试用：仅增加计数器，不涉及积分
@@ -652,6 +681,9 @@ export class UserManager {
         user.statistics.totalImagesGenerated += delivered
         user.statistics.totalGenerationRequests += 1
         if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
+        if (effectiveModelId && delivered > 0) {
+          user.statistics.modelUsageCounts[effectiveModelId] = (user.statistics.modelUsageCounts[effectiveModelId] || 0) + delivered
+        }
         user.updatedAt = new Date().toISOString()
         const result: CreditReservationResult & { isTrial: boolean } = {
           reservationId,
@@ -679,6 +711,9 @@ export class UserManager {
       user.statistics.totalImagesGenerated += delivered
       user.statistics.totalGenerationRequests += 1
       if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
+      if (effectiveModelId && delivered > 0) {
+        user.statistics.modelUsageCounts[effectiveModelId] = (user.statistics.modelUsageCounts[effectiveModelId] || 0) + delivered
+      }
       user.updatedAt = new Date().toISOString()
       const result: CreditReservationResult & { isTrial?: boolean } = {
         reservationId,
@@ -751,6 +786,7 @@ export class UserManager {
     commandName: string,
     numImages: number,
     config: Config,
+    modelId?: string,
   ): Promise<UserAccountV2> {
     await this.loadUsersStore()
 
@@ -760,16 +796,52 @@ export class UserManager {
         userData = this.createUserAccount(userId, userName, config)
         this.usersCache!.users[userId] = userData
       }
+      this.ensureStatisticsShape(userData)
       const now = new Date().toISOString()
+      const delivered = Math.max(0, Math.floor(numImages || 0))
       userData.userName = userName || userData.userName
       userData.updatedAt = now
       userData.lastUsedAt = now
-      userData.statistics.totalImagesGenerated += Math.max(0, Math.floor(numImages || 0))
+      userData.statistics.totalImagesGenerated += delivered
       userData.statistics.totalGenerationRequests += 1
       userData.statistics.lastModelId = commandName
+      if (modelId && delivered > 0) {
+        userData.statistics.modelUsageCounts[modelId] = (userData.statistics.modelUsageCounts[modelId] || 0) + delivered
+      }
       await this.saveUsersStoreInternal()
       return userData
     })
+  }
+
+  async getModelUsageStats(): Promise<ModelUsageStats> {
+    await this.loadUsersStore()
+    const modelCounts: Record<string, number> = {}
+    let totalRequests = 0
+    let totalImages = 0
+    const users = this.usersCache?.users ?? {}
+    for (const user of Object.values(users)) {
+      if (!user?.statistics) continue
+      totalRequests += Number(user.statistics.totalGenerationRequests || 0)
+      totalImages += Number(user.statistics.totalImagesGenerated || 0)
+      const counts = user.statistics.modelUsageCounts
+      if (counts && typeof counts === 'object') {
+        for (const [modelId, count] of Object.entries(counts)) {
+          if (!modelId) continue
+          const value = Number(count) || 0
+          if (value <= 0) continue
+          modelCounts[modelId] = (modelCounts[modelId] || 0) + value
+        }
+      }
+    }
+    let topModel: string | null = null
+    let topCount = 0
+    for (const [modelId, count] of Object.entries(modelCounts)) {
+      if (count > topCount) {
+        topCount = count
+        topModel = modelId
+      }
+    }
+    return { totalRequests, totalImages, modelCounts, topModel }
   }
 
 

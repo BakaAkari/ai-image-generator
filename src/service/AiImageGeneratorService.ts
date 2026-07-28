@@ -400,8 +400,12 @@ export class AiImageGeneratorService extends Service {
     return this.userManager.reserveCredits(userId, userName, requestId, cost, this.pluginConfig, platform, freeForTrialMapping)
   }
 
-  settleReservation(requestId: string, actualImages: number, commandName: string, evidence: Record<string, unknown> | null) {
-    return this.userManager.settleReservation(requestId, actualImages, commandName, this.pluginConfig, evidence)
+  settleReservation(requestId: string, actualImages: number, commandName: string, evidence: Record<string, unknown> | null, modelId?: string) {
+    return this.userManager.settleReservation(requestId, actualImages, commandName, this.pluginConfig, evidence, modelId)
+  }
+
+  getModelUsageStats() {
+    return this.userManager.getModelUsageStats()
   }
 
   releaseReservation(requestId: string, reason: string) {
@@ -416,8 +420,8 @@ export class AiImageGeneratorService extends Service {
   }
 
   /** 免计费平台专用统计增量：不涉及预授权与结算，仅累加 totalImagesGenerated / totalGenerationRequests。 */
-  recordUsageOnly(userId: string, userName: string, commandName: string, numImages: number) {
-    return this.userManager.recordUsageOnly(userId, userName, commandName, numImages, this.pluginConfig)
+  recordUsageOnly(userId: string, userName: string, commandName: string, numImages: number, modelId?: string) {
+    return this.userManager.recordUsageOnly(userId, userName, commandName, numImages, this.pluginConfig, modelId)
   }
 
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */

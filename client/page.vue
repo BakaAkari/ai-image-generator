@@ -462,6 +462,42 @@
           <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
         </k-card>
 
+        <!-- ══ 模型排行（默认收起，位于页面底部） ══ -->
+        <el-collapse v-model="rankingPanelActive" @change="onRankingPanelChange">
+          <el-collapse-item title="模型排行" name="model-ranking">
+            <k-card class="section" shadow="never">
+              <div v-if="rankingLoading" class="hint">加载中…</div>
+              <div v-else-if="!rankingStats || (rankingStats.totalImages === 0 && rankingStats.totalRequests === 0)" class="hint">
+                暂无数据，生成图片后将自动统计。
+              </div>
+              <div v-else class="ranking-body">
+                <div class="ranking-summary">
+                  <div class="ranking-summary-item">
+                    <div class="ranking-summary-label">插件调用次数</div>
+                    <div class="ranking-summary-value">{{ rankingStats.totalRequests }}</div>
+                  </div>
+                  <div class="ranking-summary-item">
+                    <div class="ranking-summary-label">总生成张数</div>
+                    <div class="ranking-summary-value">{{ rankingStats.totalImages }}</div>
+                  </div>
+                  <div class="ranking-summary-item">
+                    <div class="ranking-summary-label">使用最多模型</div>
+                    <div class="ranking-summary-value ranking-top-model">{{ rankingStats.topModel || '—' }}</div>
+                  </div>
+                </div>
+                <el-table v-if="rankingRows.length" :data="rankingRows" size="small" class="dark-table" max-height="360">
+                  <el-table-column prop="modelId" label="模型" min-width="220" />
+                  <el-table-column prop="count" label="生成张数" width="120" sortable :sort-orders="['descending', 'ascending']" />
+                  <el-table-column label="占比" width="120">
+                    <template #default="{ row }">{{ row.percent }}</template>
+                  </el-table-column>
+                </el-table>
+                <div v-else class="hint">尚未记录到具体模型的使用张数。</div>
+              </div>
+            </k-card>
+          </el-collapse-item>
+        </el-collapse>
+
       </div>
     </div>
 
@@ -481,6 +517,15 @@ onActivated(() => { isAkaToolsRoute.value = true })
 onDeactivated(() => { isAkaToolsRoute.value = false })
 
 const panelActive = ref(['models'])
+const rankingPanelActive = ref<string[]>([])
+const rankingStats = ref<{
+  totalRequests: number
+  totalImages: number
+  modelCounts: Record<string, number>
+  topModel: string | null
+} | null>(null)
+const rankingLoading = ref(false)
+let rankingLoaded = false
 
 const state = ref<any>(null)
 const cfg = ref<any>(null)
@@ -676,6 +721,44 @@ function renameStyleGroup(oldName: string, rawName: string) {
   cfg.value.styleGroups = next
 }
 
+const rankingRows = computed(() => {
+  const stats = rankingStats.value
+  if (!stats) return [] as Array<{ modelId: string; count: number; percent: string }>
+  const total = stats.totalImages
+  const entries = Object.entries(stats.modelCounts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+  return entries.map(([modelId, count]) => ({
+    modelId,
+    count: Number(count),
+    percent: total > 0 ? `${(Number(count) * 100 / total).toFixed(1)}%` : '—',
+  }))
+})
+
+async function loadModelRanking() {
+  if (rankingLoaded) return
+  rankingLoading.value = true
+  try {
+    const res: any = await send('image-generator/get-model-ranking')
+    rankingStats.value = {
+      totalRequests: Number(res?.totalRequests || 0),
+      totalImages: Number(res?.totalImages || 0),
+      modelCounts: res?.modelCounts && typeof res.modelCounts === 'object' ? res.modelCounts : {},
+      topModel: res?.topModel ?? null,
+    }
+    rankingLoaded = true
+  } catch (err) {
+    ElMessage.error(`加载模型排行失败：${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    rankingLoading.value = false
+  }
+}
+
+function onRankingPanelChange(active: string | string[]) {
+  const names = Array.isArray(active) ? active : (active ? [active] : [])
+  if (names.includes('model-ranking')) loadModelRanking()
+}
+
 async function refreshCatalog() {
   refreshing.value = true
   try {
@@ -773,4 +856,10 @@ async function saveAll() {
 .preset-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
 .preset-section-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
 .preset-section-title { font-weight: 600; color: var(--fg1); }
+.ranking-body { display: flex; flex-direction: column; gap: 0.75rem; }
+.ranking-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.ranking-summary-item { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; text-align: center; }
+.ranking-summary-label { font-size: 0.8rem; color: var(--fg3); margin-bottom: 0.25rem; }
+.ranking-summary-value { font-size: 1.1rem; font-weight: 600; color: var(--fg1); word-break: break-all; }
+.ranking-top-model { font-size: 0.95rem; }
 </style>

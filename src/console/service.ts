@@ -69,6 +69,12 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
     }
   }, { authority: 4 })
 
+  consoleService.addListener('image-generator/get-model-ranking', async () => {
+    const service = deps.service
+    if (!service) return { totalRequests: 0, totalImages: 0, modelCounts: {}, topModel: null }
+    return await service.getModelUsageStats()
+  })
+
   consoleService.addListener('image-generator/refresh-catalog', async () => {
     await refreshCatalog()
     const snapshot = catalog.current

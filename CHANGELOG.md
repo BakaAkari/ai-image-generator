@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.3
+
+- 控制台配置页新增「模型排行」折叠面板，默认收起并位于页面底部，展开时按需拉取聚合统计。
+  - 展示插件调用次数（所有用户 `totalGenerationRequests` 累加）、总生成张数（所有用户 `totalImagesGenerated` 累加）、按模型统计的生成张数与占比表格，以及使用最多的模型。
+  - 无数据时提示「暂无数据，生成图片后将自动统计。」，不展示价格 / 积分 / 计费信息。
+- 用户统计（`UserStatisticsV2`）新增 `modelUsageCounts: Record<string, number>`，`recordUsageOnly` 和 `settleReservation`（付费 / 试用路径）成功记录一次生成时按 `modelId` 累加，`getUserData` / `settleReservation` 均通过 `ensureStatisticsShape` 为旧数据回填空对象，保持向后兼容。
+- 新增 `UserManager.getModelUsageStats()`、`AiImageGeneratorService.getModelUsageStats()` 和 console API `image-generator/get-model-ranking`，用于返回聚合结果。
+- `ImageGenerationOrchestrator.runGeneration` 在免计费与付费两条落地路径均把 `modelId` 传给 `recordUsageOnly` / `settleReservation`，确保排行数据完整。
+- 新增 `tests/model-ranking.test.ts` 覆盖：空数据零值、按模型累计、多用户聚合、Top 模型判断、无 `modelUsageCounts` 的旧账户读取与迁移。
+
 ## 1.2.2
 
 - 免计费平台（`freePlatforms`）真正跳过积分与试用通道：命令入口、向导流程、ChatLuna / YesImBot 桥接工具在命中时全部绕过 `reserveCredits`、`settleReservation`、`checkFreeTrialForModel` 与试用额度写入，只保留限流与模型访问控制。

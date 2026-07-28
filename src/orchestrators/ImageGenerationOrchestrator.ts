@@ -471,7 +471,8 @@ export function createImageGenerationHandlers(
       let usageResult: Awaited<ReturnType<AiImageGeneratorService['settleReservation']>> | undefined
       if (generatedImages.length > 0 && freePlatform) {
         try {
-          await service.recordUsageOnly(userId, userName, options.styleName, generatedImages.length)
+          const freeModelId = options.requestContext?.modelId || options.displayInfo?.modelId
+          await service.recordUsageOnly(userId, userName, options.styleName, generatedImages.length, freeModelId)
         } catch (recordError) {
           logger.error('免计费平台记录用量失败', {
             userId,
@@ -515,6 +516,7 @@ export function createImageGenerationHandlers(
             generatedImages.length,
             options.styleName,
             { routeId: options.requestContext?.routeId ?? null, modelId, usageTokens: totalTokens, actualCost },
+            modelId || options.displayInfo?.modelId,
           )
         } catch (recordError) {
           logger.error('记录用量失败', {
