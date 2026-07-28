@@ -81,6 +81,12 @@ export function normalizeConfig(raw: any): any {
     openaiCompatibleExtraHeaders: sanitizeHeaders(rawHeaders),
   }
   c.activeSupplier ??= 'yunwu'
+  // 按平台覆盖交互模式：防御脏数据（非对象 → {}）
+  if (!c.interactionModeOverrides || typeof c.interactionModeOverrides !== 'object' || Array.isArray(c.interactionModeOverrides)) {
+    c.interactionModeOverrides = {}
+  } else {
+    c.interactionModeOverrides = { ...c.interactionModeOverrides }
+  }
   // 定价字段：pricingMarkupPercent 从旧 costMarkup 迁移（1.3→30）；creditsPerCny 保持已存值
   // 或用 10 作为兜底默认，不主动覆盖本地已有值。creditExchangeRate 仅作旧配置读取。
   if (typeof c.pricingMarkupPercent !== 'number' || !Number.isFinite(c.pricingMarkupPercent)) {
@@ -111,6 +117,7 @@ export function normalizeConfig(raw: any): any {
   c.securityBlockWarningThreshold ??= 3
   c.defaultNumImages ??= 1
   c.interactionMode ??= 'auto'
+  c.interactionModeOverrides ??= {}
   c.chatlunaEnabled ??= false
   c.chatlunaContextInjectionEnabled ??= true
   c.chatlunaExposeQuotaTool ??= true
@@ -157,6 +164,7 @@ export const USER_EDITABLE_FIELDS = [
   'showQuotaInImageCommands',
   'defaultNumImages',
   'interactionMode',
+  'interactionModeOverrides',
   'modelMappings',
   'creditUnitName',
   'trialImageLimit',

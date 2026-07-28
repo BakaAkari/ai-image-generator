@@ -443,6 +443,21 @@
               </el-select>
               <div class="hint">高级模式跳过向导，使用默认值直接生成。引导模式分步选择模型与参数后生成。auto 按会话类型自动切换。</div>
             </el-form-item>
+            <el-form-item label="按平台覆盖交互模式">
+              <div class="extra-headers">
+                <div v-for="(row, i) in interactionOverrideRows" :key="i" class="extra-header-row">
+                  <el-input v-model="row.platform" size="small" placeholder="平台 ID（如 lark、onebot、qq）" style="width: 220px" @input="syncInteractionOverrides" />
+                  <el-select v-model="row.mode" size="small" style="width: 140px" @change="syncInteractionOverrides">
+                    <el-option value="auto" label="自动" />
+                    <el-option value="guided" label="引导" />
+                    <el-option value="advanced" label="高级" />
+                  </el-select>
+                  <el-button link type="danger" size="small" @click="removeInteractionOverride(i)">删</el-button>
+                </div>
+                <el-button size="small" @click="addInteractionOverride">添加平台覆盖</el-button>
+                <div class="hint">未覆盖的平台使用上方全局设置；key 为 session.platform（如 lark、onebot、qq）。</div>
+              </div>
+            </el-form-item>
           </el-form>
           <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
         </k-card>
@@ -474,6 +489,7 @@ const refreshing = ref(false)
 const catalogFilter = ref('')
 const setupGuideOpen = ref(false)
 const extraHeadersRows = ref<Array<{ key: string; value: string }>>([])
+const interactionOverrideRows = ref<Array<{ platform: string; mode: 'auto' | 'guided' | 'advanced' }>>([])
 
 const supplierOptions = computed(() => state.value?.suppliers?.map((item: any) => ({
   value: item.id,
@@ -486,6 +502,11 @@ onMounted(async () => {
   state.value = await send('image-generator/get-state')
   cfg.value = normalizeConfig(state.value.config)
   extraHeadersRows.value = objectToRows(cfg.value.providerSettings?.openaiCompatibleExtraHeaders)
+  interactionOverrideRows.value = Object.entries(cfg.value.interactionModeOverrides ?? {})
+    .map(([platform, mode]) => ({
+      platform,
+      mode: (mode === 'auto' || mode === 'guided' || mode === 'advanced') ? mode : 'auto',
+    }))
 })
 
 function syncExtraHeaders() {
@@ -499,6 +520,26 @@ function addExtraHeader() {
 function removeExtraHeader(index: number) {
   extraHeadersRows.value.splice(index, 1)
   syncExtraHeaders()
+}
+
+function syncInteractionOverrides() {
+  const out: Record<string, 'auto' | 'guided' | 'advanced'> = {}
+  for (const row of interactionOverrideRows.value) {
+    const platform = (row.platform ?? '').trim()
+    if (!platform) continue
+    if (row.mode !== 'auto' && row.mode !== 'guided' && row.mode !== 'advanced') continue
+    out[platform] = row.mode
+  }
+  cfg.value.interactionModeOverrides = out
+}
+
+function addInteractionOverride() {
+  interactionOverrideRows.value.push({ platform: '', mode: 'auto' })
+}
+
+function removeInteractionOverride(index: number) {
+  interactionOverrideRows.value.splice(index, 1)
+  syncInteractionOverrides()
 }
 
 const catalogModels = computed(() => state.value?.catalog?.models ?? [])
@@ -669,6 +710,7 @@ async function saveAll() {
   saving.value = true
   try {
     syncExtraHeaders()
+    syncInteractionOverrides()
     cfg.value.providerSettings.openaiCompatibleExtraHeaders = sanitizeHeaders(cfg.value.providerSettings.openaiCompatibleExtraHeaders)
     const res: any = await send('image-generator/save-config', cfg.value)
     if (res.success) ElMessage.success('设置已保存并热重载')

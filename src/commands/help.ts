@@ -55,13 +55,23 @@ function buildParameterHelp(config: Config): string {
     : config.interactionMode === 'advanced'
       ? '始终高级模式'
       : '自动（群聊高级，私聊引导）'
+  const overrideLabels = Object.entries(config.interactionModeOverrides ?? {})
+    .map(([platform, mode]) => {
+      const label = mode === 'auto' ? '自动' : mode === 'guided' ? '引导' : '高级'
+      return `${platform}:${label}`
+    })
   const lines: string[] = [
     '图像参数',
     '',
-    `交互模式：${modeLabel}`,
-    '- auto｜群聊跳过向导直接出图，私聊分步引导',
-    '- guided｜始终分步选择模型与参数',
-    '- advanced｜始终跳过向导，使用默认值',
+    `全局交互模式：${modeLabel}`,
+    '- auto：群聊跳过向导直接出图，私聊分步引导',
+    '- guided：始终分步选择模型与参数',
+    '- advanced：始终跳过向导，使用默认值',
+  ]
+  if (overrideLabels.length) {
+    lines.push(`按平台覆盖：${overrideLabels.join('、')}`)
+  }
+  lines.push(
     '',
     '通用参数：',
     `- -n <数量>｜生成数量，1-4，默认 ${defaultNum}`,
@@ -80,7 +90,7 @@ function buildParameterHelp(config: Config): string {
     `- 新用户试用｜${config.trialImageLimit ?? 3} 张免费`,
     '- 每日免费仅限模型映射中勾选「每日免费」的模型；未勾选需充值后使用',
     '- 受限模型仍需白名单或管理员权限；白名单不代表免费',
-  ]
+  )
 
   const restrictedMappings = Array.isArray(config.modelMappings)
     ? config.modelMappings.filter((mapping) => mapping?.suffix && mapping?.modelId && mapping.restricted)

@@ -55,7 +55,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, session)
+      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
 
       // guided 模式 → 走交互向导
@@ -93,7 +93,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, session)
+      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
 
       // guided 模式 → 走交互向导
@@ -133,7 +133,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, session)
+      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
 
       // guided 模式 → 走交互向导
@@ -412,7 +412,7 @@ function registerStyleCommand(
 
       // 按交互模式分流
       const rawInteractionMode = config.interactionMode
-      const resolvedInteractionMode = resolveInteractionMode(rawInteractionMode, session)
+      const resolvedInteractionMode = resolveInteractionMode(rawInteractionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
 
       if (resolvedInteractionMode === 'guided' && wizardHandler) {

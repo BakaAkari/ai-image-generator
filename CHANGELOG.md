@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+
+- 新增 `interactionModeOverrides` 配置：按 `session.platform` 覆盖全局 `interactionMode`，未列出的平台仍使用全局设置。
+  - 使用场景：飞书私聊需要走高级直接出图、QQ 群保留自动切换等平台差异化交互策略。
+  - 前端 aka-tools 面板「生成默认值 → 交互模式」下方新增紧凑的「按平台覆盖交互模式」键值编辑器（平台 ID + auto/guided/advanced 下拉 + 删除按钮 + 添加按钮）。
+  - 后端 `resolveInteractionMode(mode, overrides, session)` 增加平台优先级：`overrides[session.platform]` 命中时以覆盖值为准，否则回退到全局 `mode`。
+- 修复 `isGroupChat` 在飞书私聊中被误判为群聊的问题：判断优先级改为 `session.isDirect === true → 私聊`、`isDirect === false → 群聊`，再回退到 `guildId` / `channelId !== userId`。
+- 新增 `tests/shared/interaction-mode.test.ts`：覆盖 `isGroupChat` 各类会话状态与 `resolveInteractionMode` 平台覆盖 / 全局兜底路径。
+- `图像参数` 命令显示当前平台覆盖列表，帮助管理员核对配置。
+
 ## 1.2.0
 
 - 新增 `interactionMode` 配置（auto / guided / advanced），默认 auto：
