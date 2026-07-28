@@ -305,6 +305,14 @@ export function createImageGenerationHandlers(
     const userName = session.username || session.author?.name || userId
     const platform = session.platform
 
+    // 限流检查：所有路径（命令 / 向导 / 免计费平台）统一在此拦截，避免各调用点漏加
+    const rateLimit = userManager.checkRateLimit(userId, config)
+    if (!rateLimit.allowed) {
+      return formatUserScopedText(session, rateLimit.message || '操作过于频繁，请稍后再试', userId, userName)
+    }
+
+    const freePlatform = service.isFreePlatform(platform)
+
     // 任务锁 TTL 上限为命令超时 + 2 分钟兜底，避免长时间卡锁
     const graceMs = 120_000
     const taskTtlMs = Math.min(
@@ -346,14 +354,18 @@ export function createImageGenerationHandlers(
       const mapping = config.modelMappings?.find(m => requestedSuffix ? m.suffix === requestedSuffix : m.modelId === modelIdForPricing)
       const groupRatio = typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0
         ? mapping.groupRatio : 1
-      const estimatedCost = modelIdForPricing
-        ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels, groupRatio)
-        : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)
+      const estimatedCost = freePlatform
+        ? undefined
+        : (modelIdForPricing
+          ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels, groupRatio)
+          : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext))
 
-      // 1. 积分预检
-      const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost, platform, mapping?.modelId === config.freeTrialModelId)
-      if (!reservation.allowed) {
-        return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
+      // 1. 积分预检（免计费平台完全跳过预授权）
+      if (!freePlatform) {
+        const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost!, platform, mapping?.modelId === config.freeTrialModelId)
+        if (!reservation.allowed) {
+          return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
+        }
       }
 
       // 2. 状态提示
@@ -365,7 +377,7 @@ export function createImageGenerationHandlers(
         const modelDesc = options.displayInfo.modelDescription || options.displayInfo.modelId
         statusParts.push(`- 模型｜${modelDesc}`)
       }
-      if (config.showCreditCostInResult) {
+      if (!freePlatform && config.showCreditCostInResult && estimatedCost) {
         statusParts.push(`- 预计消耗｜${service.formatCredits(estimatedCost.totalCredits)}`)
       }
       const startMessage = statusParts.length
@@ -455,9 +467,19 @@ export function createImageGenerationHandlers(
         }
       }
 
-      // 6. 成功发送后按模型定价规则计算实际成本并扣费
+      // 6. 成功发送后按模型定价规则计算实际成本并扣费（免计费平台仅记录统计增量）
       let usageResult: Awaited<ReturnType<AiImageGeneratorService['settleReservation']>> | undefined
-      if (generatedImages.length > 0) {
+      if (generatedImages.length > 0 && freePlatform) {
+        try {
+          await service.recordUsageOnly(userId, userName, options.styleName, generatedImages.length)
+        } catch (recordError) {
+          logger.error('免计费平台记录用量失败', {
+            userId,
+            ...sanitizeForLog(recordError),
+          })
+        }
+      }
+      if (generatedImages.length > 0 && !freePlatform) {
         try {
           const modelId = options.requestContext?.modelId ?? ''
           // TODO: accumulate tokens across multi-call batches
@@ -531,6 +553,16 @@ export function createImageGenerationHandlers(
           })
         }
 
+        // 免计费平台：仅回复图片数量，不显示任何积分/试用/余额信息
+        if (freePlatform) {
+          return formatUserScopedText(
+            session,
+            ['生成完成', '', `- 图片｜${generatedImages.length} 张`].join('\n'),
+            userId,
+            userName,
+          )
+        }
+
         // 可选：附带积分提示
         // showCreditCostInResult 是总开关（"生成完成后显示本次消耗和剩余积分"）
         // showQuotaInImageCommands 是子开关，在总开关开启时额外控制是否显示剩余积分明细
@@ -565,7 +597,9 @@ export function createImageGenerationHandlers(
         return ''
       }
 
-      await service.releaseReservation(requestId, 'provider returned no images')
+      if (!freePlatform) {
+        await service.releaseReservation(requestId, 'provider returned no images')
+      }
       return sendFinalText(
         session,
         ['生成失败', '', '- 原因｜未返回图片', '- 建议｜稍后重试或调整描述'].join('\n'),
@@ -574,7 +608,9 @@ export function createImageGenerationHandlers(
         userName,
       )
     } catch (error) {
-      try { await service.releaseReservation(requestId, error instanceof Error ? error.message : String(error)) } catch { /* no active reservation */ }
+      if (!freePlatform) {
+        try { await service.releaseReservation(requestId, error instanceof Error ? error.message : String(error)) } catch { /* no active reservation */ }
+      }
       logger.error('图像生成流程异常', {
         userId,
         styleName: options.styleName,

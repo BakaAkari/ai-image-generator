@@ -408,6 +408,18 @@ export class AiImageGeneratorService extends Service {
     return this.userManager.releaseReservation(requestId, this.pluginConfig, reason)
   }
 
+  /** 免计费平台判断：命中时应完全绕过积分/试用/结算，只保留限流与模型访问控制。 */
+  isFreePlatform(platform?: string | null): boolean {
+    return platform != null
+      && Array.isArray(this.pluginConfig.freePlatforms)
+      && this.pluginConfig.freePlatforms.includes(platform)
+  }
+
+  /** 免计费平台专用统计增量：不涉及预授权与结算，仅累加 totalImagesGenerated / totalGenerationRequests。 */
+  recordUsageOnly(userId: string, userName: string, commandName: string, numImages: number) {
+    return this.userManager.recordUsageOnly(userId, userName, commandName, numImages, this.pluginConfig)
+  }
+
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
   /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
   lastProviderUsage: number | null = null

@@ -40,6 +40,8 @@ export interface WizardSession {
   preResolution?: string
   preAspectRatio?: string
   preCustomAdditions?: string[]
+  /** 会话所在平台（用于免计费平台判断，避免向导渲染时显示无关积分文案） */
+  platform?: string
 }
 
 export interface WizardStartOptions {

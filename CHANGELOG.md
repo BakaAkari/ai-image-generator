@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.2
+
+- 免计费平台（`freePlatforms`）真正跳过积分与试用通道：命令入口、向导流程、ChatLuna / YesImBot 桥接工具在命中时全部绕过 `reserveCredits`、`settleReservation`、`checkFreeTrialForModel` 与试用额度写入，只保留限流与模型访问控制。
+  - 新增 `service.isFreePlatform(platform)` 与 `service.recordUsageOnly(userId, userName, commandName, numImages)`：后者只累加 `totalImagesGenerated` / `totalGenerationRequests`，不动积分账本、试用日次数或预授权。
+  - 免计费平台生成完成后仅回复图片数量，剥离积分 / 试用 / 余额 / 消耗等文案；向导渲染模型列表与确认页时同步省略成本 / 异步标签。
+  - 免计费平台异常路径不再调用 `releaseReservation`，避免为空预授权触发日志噪音。
+- 统一入口的限流拦截：`ImageGenerationOrchestrator.runGeneration` 及两个桥接工具运行时都在锁前调用 `userManager.checkRateLimit`，包括免计费平台用户，防止各调用点漏加。
+- 向导会话（`WizardSession`）新增 `platform` 字段并在 `startWizardSession` 中记录，保证多步渲染中的免计费判断稳定。
+- `commands/image.ts` 与 `wizard/wizard-handler.ts` 中所有 `checkFreeTrialForModel` 调用均在免计费平台下跳过，避免无谓的错误提示。
+- 新增 `tests/free-platform.test.ts` 覆盖：`isFreePlatform` 真值表、`recordUsageOnly` 增量与账本零副作用、限流仍生效、受限模型仍受 `checkModelAccess` 拒绝、`checkFreeTrialForModel` 平台豁免。
+- 新增 `tests/rate-limit.test.ts` 覆盖：窗口内允许 N 次 / 阻止 N+1 次、窗口滑动后恢复放行、不同用户计数隔离。
+
 ## 1.2.1
 
 - 新增 `interactionModeOverrides` 配置：按 `session.platform` 覆盖全局 `interactionMode`，未列出的平台仍使用全局设置。

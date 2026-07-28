@@ -99,14 +99,21 @@ async function runGenerateImageTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
+  const config = getConfig()
+  const rateLimit = aiGenerator.userManager.checkRateLimit(session.userId!, config)
+  if (!rateLimit.allowed) {
+    return formatToolError(rateLimit.message || '操作过于频繁，请稍后再试。')
+  }
+  const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(input.prompt, 'prompt')
-    const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
-    if (!reservation.allowed) {
-      return formatToolError(reservation.message || '积分不足。')
+    if (!freePlatform) {
+      const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
+      if (!reservation.allowed) {
+        return formatToolError(reservation.message || '积分不足。')
+      }
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -124,7 +131,17 @@ async function runGenerateImageTool(
       stylePreset: 'aigc_generate_image',
     })
 
-    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
+    if (freePlatform) {
+      await aiGenerator.recordUsageOnly(session.userId!, session.username || session.userId!, 'aigc_generate_image', images.length)
+      return formatToolJson({
+        ok: true,
+        imagesCount: images.length,
+        images: images.map(summarizeImageUrl),
+        freePlatform: true,
+      })
+    }
+
+    await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,
@@ -141,6 +158,12 @@ async function runEditImageTool(
   aiGenerator: AiImageGeneratorService,
   getConfig: ChatLunaConfigAccessor,
 ) {
+  const config = getConfig()
+  const rateLimit = aiGenerator.userManager.checkRateLimit(session.userId!, config)
+  if (!rateLimit.allowed) {
+    return formatToolError(rateLimit.message || '操作过于频繁，请稍后再试。')
+  }
+  const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(input.prompt, 'prompt')
     const referenceMode = expectString(input.referenceMode, 'referenceMode')
@@ -150,12 +173,13 @@ async function runEditImageTool(
       return formatToolError('未能解析到参考图片。')
     }
 
-    const config = getConfig()
     const { requestContext, generationCost } = buildRequestContextAndCost(input, config)
 
-    const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
-    if (!reservation.allowed) {
-      return formatToolError(reservation.message || '积分不足。')
+    if (!freePlatform) {
+      const reservation = await aiGenerator.reserveCredits(session.userId!, session.username || session.userId!, requestId, generationCost, session.platform || undefined)
+      if (!reservation.allowed) {
+        return formatToolError(reservation.message || '积分不足。')
+      }
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -178,7 +202,18 @@ async function runEditImageTool(
           : undefined,
     })
 
-    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
+    if (freePlatform) {
+      await aiGenerator.recordUsageOnly(session.userId!, session.username || session.userId!, 'aigc_edit_image', images.length)
+      return formatToolJson({
+        ok: true,
+        imagesCount: images.length,
+        images: images.map(summarizeImageUrl),
+        referenceMode,
+        freePlatform: true,
+      })
+    }
+
+    await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return formatToolJson({
       ok: true,

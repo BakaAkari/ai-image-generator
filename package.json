@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-aka-ai-image-generator",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "AI image generator for Koishi (V2: semantic supplier UI, image protocols, credit billing).",
   "license": "MIT",
   "main": "lib/index.js",

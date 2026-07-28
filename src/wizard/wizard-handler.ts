@@ -131,20 +131,25 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   /**
    * 渲染模型列表：数据源是配置页 modelMappings（用户可选模型的唯一事实源），
    * 不是供应商刷新出来的全量目录。受限模型对非白名单/非管理员直接不列入。
-   * 无介绍文字，直接是编号列表。
+   * 无介绍文字，直接是编号列表。免计费平台省略成本/异步标签，只显示协议+后缀。
    */
-  function renderModelList(userId: string): string {
+  function renderModelList(userId: string, platform?: string): string {
     const allMappings = getConfiguredMappings()
     if (!allMappings.length) return '模型映射为空，请管理员在配置页添加模型映射'
 
     const mappings = getVisibleMappings(userId)
     if (!mappings.length) return '当前无可用模型（受限模型仅管理员/白名单）'
 
+    const freePlatform = service.isFreePlatform(platform)
     const lines: string[] = []
     for (let i = 0; i < mappings.length; i++) {
       const mapping = mappings[i]
       const proto = resolveProtocol(mapping.modelId)
       const providerLabel = PROTOCOL_LABELS[proto] ?? proto.toUpperCase()
+      if (freePlatform) {
+        lines.push(`${i + 1} · [${providerLabel}] ${normalizeMappingSuffixLabel(mapping.suffix)}`)
+        continue
+      }
       const cost = estimateCost(mapping.modelId)
       const costText = cost > 0 ? `~${service.formatCredits(cost)}` : '免费'
       const pp = PROTOCOL_PARAMS[proto]
@@ -206,11 +211,15 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     if (w.imageUrls?.length) lines.push(`图片 · ${w.imageUrls.length} 张`)
 
     if (w.modelId) {
-      const cost = estimateCost(w.modelId)
-      const costText = cost > 0 ? service.formatCredits(cost) : '免费'
-      const pp = w.protocol ? PROTOCOL_PARAMS[w.protocol] : undefined
-      const asyncTag = pp?.async ? ` [异步 ${pp.async.minSec}-${pp.async.maxSec}s]` : ''
-      lines.push(`模型 · ${getModelDisplayLabel(w.modelId)}  ${costText}${asyncTag}`)
+      if (service.isFreePlatform(w.platform)) {
+        lines.push(`模型 · ${getModelDisplayLabel(w.modelId)}`)
+      } else {
+        const cost = estimateCost(w.modelId)
+        const costText = cost > 0 ? service.formatCredits(cost) : '免费'
+        const pp = w.protocol ? PROTOCOL_PARAMS[w.protocol] : undefined
+        const asyncTag = pp?.async ? ` [异步 ${pp.async.minSec}-${pp.async.maxSec}s]` : ''
+        lines.push(`模型 · ${getModelDisplayLabel(w.modelId)}  ${costText}${asyncTag}`)
+      }
     }
 
     if (w.protocol) {
@@ -300,21 +309,21 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (text) {
           w.prompt = text
           w.step = 'model-select'
-          return renderModelList(w.userId)
+          return renderModelList(w.userId, w.platform)
         }
         return '请输入修改描述'
       }
 
       // 3) 两者都已就绪
       w.step = 'model-select'
-      return renderModelList(w.userId)
+      return renderModelList(w.userId, w.platform)
     }
 
     // 文生图
     if (!text) return '请发送画面描述'
     w.prompt = text
     w.step = 'model-select'
-    return renderModelList(w.userId)
+    return renderModelList(w.userId, w.platform)
   }
 
   /** model-select 步骤：按编号选择模型（数据源为配置页 modelMappings），进入参数选择 */
@@ -334,9 +343,11 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     if (!access.allowed) {
       return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
     }
-    const freeTrialAccess = service.checkFreeTrialForModel(w.userId, mapping)
-    if (!freeTrialAccess.allowed) {
-      return freeTrialAccess.message || ['模型不在免费列表', '', '- 说明丨此模型不开放每日免费'].join('\n')
+    if (!service.isFreePlatform(w.platform)) {
+      const freeTrialAccess = service.checkFreeTrialForModel(w.userId, mapping, w.platform)
+      if (!freeTrialAccess.allowed) {
+        return freeTrialAccess.message || ['模型不在免费列表', '', '- 说明丨此模型不开放每日免费'].join('\n')
+      }
     }
 
     w.modelId = mapping.modelId
@@ -589,6 +600,9 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     if (preModifiers.aspectRatio) w.preAspectRatio = preModifiers.aspectRatio
     if (preModifiers.customAdditions?.length) w.preCustomAdditions = preModifiers.customAdditions
 
+    // 记录会话所在平台，用于后续渲染步骤（免计费平台省略成本文案）
+    if (session.platform) w.platform = session.platform
+
     // 图生图：保存图片
     if (mode === 'image-to-image' && imageUrls.length > 0) {
       w.imageUrls = imageUrls.slice(0, 1)
@@ -597,7 +611,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 预设命令（带锁定 prompt）：直接进模型选择
     if (style?.prompt) {
       w.step = 'model-select'
-      return Promise.resolve(renderModelList(userId))
+      return Promise.resolve(renderModelList(userId, w.platform))
     }
 
     // 行内 prompt
@@ -609,7 +623,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       }
       w.prompt = cleanInlinePrompt
       w.step = 'model-select'
-      return Promise.resolve(renderModelList(userId))
+      return Promise.resolve(renderModelList(userId, w.platform))
     }
 
     // 图生图无图 → 提示发图
@@ -659,12 +673,12 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (w.step === 'param-select') {
           w.params = {}
           w.step = 'model-select'
-          return renderModelList(userId)
+          return renderModelList(userId, w.platform)
         }
         if (w.step === 'confirm') {
           w.params = {}
           w.step = 'param-select'
-          return w.protocol ? renderParamList(w.protocol) : renderModelList(userId)
+          return w.protocol ? renderParamList(w.protocol) : renderModelList(userId, w.platform)
         }
         return '已在第一步，无法返回'
       }

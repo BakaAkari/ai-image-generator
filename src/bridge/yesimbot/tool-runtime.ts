@@ -102,13 +102,20 @@ async function runGenerateImageTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
+  const rateLimit = aiGenerator.userManager.checkRateLimit(session.userId, config)
+  if (!rateLimit.allowed) {
+    return Failed(rateLimit.message || '操作过于频繁，请稍后再试。')
+  }
+  const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(args.prompt, 'prompt')
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
-    if (!reservation.allowed) {
-      return Failed(reservation.message || '积分不足。')
+    if (!freePlatform) {
+      const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
+      if (!reservation.allowed) {
+        return Failed(reservation.message || '积分不足。')
+      }
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -126,7 +133,17 @@ async function runGenerateImageTool(
       stylePreset: 'aigc_generate_image',
     })
 
-    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
+    if (freePlatform) {
+      await aiGenerator.recordUsageOnly(session.userId, session.username || session.userId, 'aigc_generate_image', images.length)
+      return Success({
+        ok: true,
+        imagesCount: images.length,
+        images: images.map(summarizeImageUrl),
+        freePlatform: true,
+      })
+    }
+
+    await aiGenerator.settleReservation(requestId, images.length, 'aigc_generate_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `生成完成！共生成 ${images.length} 张图像。`,
@@ -143,6 +160,11 @@ async function runEditImageTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
+  const rateLimit = aiGenerator.userManager.checkRateLimit(session.userId, config)
+  if (!rateLimit.allowed) {
+    return Failed(rateLimit.message || '操作过于频繁，请稍后再试。')
+  }
+  const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(args.prompt, 'prompt')
     const referenceMode =
@@ -159,9 +181,11 @@ async function runEditImageTool(
 
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
-    if (!reservation.allowed) {
-      return Failed(reservation.message || '积分不足。')
+    if (!freePlatform) {
+      const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
+      if (!reservation.allowed) {
+        return Failed(reservation.message || '积分不足。')
+      }
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -185,7 +209,18 @@ async function runEditImageTool(
           : undefined,
     })
 
-    const usage = await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
+    if (freePlatform) {
+      await aiGenerator.recordUsageOnly(session.userId, session.username || session.userId, 'aigc_edit_image', images.length)
+      return Success({
+        ok: true,
+        imagesCount: images.length,
+        images: images.map(summarizeImageUrl),
+        referenceMode,
+        freePlatform: true,
+      })
+    }
+
+    await aiGenerator.settleReservation(requestId, images.length, 'aigc_edit_image', { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `编辑完成！共生成 ${images.length} 张图像。`,
@@ -202,6 +237,11 @@ async function runStylePresetTool(
   config: Config,
   logger: (...args: any[]) => void,
 ): Promise<ToolExecuteResult> {
+  const rateLimit = aiGenerator.userManager.checkRateLimit(session.userId, config)
+  if (!rateLimit.allowed) {
+    return Failed(rateLimit.message || '操作过于频繁，请稍后再试。')
+  }
+  const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const resolvedStyle = resolveRequestedStylePreset(args, aiGenerator)
     if ('error' in resolvedStyle) {
@@ -225,9 +265,11 @@ async function runStylePresetTool(
 
     const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
 
-    const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
-    if (!reservation.allowed) {
-      return Failed(reservation.message || '积分不足。')
+    if (!freePlatform) {
+      const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
+      if (!reservation.allowed) {
+        return Failed(reservation.message || '积分不足。')
+      }
     }
 
     const images = await aiGenerator.requestProviderImages(
@@ -245,7 +287,18 @@ async function runStylePresetTool(
       stylePreset: preset.commandName,
     })
 
-    const usage = await aiGenerator.settleReservation(requestId, images.length, preset.commandName, { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
+    if (freePlatform) {
+      await aiGenerator.recordUsageOnly(session.userId, session.username || session.userId, preset.commandName, images.length)
+      return Success({
+        ok: true,
+        imagesCount: images.length,
+        images: images.map(summarizeImageUrl),
+        referenceMode,
+        freePlatform: true,
+      })
+    }
+
+    await aiGenerator.settleReservation(requestId, images.length, preset.commandName, { routeId: requestContext.routeId ?? null, modelId: requestContext.modelId ?? null })
 
     return Success({
       message: `已应用「${preset.commandName}」风格，生成 ${images.length} 张图像。`,
