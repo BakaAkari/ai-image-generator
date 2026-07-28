@@ -50,8 +50,18 @@ function buildImageHelp(config: Config): string {
 
 function buildParameterHelp(config: Config): string {
   const defaultNum = resolveCommandNum(config.defaultNumImages)
+  const modeLabel = config.interactionMode === 'guided'
+    ? '始终引导模式'
+    : config.interactionMode === 'advanced'
+      ? '始终高级模式'
+      : '自动（群聊高级，私聊引导）'
   const lines: string[] = [
     '图像参数',
+    '',
+    `交互模式：${modeLabel}`,
+    '- auto｜群聊跳过向导直接出图，私聊分步引导',
+    '- guided｜始终分步选择模型与参数',
+    '- advanced｜始终跳过向导，使用默认值',
     '',
     '通用参数：',
     `- -n <数量>｜生成数量，1-4，默认 ${defaultNum}`,

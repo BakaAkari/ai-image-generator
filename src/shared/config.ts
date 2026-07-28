@@ -55,6 +55,7 @@ const SETUP_GUIDE = [
   '图像排行榜 [-n 数量]              查看用户生成和消耗排行',
   '',
   '常用参数：-n 1-4、-1k/-2k/-4k、-1:1/-4:3/-16:9/-9:16、-add 补充要求、-模型后缀。',
+  '交互模式：auto 群聊跳过向导直接出图（私聊分步引导）；guided 始终引导；advanced 始终跳过向导。',
   '权限说明：受限模型需要管理员或模型白名单；白名单不代表免费。',
   '免费说明：每日免费仅限管理员在 aka-tools 配置页指定的单个模型；未指定时需充值后使用。管理员和永久会员不受此限制。',
 ].join('\n')
@@ -115,6 +116,8 @@ export interface Config {
   styleGroups?: Record<string, StyleGroupConfig>
   showQuotaInImageCommands: boolean
   defaultNumImages: number
+  /** 交互模式：auto 按会话类型自动切换（群聊 → 高级，私聊 → 引导） */
+  interactionMode: 'auto' | 'guided' | 'advanced'
 
   // ── ③ 模型映射 ────────────────────────────────────────────────────────────
   modelMappings?: ModelMappingConfig[]
@@ -453,6 +456,13 @@ const CONFIG_GROUPS = [
       .max(4)
       .step(1)
       .description('未填写 -n 时默认生成的图片数量'),
+    interactionMode: Schema.union([
+      Schema.const('auto').description('auto：群聊自动高级直接，私聊自动引导'),
+      Schema.const('guided').description('始终引导模式（适合新手）'),
+      Schema.const('advanced').description('始终高级模式（适合熟练用户）'),
+    ])
+      .default('auto')
+      .description('交互模式：auto 按会话类型切换'),
   }).description('🧰 业务运行参数（aka-tools 面板管理）').collapse(),
 ] as const
 

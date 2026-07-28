@@ -435,6 +435,14 @@
         <k-card title="生成默认值" class="section">
           <el-form label-width="200px">
             <el-form-item label="默认生成张数"><el-input-number v-model="cfg.defaultNumImages" :min="1" :max="4" /></el-form-item>
+            <el-form-item label="交互模式">
+              <el-select v-model="cfg.interactionMode" style="width: 220px">
+                <el-option value="auto" label="自动（群聊→高级，私聊→引导）" />
+                <el-option value="guided" label="始终引导模式（适合新手）" />
+                <el-option value="advanced" label="始终高级模式（适合熟练用户）" />
+              </el-select>
+              <div class="hint">高级模式跳过向导，使用默认值直接生成。引导模式分步选择模型与参数后生成。auto 按会话类型自动切换。</div>
+            </el-form-item>
           </el-form>
           <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
         </k-card>
@@ -639,6 +647,25 @@ async function refreshCatalog() {
 }
 
 async function saveAll() {
+  // 校验：选中供应商时必须填写对应 API Key
+  const supplier = cfg.value.activeSupplier
+  const providerSettings = cfg.value.providerSettings || {}
+  let missingField = ''
+  if (supplier === 'yunwu' || supplier === 'gptgod') {
+    const key = (providerSettings.openaiCompatibleApiKey || '').trim()
+    if (!key) missingField = supplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'
+  } else if (supplier === 'openai-official') {
+    const key = (providerSettings.gptOfficialApiKey || '').trim()
+    if (!key) missingField = 'OpenAI 官方 API Key'
+  } else if (supplier === 'gemini-official') {
+    const key = (providerSettings.geminiOfficialApiKey || '').trim()
+    if (!key) missingField = 'Gemini API Key'
+  }
+  if (missingField) {
+    ElMessage.warning(`请先填写 ${missingField}`)
+    return
+  }
+
   saving.value = true
   try {
     syncExtraHeaders()

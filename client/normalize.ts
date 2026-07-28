@@ -74,10 +74,10 @@ export function normalizeConfig(raw: any): any {
   c.setupGuide = source.setupGuide ?? ''
   const rawHeaders = source.providerSettings?.openaiCompatibleExtraHeaders
   c.providerSettings = {
-    openaiCompatibleApiKey: source.openaiCompatibleApiKey ?? '',
+    openaiCompatibleApiKey: source.providerSettings?.openaiCompatibleApiKey ?? '',
     openaiCompatibleApiBase: source.providerSettings?.openaiCompatibleApiBase ?? '',
-    gptOfficialApiKey: source.gptOfficialApiKey ?? '',
-    geminiOfficialApiKey: source.geminiOfficialApiKey ?? '',
+    gptOfficialApiKey: source.providerSettings?.gptOfficialApiKey ?? '',
+    geminiOfficialApiKey: source.providerSettings?.geminiOfficialApiKey ?? '',
     openaiCompatibleExtraHeaders: sanitizeHeaders(rawHeaders),
   }
   c.activeSupplier ??= 'yunwu'
@@ -110,6 +110,7 @@ export function normalizeConfig(raw: any): any {
   c.securityBlockWindow ??= 600
   c.securityBlockWarningThreshold ??= 3
   c.defaultNumImages ??= 1
+  c.interactionMode ??= 'auto'
   c.chatlunaEnabled ??= false
   c.chatlunaContextInjectionEnabled ??= true
   c.chatlunaExposeQuotaTool ??= true
@@ -155,6 +156,7 @@ export const USER_EDITABLE_FIELDS = [
   'styleGroups',
   'showQuotaInImageCommands',
   'defaultNumImages',
+  'interactionMode',
   'modelMappings',
   'creditUnitName',
   'trialImageLimit',

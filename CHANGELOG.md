@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+- 新增 `interactionMode` 配置（auto / guided / advanced），默认 auto：
+  - auto：群聊自动进入高级模式直接出图，私聊自动进入引导模式分步选择。
+  - guided：文生图 / 图生图 / 合成图 / style 快捷命令始终进入向导。
+  - advanced：所有命令始终跳过向导，无参数时使用默认值直接生成。
+- 命令入口（文生图 / 图生图 / 合成图 / style 快捷命令）按交互模式分流，高级模式直接使用默认模型、默认数量、默认比例生成。
+- 前端 aka-tools 配置页「生成默认值」分组增加「交互模式」下拉选择。
+- `图像参数` 命令与 `setupGuide` 文案同步更新，说明三种模式行为。
+- 前端 aka-tools 面板保存配置前校验当前供应商对应 API Key：未填写时弹警告并阻止保存，避免用户保存后调用 API 才报 `Unauthorized`。
+- 修复 `client/normalize.ts` 读取 `providerSettings` 下 API Key 字段路径错误的问题，刷新页面后 key 不再显示为空。
+
 ## 1.1.0
 
 - 删除全局 `yunwuGroupRatio` / `yunwuGroup` 配置入口，避免全局倍率与模型映射计费语义冲突。
@@ -10,6 +22,13 @@
 - 试用额度预检逻辑改为：仅当目标模型 `modelId` 等于管理员选定的 `freeTrialModelId` 时才走每日免费通道；否则普通用户（非管理员/永久会员/免计费平台）需使用已购积分。
 - 命令入口（文生图/图生图/合成图/快捷 style 命令）和向导模型选择阶段均增加每日免费模型二次校验，未开放免费的模型在普通用户选择时即时拒绝。
 - `setupGuide` 和 `图像参数` 帮助文案同步更新，明确每日免费仅限管理员指定的单个模型。
+- 新增 `interactionMode` 配置（auto/guided/advanced），控制命令入口交互模式：
+  - auto：群聊跳过向导直接出图，私聊分步引导。
+  - guided：文生图/图生图/合成图/style 快捷命令始终进入向导选择模型与参数。
+  - advanced：所有命令始终跳过向导，使用默认值直接生成。
+- 前端 aka-tools 面板业务运行参数增加 `interactionMode` 下拉选择。
+- `图像参数` 命令和 `setupGuide` 文案同步更新，说明三种交互模式行为。
+- 新增 `src/shared/interaction-mode.ts`：导出 `resolveInteractionMode` 和 `isGroupChat` 函数。
 
 ## 1.0.3
 

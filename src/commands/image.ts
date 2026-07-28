@@ -12,6 +12,7 @@ import type { Argv, Command, Context, Session } from 'koishi'
 
 import type { Config } from '../shared/config.js'
 import { COMMANDS } from '../shared/constants.js'
+import { resolveInteractionMode } from '../shared/interaction-mode.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type {
@@ -53,14 +54,16 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const session = argv.session
       if (!session) return ''
 
-      // 向导模式
+      const config = getConfig()
+      const mode = resolveInteractionMode(config.interactionMode, session)
       const wizardHandler = params.wizardHandler
-      if (wizardHandler) {
+
+      // guided 模式 → 走交互向导
+      if (mode === 'guided' && wizardHandler) {
         return wizardHandler.handleCommand(session, COMMANDS.TXT_TO_IMG, argv, undefined, prompt)
       }
 
-      // 经典模式（直接生成）
-      const config = getConfig()
+      // advanced / auto（群聊）→ 直接生成（默认值）
       const modifiers = buildCommandModifiers(argv, undefined, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
@@ -89,14 +92,16 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const session = argv.session
       if (!session) return ''
 
-      // 向导模式
+      const config = getConfig()
+      const mode = resolveInteractionMode(config.interactionMode, session)
       const wizardHandler = params.wizardHandler
-      if (wizardHandler) {
+
+      // guided 模式 → 走交互向导
+      if (mode === 'guided' && wizardHandler) {
         return wizardHandler.handleCommand(session, COMMANDS.IMG_TO_IMG, argv, img, prompt)
       }
 
-      // 经典模式（直接生成）
-      const config = getConfig()
+      // advanced / auto（群聊）→ 直接生成（默认值）
       const modifiers = buildCommandModifiers(argv, img, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
@@ -128,6 +133,15 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       if (!session) return ''
 
       const config = getConfig()
+      const mode = resolveInteractionMode(config.interactionMode, session)
+      const wizardHandler = params.wizardHandler
+
+      // guided 模式 → 走交互向导
+      if (mode === 'guided' && wizardHandler) {
+        return wizardHandler.handleCommand(session, COMMANDS.COMPOSE_IMAGE, argv, undefined, prompt)
+      }
+
+      // advanced / auto（群聊）→ 直接生成（默认值）
       const modifiers = buildCommandModifiers(argv, undefined, config)
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
@@ -396,18 +410,28 @@ function registerStyleCommand(
       const config = getConfig()
       const modifiers = buildCommandModifiers(argv, img, config, style)
 
-      // style 预设：有默认 prompt 且能解析到默认模型 → 一步直出图，跳过向导
-      // 反之（未配置 modelSuffix 或后缀在映射表里找不到），进入向导让用户挑模型
-      const hasDefaultModel = !!resolveStyleModelMapping(
-        style,
-        buildModelMappingIndex(config.modelMappings),
-      )
+      // 按交互模式分流
+      const rawInteractionMode = config.interactionMode
+      const resolvedInteractionMode = resolveInteractionMode(rawInteractionMode, session)
       const wizardHandler = params.wizardHandler
-      if (wizardHandler && !hasDefaultModel) {
+
+      if (resolvedInteractionMode === 'guided' && wizardHandler) {
+        // guided → 进入向导选模型和参数
         return wizardHandler.handleCommand(session, style.commandName, argv, img, prompt)
       }
 
-      // 经典模式（直接生成）
+      if (rawInteractionMode === 'auto') {
+        // auto → 有默认模型时跳过向导（原逻辑），否则进入向导
+        const hasDefaultModel = !!resolveStyleModelMapping(
+          style,
+          buildModelMappingIndex(config.modelMappings),
+        )
+        if (wizardHandler && !hasDefaultModel) {
+          return wizardHandler.handleCommand(session, style.commandName, argv, img, prompt)
+        }
+      }
+
+      // advanced 或 auto（有默认模型）→ 直接生成
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
