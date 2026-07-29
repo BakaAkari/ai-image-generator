@@ -48,7 +48,7 @@ export const PROTOCOL_PARAMS: Record<string, ProtocolParams> = {
         key: 'aspectRatio',
         label: '宽高比',
         type: 'enum',
-        options: ['1:1', '16:9', '9:16', '4:3'],
+        options: ['1:1', '16:9', '9:16', '4:3', '3:2', '2:3'],
         default: '1:1',
       },
       {
@@ -75,7 +75,7 @@ export const PROTOCOL_PARAMS: Record<string, ProtocolParams> = {
         key: 'aspectRatio',
         label: '宽高比',
         type: 'enum',
-        options: ['1:1', '16:9', '9:16', '4:3'],
+        options: ['1:1', '16:9', '9:16', '4:3', '3:2', '2:3'],
         default: '1:1',
       },
     ],
@@ -88,7 +88,7 @@ export const PROTOCOL_PARAMS: Record<string, ProtocolParams> = {
         label: '宽高比',
         type: 'enum',
         promptAppend: true,
-        options: ['1:1', '16:9', '9:16', '4:3'],
+        options: ['1:1', '16:9', '9:16', '4:3', '3:2', '2:3'],
         default: '1:1',
       },
       {

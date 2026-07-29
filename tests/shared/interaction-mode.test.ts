@@ -93,4 +93,44 @@ describe('resolveInteractionMode', () => {
   test('session without platform ignores overrides', () => {
     expect(resolveInteractionMode('guided', { lark: 'advanced' }, makeSession({ isDirect: true }))).toBe('guided')
   })
+
+  test('auto + hasDirectIntent forces advanced even in private chat', () => {
+    const privateSession = makeSession({ isDirect: true })
+    expect(resolveInteractionMode('auto', undefined, privateSession, { hasDirectIntent: true })).toBe('advanced')
+  })
+
+  test('auto + hasDirectIntent still advanced in group chat', () => {
+    const groupSession = makeSession({ isDirect: false })
+    expect(resolveInteractionMode('auto', undefined, groupSession, { hasDirectIntent: true })).toBe('advanced')
+  })
+
+  test('auto + hasDirectIntent=false falls back to session-type default', () => {
+    const privateSession = makeSession({ isDirect: true })
+    const groupSession = makeSession({ isDirect: false })
+    expect(resolveInteractionMode('auto', undefined, privateSession, { hasDirectIntent: false })).toBe('guided')
+    expect(resolveInteractionMode('auto', undefined, groupSession, { hasDirectIntent: false })).toBe('advanced')
+  })
+
+  test('guided is immune to hasDirectIntent (admin-forced wizard)', () => {
+    const privateSession = makeSession({ isDirect: true })
+    const groupSession = makeSession({ isDirect: false })
+    expect(resolveInteractionMode('guided', undefined, privateSession, { hasDirectIntent: true })).toBe('guided')
+    expect(resolveInteractionMode('guided', undefined, groupSession, { hasDirectIntent: true })).toBe('guided')
+  })
+
+  test('advanced is also immune to hasDirectIntent (always direct)', () => {
+    expect(resolveInteractionMode('advanced', undefined, makeSession({ isDirect: true }), { hasDirectIntent: false })).toBe('advanced')
+    expect(resolveInteractionMode('advanced', undefined, makeSession({ isDirect: true }), { hasDirectIntent: true })).toBe('advanced')
+  })
+
+  test('platform override auto respects hasDirectIntent', () => {
+    const privateSession = makeSession({ platform: 'lark', isDirect: true })
+    expect(resolveInteractionMode('advanced', { lark: 'auto' }, privateSession, { hasDirectIntent: true })).toBe('advanced')
+    expect(resolveInteractionMode('advanced', { lark: 'auto' }, privateSession, { hasDirectIntent: false })).toBe('guided')
+  })
+
+  test('platform override guided ignores hasDirectIntent', () => {
+    const privateSession = makeSession({ platform: 'onebot', isDirect: true })
+    expect(resolveInteractionMode('auto', { onebot: 'guided' }, privateSession, { hasDirectIntent: true })).toBe('guided')
+  })
 })

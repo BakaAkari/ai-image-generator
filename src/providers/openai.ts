@@ -1,47 +1,22 @@
 import type { Context } from 'koishi'
 
 import { BaseImageProvider } from './base.js'
-import { ContentFilterError, ParseError, ProviderError } from './errors.js'
+import { BadRequestError, ContentFilterError, ParseError, ProviderError } from './errors.js'
 import type {
   BaseProviderOptions,
   ImageGeneratedCallback,
   ImageGenerationOptions,
 } from './types.js'
 import { downloadImageAsBase64, sanitizeError, sanitizeString } from './utils.js'
+import { resolveOpenAiSize } from '../contracts/openai-size.js'
+import type { ImageContract } from '../contracts/types.js'
 
-/**
- * OpenAI Provider 配置
- *
- * 复用 BaseProviderOptions 的全部字段，无需额外字段。
- */
 export type OpenAIProviderOptions = BaseProviderOptions
 
-/**
- * GPT Image 模型最低超时（秒）。
- *
- * gpt-image-1 / gpt-image-2 等模型生成复杂图像通常需要 60-180+ 秒，
- * 因此即使用户配置了较短的 apiTimeout，也至少保证此下限。
- */
+/** GPT Image 模型最低超时（秒），弥补上游生成耗时。 */
 const GPT_IMAGE_MIN_TIMEOUT_SECONDS = 180
 
-/**
- * OpenAI Images API 默认 base。
- *
- * 服务层通常会显式传入 apiBase；此处保留官方 OpenAI 默认值作为 Provider 独立使用时的兜底。
- */
 const DEFAULT_API_BASE = 'https://api.openai.com/v1'
-
-/**
- * 宽高比 → 尺寸映射（OpenAI Images 仅支持固定 size 字符串）
- */
-const ASPECT_RATIO_SIZE_MAP: Record<string, string> = {
-  '1:1': '1024x1024',
-  '3:2': '1536x1024',
-  '2:3': '1024x1536',
-  '16:9': '2048x1152',
-  '9:16': '1152x2048',
-  '4:3': '1536x1024',
-}
 
 interface OpenAIImagesResponse {
   error?: { message?: string; type?: string; code?: string }
@@ -54,33 +29,22 @@ interface OpenAIImagesResponse {
 }
 
 /**
- * OpenAIProvider（v2 重写版）
+ * OpenAIProvider（契约驱动版）。
  *
- * 相比 v1：
- * - 继承 BaseImageProvider，复用 callApi / handleProviderError / 流式回调封装
- * - 错误统一归一化为 ProviderError 子类
- * - 不再持有 ProviderConfig；apiKey/modelId/apiBase/apiTimeout 全部由基类管理
- * - 仍保留 v1 关键能力：JSON+base64 优先 + FormData 回退、自定义分辨率、GPT Image 超时下限提升
+ * - Create：JSON `/v1/images/generations`。
+ * - Edit：直接使用 multipart/form-data `/v1/images/edits`，不再先尝试 JSON。
+ * - size / quality / format / background / moderation 全部由契约的 openai capability 决定；
+ *   由服务层预先通过 param-resolver 校验并放入 contractFields。
+ * - contract 缺失时 fail-closed 报错（服务层已保证契约存在，此处只做兜底防御）。
  */
 export class OpenAIProvider extends BaseImageProvider {
   override readonly name: string = 'openai'
 
-  /** GPT Image 模型对超时的下限保护（秒） */
   private getEffectiveTimeoutSeconds(): number {
     const configured = this.apiTimeoutSeconds
     const modelId = this.modelId.toLowerCase()
     if (modelId.startsWith('gpt-image')) {
-      const effective = Math.max(configured, GPT_IMAGE_MIN_TIMEOUT_SECONDS)
-      if (effective !== configured) {
-        this.logger.info(
-          'provider=%s event=timeout_promoted configured=%d effective=%d model=%s',
-          this.name,
-          configured,
-          effective,
-          this.modelId
-        )
-      }
-      return effective
+      return Math.max(configured, GPT_IMAGE_MIN_TIMEOUT_SECONDS)
     }
     return configured
   }
@@ -96,155 +60,158 @@ export class OpenAIProvider extends BaseImageProvider {
     options?: ImageGenerationOptions,
     onImageGenerated?: ImageGeneratedCallback
   ): Promise<string[]> {
+    const contract = options?.contract
+    if (!contract) {
+      throw new BadRequestError('OpenAI 请求缺少精确契约，fail-closed', {
+        providerName: this.name,
+      })
+    }
+    // Provider 层兜底：如果绕过 Service/generation-setup 直接调用，
+    // 仍要求 rejectedParams 为空，避免使用被契约拒绝的显式参数继续请求。
+    if (options?.rejectedParams && options.rejectedParams.length > 0) {
+      const summary = options.rejectedParams
+        .map((r) => `${r.key}｜${r.reason}`)
+        .join('；')
+      throw new BadRequestError(`参数不被当前契约接受（rejected）：${summary}`, {
+        providerName: this.name,
+      })
+    }
+
     const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls]
     const validUrls = urls.filter((url) => url && typeof url === 'string' && url.trim().length > 0)
-    const hasInputImages = validUrls.length > 0
+    const isEdit = contract.operation === 'image-edit' || contract.operation === 'image-to-image' || contract.operation === 'compose-image'
 
     if (this.shouldLogDetail()) {
       this.logger.info(
-        'provider=%s event=generate_detail has_input=%s input_count=%d num=%d model=%s api_base=%s timeout_ms=%d auth=%s extra_headers=%s',
+        'provider=%s event=generate_detail contract=%s operation=%s has_input=%s input_count=%d num=%d model=%s api_base=%s timeout_ms=%d fields=%s rejected=%s',
         this.name,
-        hasInputImages,
+        contract.id,
+        contract.operation,
+        validUrls.length > 0,
         validUrls.length,
         numImages,
         this.modelId,
         this.getApiBase(),
         this.getTimeoutMs(),
-        this.apiKey ? 'configured' : 'missing',
-        JSON.stringify(redactHeaders(this.extraHeaders)),
+        JSON.stringify(Object.keys(options?.contractFields ?? {})),
+        JSON.stringify(options?.rejectedParams ?? []),
       )
     }
 
+    // 编辑操作必须有参考图；文生图不允许携带参考图（fail-closed）
+    if (isEdit && validUrls.length === 0) {
+      throw new BadRequestError('图像编辑必须提供输入图片', { providerName: this.name })
+    }
+
+    const size = this.resolveSize(contract, options)
+
     try {
-      if (hasInputImages) {
-        return await this.editImages(prompt, validUrls, numImages, options, onImageGenerated)
+      if (isEdit) {
+        return await this.editImages(contract, prompt, validUrls, numImages, size, options, onImageGenerated)
       }
-      return await this.createImages(prompt, numImages, options, onImageGenerated)
+      return await this.createImages(contract, prompt, numImages, size, options, onImageGenerated)
     } catch (error) {
       const normalized = error instanceof ProviderError ? error : this.handleProviderError(error)
       this.logger.error(
-        'provider=%s event=generate_failed code=%s status=%s retryable=%s message=%s context=%s',
+        'provider=%s event=generate_failed contract=%s code=%s status=%s retryable=%s message=%s',
         this.name,
+        contract.id,
         normalized.code,
         normalized.statusCode ?? '-',
         normalized.retryable,
         sanitizeString(normalized.message),
-        JSON.stringify(sanitizeError(normalized.context)),
       )
       throw normalized
     }
   }
 
-  // -------- internal: size 解析 --------
-
-  private isCustomResolution(resolution?: string): boolean {
-    return typeof resolution === 'string' && /^\d+x\d+$/.test(resolution)
-  }
-
-  private getSize(options?: ImageGenerationOptions): string {
-    if (options?.resolution && this.isCustomResolution(options.resolution)) {
-      return options.resolution
+  private resolveSize(contract: ImageContract, options?: ImageGenerationOptions): string | undefined {
+    const cap = contract.openai?.size
+    if (!cap) return undefined
+    // contract-driven 分支已把 size 放入 contractFields.size；若未提供 → 由 openai-size 兜底
+    const injected = options?.contractFields?.size
+    if (typeof injected === 'string') return injected
+    const resolved = resolveOpenAiSize({
+      ...(options?.aspectRatio !== undefined ? { aspectRatio: options.aspectRatio } : {}),
+      ...(options?.resolution !== undefined ? { resolution: options.resolution } : {}),
+      capability: cap,
+    })
+    if (!resolved.ok) {
+      throw new BadRequestError(resolved.error, { providerName: this.name })
     }
-    return ASPECT_RATIO_SIZE_MAP[options?.aspectRatio ?? '1:1'] ?? '1024x1024'
+    return resolved.size
   }
 
   private getApiBase(): string {
     return normalizeV1Base(this.apiBase ?? DEFAULT_API_BASE)
   }
 
-  // -------- 文生图 --------
+  private buildCreateBody(
+    contract: ImageContract,
+    prompt: string,
+    size: string | undefined,
+    n: number,
+    fields: Record<string, string | number>,
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: this.modelId,
+      prompt,
+      n,
+    }
+    if (size) body.size = size
+    if (contract.openai?.qualities && fields.quality) body.quality = fields.quality
+    if (contract.openai?.formats && fields.format) body.format = fields.format
+    if (contract.openai?.backgrounds && fields.background) body.background = fields.background
+    if (contract.openai?.moderations && fields.moderation) body.moderation = fields.moderation
+    return body
+  }
 
   private async createImages(
+    contract: ImageContract,
     prompt: string,
     numImages: number,
-    options?: ImageGenerationOptions,
-    onImageGenerated?: ImageGeneratedCallback
+    size: string | undefined,
+    options: ImageGenerationOptions | undefined,
+    onImageGenerated?: ImageGeneratedCallback,
   ): Promise<string[]> {
     const apiBase = this.getApiBase()
-    const size = this.getSize(options)
+    const endpoint = `${apiBase}/images/generations`
+    const fields = options?.contractFields ?? {}
 
-    if (options?.resolution && ['1k', '2k', '4k'].includes(options.resolution)) {
-      this.logger.info(
-        'provider=%s event=resolution_preset_ignored resolution=%s note=use_gemini_or_custom_size',
-        this.name,
-        options.resolution
-      )
-    }
-
+    // 契约不支持 n>1 时逐张调用；否则一次调用请求 numImages 张
+    const supportsMultiN = !!contract.openai?.supportsN
+    const perCall = supportsMultiN ? numImages : 1
+    const iterations = supportsMultiN ? 1 : numImages
     const allImages: string[] = []
 
-    for (let i = 0; i < numImages; i++) {
-      const requestData = {
-        model: this.modelId,
-        prompt,
-        n: 1,
-        size,
-      }
-
+    for (let i = 0; i < iterations; i++) {
+      const body = this.buildCreateBody(contract, prompt, size, perCall, fields)
       if (this.shouldLogDetail()) {
         this.logger.info(
-          'provider=%s event=create_detail current=%d total=%d url=%s model=%s size=%s timeout_ms=%d request=%s headers=%s',
-          this.name,
-          i + 1,
-          numImages,
-          `${apiBase}/images/generations`,
-          this.modelId,
-          size,
-          this.getTimeoutMs(),
-          JSON.stringify(redactRequestBody(requestData)),
-          JSON.stringify(redactHeaders(this.buildHeaders())),
+          'provider=%s event=create_request contract=%s iteration=%d n=%d fields=%s',
+          this.name, contract.id, i + 1, perCall, JSON.stringify(redactRequestBody(body)),
         )
       }
 
-      try {
-        const response = await this.callApi<OpenAIImagesResponse>(() =>
-          (this.ctx.http as unknown as {
-            post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-          }).post(`${apiBase}/images/generations`, requestData, {
-            headers: this.buildHeaders(),
-            timeout: this.getTimeoutMs(),
-          })
-        )
+      const response = await this.callApi<OpenAIImagesResponse>(() =>
+        (this.ctx.http as unknown as {
+          post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
+        }).post(endpoint, body, {
+          headers: this.buildHeaders(),
+          timeout: this.getTimeoutMs(),
+        })
+      )
 
-        const { images, totalTokens } = parseOpenAIImagesResponse(response)
-        this.lastTotalTokens = totalTokens
-        if (images.length === 0) {
-          this.logger.warn(
-            'provider=%s event=create_empty_response current=%d total=%d',
-            this.name,
-            i + 1,
-            numImages
-          )
-          continue
-        }
-
-        for (const url of images) {
-          const currentIndex = allImages.length
-          allImages.push(url)
-          await this.fireImageCallback(onImageGenerated, url, currentIndex, numImages)
-        }
-
-        this.logger.info(
-          'provider=%s event=create_success current=%d total=%d',
-          this.name,
-          i + 1,
-          numImages
-        )
-      } catch (error) {
-        const normalized = error instanceof ProviderError ? error : this.handleProviderError(error)
-
-        // 已生成部分图片：返回已成功部分（保留 v1 行为）
-        if (allImages.length > 0 && normalized.retryable === false) {
-          this.logger.warn(
-            'provider=%s event=create_partial_failed generated=%d requested=%d code=%s',
-            this.name,
-            allImages.length,
-            numImages,
-            normalized.code
-          )
-          break
-        }
-        throw normalized
+      const parsed = parseOpenAIImagesResponse(response)
+      this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
+      if (parsed.images.length === 0) {
+        this.logger.warn('provider=%s event=create_empty_response iteration=%d', this.name, i + 1)
+        continue
+      }
+      for (const url of parsed.images) {
+        const index = allImages.length
+        allImages.push(url)
+        await this.fireImageCallback(onImageGenerated, url, index, numImages)
       }
     }
 
@@ -254,26 +221,18 @@ export class OpenAIProvider extends BaseImageProvider {
     return allImages
   }
 
-  // -------- 图生图（编辑） --------
-
   private async editImages(
+    contract: ImageContract,
     prompt: string,
     imageUrls: string[],
     numImages: number,
-    options?: ImageGenerationOptions,
-    onImageGenerated?: ImageGeneratedCallback
+    size: string | undefined,
+    options: ImageGenerationOptions | undefined,
+    onImageGenerated?: ImageGeneratedCallback,
   ): Promise<string[]> {
     const apiBase = this.getApiBase()
-    const size = this.getSize(options)
-
-    if (this.shouldLogDetail()) {
-      this.logger.info(
-        'provider=%s event=edit_download_detail count=%d size=%s',
-        this.name,
-        imageUrls.length,
-        size
-      )
-    }
+    const endpoint = `${apiBase}/images/edits`
+    const fields = options?.contractFields ?? {}
 
     const imageDataList: Array<{ data: string; mimeType: string }> = []
     for (const url of imageUrls) {
@@ -285,77 +244,61 @@ export class OpenAIProvider extends BaseImageProvider {
           'provider=%s event=download_failed url=%s error=%s',
           this.name,
           truncate(url, 80),
-          JSON.stringify(sanitizeError(error)).slice(0, 200)
+          JSON.stringify(sanitizeError(error)).slice(0, 200),
         )
       }
     }
-
     if (imageDataList.length === 0) {
-      throw new ParseError('所有输入图片下载失败，无法进行图像编辑', {
+      throw new BadRequestError('所有输入图片下载失败，无法进行图像编辑', {
         providerName: this.name,
       })
     }
 
+    const supportsMultiN = !!contract.openai?.supportsN
+    const perCall = supportsMultiN ? numImages : 1
+    const iterations = supportsMultiN ? 1 : numImages
     const allImages: string[] = []
 
-    for (let i = 0; i < numImages; i++) {
+    for (let i = 0; i < iterations; i++) {
+      const formData = new FormData()
+      for (let idx = 0; idx < imageDataList.length; idx++) {
+        const img = imageDataList[idx]!
+        formData.append('image', base64ToBlob(img.data, img.mimeType), `image_${idx}.png`)
+      }
+      formData.append('prompt', prompt)
+      formData.append('model', this.modelId)
+      formData.append('n', String(perCall))
+      if (size) formData.append('size', size)
+      if (contract.openai?.qualities && fields.quality) formData.append('quality', String(fields.quality))
+      if (contract.openai?.backgrounds && fields.background) formData.append('background', String(fields.background))
+      if (contract.openai?.moderations && fields.moderation) formData.append('moderation', String(fields.moderation))
+
       if (this.shouldLogDetail()) {
         this.logger.info(
-          'provider=%s event=edit_detail current=%d total=%d url=%s model=%s size=%s input_count=%d timeout_ms=%d headers=%s',
-          this.name,
-          i + 1,
-          numImages,
-          `${apiBase}/images/edits`,
-          this.modelId,
-          size,
-          imageDataList.length,
-          this.getTimeoutMs(),
-          JSON.stringify(redactHeaders(this.buildHeaders())),
+          'provider=%s event=edit_request contract=%s iteration=%d n=%d image_count=%d size=%s',
+          this.name, contract.id, i + 1, perCall, imageDataList.length, size ?? '-',
         )
       }
 
-      try {
-        const response = await this.callApi<OpenAIImagesResponse>(() =>
-          this.callEditApi(apiBase, prompt, size, imageDataList)
-        )
+      const response = await this.callApi<OpenAIImagesResponse>(() =>
+        (this.ctx.http as unknown as {
+          post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
+        }).post(endpoint, formData, {
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          timeout: this.getTimeoutMs(),
+        })
+      )
 
-        const { images, totalTokens } = parseOpenAIImagesResponse(response)
-        this.lastTotalTokens = totalTokens
-        if (images.length === 0) {
-          this.logger.warn(
-            'provider=%s event=edit_empty_response current=%d total=%d',
-            this.name,
-            i + 1,
-            numImages
-          )
-          continue
-        }
-
-        for (const url of images) {
-          const currentIndex = allImages.length
-          allImages.push(url)
-          await this.fireImageCallback(onImageGenerated, url, currentIndex, numImages)
-        }
-
-        this.logger.info(
-          'provider=%s event=edit_success current=%d total=%d',
-          this.name,
-          i + 1,
-          numImages
-        )
-      } catch (error) {
-        const normalized = error instanceof ProviderError ? error : this.handleProviderError(error)
-        if (allImages.length > 0 && normalized.retryable === false) {
-          this.logger.warn(
-            'provider=%s event=edit_partial_failed generated=%d requested=%d code=%s',
-            this.name,
-            allImages.length,
-            numImages,
-            normalized.code
-          )
-          break
-        }
-        throw normalized
+      const parsed = parseOpenAIImagesResponse(response)
+      this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
+      if (parsed.images.length === 0) {
+        this.logger.warn('provider=%s event=edit_empty_response iteration=%d', this.name, i + 1)
+        continue
+      }
+      for (const url of parsed.images) {
+        const index = allImages.length
+        allImages.push(url)
+        await this.fireImageCallback(onImageGenerated, url, index, numImages)
       }
     }
 
@@ -364,91 +307,14 @@ export class OpenAIProvider extends BaseImageProvider {
     }
     return allImages
   }
-
-  /**
-   * 实际调用 /v1/images/edits：JSON + base64 优先，失败回退到 FormData multipart。
-   */
-  private async callEditApi(
-    apiBase: string,
-    prompt: string,
-    size: string,
-    imageDataList: Array<{ data: string; mimeType: string }>
-  ): Promise<OpenAIImagesResponse> {
-    const editUrl = `${apiBase}/images/edits`
-    const http = this.ctx.http as unknown as {
-      post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-    }
-
-    // 1) JSON + base64
-    try {
-      const imageInputs = imageDataList.map((img) => `data:${img.mimeType};base64,${img.data}`)
-      const requestData: Record<string, unknown> = {
-        model: this.modelId,
-        prompt,
-        n: 1,
-        size,
-        image: imageInputs.length === 1 ? imageInputs[0] : imageInputs,
-      }
-      if (this.shouldLogDetail()) {
-        this.logger.info(
-          'provider=%s event=edit_json_detail url=%s request=%s headers=%s',
-          this.name,
-          editUrl,
-          JSON.stringify(redactRequestBody(requestData)),
-          JSON.stringify(redactHeaders(this.buildHeaders())),
-        )
-      }
-      return await http.post(editUrl, requestData, {
-        headers: this.buildHeaders(),
-        timeout: this.getTimeoutMs(),
-      })
-    } catch (jsonError) {
-      // 2) FormData 回退
-      this.logger.warn(
-        'provider=%s event=edit_json_failed fallback=formdata error=%s',
-        this.name,
-        sanitizeString((jsonError as Error)?.message || '未知错误')
-      )
-
-      const formData = new FormData()
-      for (let idx = 0; idx < imageDataList.length; idx++) {
-        const img = imageDataList[idx]!
-        const blob = base64ToBlob(img.data, img.mimeType)
-        formData.append('image', blob, `image_${idx}.png`)
-      }
-      formData.append('prompt', prompt)
-      formData.append('model', this.modelId)
-      formData.append('n', '1')
-      formData.append('size', size)
-
-      if (this.shouldLogDetail()) {
-        this.logger.info(
-          'provider=%s event=edit_formdata_detail url=%s model=%s size=%s image_count=%d headers=%s',
-          this.name,
-          editUrl,
-          this.modelId,
-          size,
-          imageDataList.length,
-          JSON.stringify(redactHeaders(this.buildHeaders())),
-        )
-      }
-      return await http.post(editUrl, formData, {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        timeout: this.getTimeoutMs(),
-      })
-    }
-  }
 }
 
 // -------- 模块级工具 --------
 
-function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): { images: string[]; totalTokens: number | null } {
+export function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): { images: string[]; totalTokens: number | null } {
   if (!response) {
     throw new ParseError('OpenAI Images API 响应为空', { providerName: 'openai' })
   }
-
   if (response.error) {
     const errMessage = sanitizeString(response.error.message ?? JSON.stringify(sanitizeError(response.error)))
     if (isContentFilter(errMessage)) {
@@ -458,15 +324,12 @@ function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): 
       providerName: 'openai',
     })
   }
-
   const data = response.data
   if (!Array.isArray(data)) return { images: [], totalTokens: null }
-
   const images: string[] = []
   for (const item of data) {
     if (item.b64_json) {
-      const mimeType = 'image/png'
-      images.push(`data:${mimeType};base64,${item.b64_json}`)
+      images.push(`data:image/png;base64,${item.b64_json}`)
     } else if (item.url) {
       images.push(item.url)
     }
@@ -498,21 +361,7 @@ function base64ToBlob(base64Data: string, mimeType: string): Blob {
 }
 
 function truncate(value: string, max: number): string {
-  if (value.length <= max) return value
-  return `${value.slice(0, max)}…`
-}
-
-function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [key, value] of Object.entries(headers)) {
-    const lower = key.toLowerCase()
-    if (lower === 'authorization' || lower.includes('api-key') || lower.includes('apikey') || lower.includes('token') || lower.includes('secret')) {
-      result[key] = value ? '[REDACTED]' : ''
-    } else {
-      result[key] = truncate(value, 120)
-    }
-  }
-  return result
+  return value.length <= max ? value : `${value.slice(0, max)}…`
 }
 
 function redactRequestBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -520,8 +369,6 @@ function redactRequestBody(body: Record<string, unknown>): Record<string, unknow
   for (const [key, value] of Object.entries(body)) {
     if (key === 'prompt' && typeof value === 'string') {
       result.promptLength = value.length
-    } else if (key === 'image') {
-      result.image = describeImagePayload(value)
     } else {
       result[key] = value
     }
@@ -529,34 +376,8 @@ function redactRequestBody(body: Record<string, unknown>): Record<string, unknow
   return result
 }
 
-function describeImagePayload(value: unknown): unknown {
-  if (typeof value === 'string') return describeImageString(value)
-  if (Array.isArray(value)) return value.map(describeImageString)
-  return typeof value
-}
-
-function describeImageString(value: unknown): string {
-  if (typeof value !== 'string') return typeof value
-  if (value.startsWith('data:')) {
-    const commaIndex = value.indexOf(',')
-    const meta = commaIndex >= 0 ? value.slice(0, commaIndex) : 'data:*'
-    return `${meta},[base64 length=${Math.max(0, value.length - commaIndex - 1)}]`
-  }
-  return truncate(value, 120)
-}
-
 /**
- * 工厂函数（注册表用）。
- *
- * 期望 config 结构：
- * ```ts
- * {
- *   apiKey: string
- *   modelId: string
- *   apiBase?: string
- *   apiTimeout: number
- * }
- * ```
+ * 工厂函数。
  */
 export function createOpenAIProvider(
   ctx: Context,

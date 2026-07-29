@@ -41,7 +41,15 @@ function normalizeModel(item: YunwuModelItem, pricing?: YunwuPricingItem): Catal
   const routesFromEndpoints = resolveYunwuRoutes(item.supported_endpoint_types ?? [])
   const routesFromCapabilities = routesFromEndpoints.length > 0 ? [] : resolveRoutesFromCapabilities(capabilities)
   const routes = [...routesFromEndpoints, ...routesFromCapabilities]
-  const hasBlockingReason = reasons.some(r => r.includes('not image') || r.includes('no recognized'))
+  const hasBlockingReason = reasons.some(r =>
+    r.includes('not image')
+    || r.includes('no recognized')
+    || r.includes('recognition-only')
+    || r.includes('unsupported MJ/Kling')
+    || r.includes('upload endpoint')
+    || r.includes('video')
+    || r.includes('image template'),
+  )
   const executable = item.available !== false && routes.length > 0 && !hasBlockingReason
   const executableStatus: CatalogModel['executableStatus'] = executable ? 'available' : 'unsupported'
 

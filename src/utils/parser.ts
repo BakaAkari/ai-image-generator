@@ -23,6 +23,57 @@ export function buildModelMappingIndex(mappings?: ModelMappingConfig[]) {
 }
 
 /**
+ * 从 Koishi `[prompt:text]` 参数中移除插件控制语法，只保留真正发给模型的描述。
+ * Koishi 会把未知 option（例如动态模型后缀 `-mj`）留在 prompt 中；若直接发送给
+ * Midjourney，它会被当成非法参数并异步返回 `parameter error`。
+ */
+export function stripImageCommandControls(
+  prompt: string | undefined,
+  modelMappingIndex: Map<string, ModelMappingConfig>,
+): string | undefined {
+  if (typeof prompt !== 'string' || !prompt.trim()) return undefined
+
+  const tokens = prompt.trim().split(/\s+/).filter(Boolean)
+  const kept: string[] = []
+  const resolutions = new Set(['1k', '2k', '4k'])
+  const aspects = new Set(['1:1', '4:3', '16:9', '9:16', '3:2', '2:3'])
+  const controlKey = (token: string): string | undefined => {
+    if (!token.startsWith('-')) return undefined
+    const key = normalizeSuffix(token)
+    if (!key) return undefined
+    if (modelMappingIndex.has(key) || resolutions.has(key) || aspects.has(key) || /^\d+x\d+$/.test(key)) return key
+    if (key === 'n' || key === 'add') return key
+    return undefined
+  }
+
+  let index = 0
+  while (index < tokens.length) {
+    const token = tokens[index]!
+    const key = controlKey(token)
+    if (key === 'add') {
+      // -add 内容由 modifiers.customAdditions 单独拼接，避免重复。
+      index++
+      while (index < tokens.length && !controlKey(tokens[index]!)) index++
+      continue
+    }
+    if (key === 'n') {
+      index++
+      if (index < tokens.length && /^\d+$/.test(tokens[index]!)) index++
+      continue
+    }
+    if (key) {
+      index++
+      continue
+    }
+    kept.push(token)
+    index++
+  }
+
+  const result = kept.join(' ').trim()
+  return result || undefined
+}
+
+/**
  * 解析风格命令修饰符
  */
 export function parseStyleCommandModifiers(

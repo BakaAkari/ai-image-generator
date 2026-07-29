@@ -2,35 +2,54 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-aka-ai-image-generator?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-aka-ai-image-generator)
 
-自用 AI 图像生成插件 V2（image-only）。当前 `0.9.0` 版本以 yunwu 为唯一完整维护供应商，模型、能力、route 和目录价格由供应商快照驱动；生成链路使用显式收费策略和真实积分预授权，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接。
+自用 AI 图像生成插件 V2（image-only）。当前 `1.2.7` 版本以“供应商 + 协议 + 操作 + 模型”四元组精确契约为核心：yunwu 是唯一完整维护的目录 / 计价源，OpenAI 官方、Gemini 官方与 Midjourney（yunwu Imagine）已按 Apifox / 官方文档建契约；未接入契约的能力（MJ Action / Blend / Describe、Kling 多图 / 扩图、omni-image、图像识别）目录级 fail-closed。生成链路使用真实积分预授权 + 免计费平台绕过 + 每日免费 + 平台级交互模式路由，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接、模型排行折叠面板。
 
 > 范围：仅图像生成。aka-tools Console 页面已实现；视频生成不在当前运行时范围内。
 
 ## 当前版本状态
 
-- 当前包版本：`0.9.0`。
-- 当前稳定能力：供应商凭证分区、模型映射显式 supplier + protocol 路由、模型级积分单价、OpenAI-compatible 图像站点、OpenAI 官方 GPT、Gemini 官方、openai 协议、gemini 协议、基础图像命令、通用合成图、动态 styles / styleGroups 快捷命令、配置重载后动态命令刷新、styles 默认模式 / 默认模型、紧凑控制台表格列名、设置页顶部命令速查、紧凑命令帮助、紧凑图像参数帮助、simple / detail 日志级别、最终失败显式聊天提示、统一聊天输出文案、显式 `-n`、受限模型权限拦截、用户自助查询、用户自助账单、管理员查询、用量排行榜、管理员充值与余额修正、积分账单、用户数据 v2、积分流水账本、充值审计、积分制限流和豁免能力、ChatLuna 桥接（5 个基础工具 + 动态风格工具 + 上下文注入，可选启用）、YesImBot 桥接（5 个 AI Agent 工具 + 上下文注入，可选启用）。
-- 当前活跃计划：`0.8.0` YesImBot 桥接集成已完成代码实现，等待远端验证；`0.7.0` ChatLuna 桥接集成已实现，等待远端验证。
-- 当前插件路线图：见 `ROADMAP.md`。
-- 手动发布入口：从仓库根目录执行 `./push.sh aka-ai-image-generator`。
+- 当前包版本：`1.2.7`。
+- 当前稳定能力：yunwu 完整目录 / 计价 / route，OpenAI（yunwu + 官方）、Gemini（yunwu + 官方）、Midjourney（yunwu Imagine）契约精确到操作 / 模型；contract-driven 请求构建与参数补全；显式非法参数 fail-closed；auto / guided / advanced 三种交互模式 + `interactionModeOverrides` 平台覆盖；`freePlatforms` 免计费平台绕过积分与试用（保留限流）；单模型每日免费；模型级 `groupRatio` + `chargePolicy`；Prompt presets（styles / styleGroups）+ 动态命令热重载；ChatLuna 桥接（5 个基础工具 + 每 style 动态工具 + 上下文注入）；YesImBot 桥接（5 个 AI Agent 工具，通过 `yesimbot.tool` ToolService 注册）；模型排行折叠面板；`图像充值 @用户 人民币金额` 按 `creditsPerCny` 换算。
+- 已实现契约覆盖：yunwu OpenAI GPT Image 1 / 2 / 2-c create、GPT Image 2 edit（multipart-first）、yunwu Gemini 2.5 生成、Gemini 3 Pro 生成 / 编辑、Gemini 官方 create / edit、yunwu MJ Imagine（文生图 + 参考图两个 id）、OpenAI 官方 create / edit。
+- 目录级 fail-closed（未实现能力）：MJ Action / Blend / Describe / Modal / Upload、Kling 生图 / 多图生图 / 扩图、omni-image、图像识别。相关模型进入 `unsupported`，不会被路由到 provider。
+- 后续路线图：见 `ROADMAP.md`。
 
 ## 支持的供应商入口 / 模型路由
 
-- `yunwu`：当前唯一完整维护供应商。目录从 `/v1/models` 与 `/api/pricing` 获取，协议 route 只依据 `supported_endpoint_types`。
-- GPTGod、OpenAI 官方、Gemini 官方：保留配置边界，但在 aka-tools 中标记“暂未适配”，不会使用 Yunwu 规则猜测能力或价格。
+- `openai-compatible`（yunwu 等第三方兼容站）：当前唯一完整维护的目录 / 计价源。目录从 `/v1/models` + `/api/pricing` 获取，协议 route 仅按 `supported_endpoint_types`；契约由 `src/contracts/registry.ts` 精确注册到具体 endpoint + operation。
+- `gpt-official`（OpenAI 官方 GPT）：目录不由 yunwu 维护，按已注册的 OpenAI 官方 create / edit 契约执行；未在契约中声明的字段不发送。
+- `gemini-official`（Google Gemini 官方）：按 Gemini 官方 create / edit 契约执行；不复用云雾 `response_format` 扩展；`imageSize` 使用大写 `1K/2K/4K`（当前对全模型保守 fail-closed 相同枚举）。
 
 每条模型映射包含：
 
-- `suffix`：聊天命令和 preset 使用的模型后缀。
+- `suffix`：聊天命令和 preset 使用的模型后缀（例如 `mj` / `gpt42` / `gemini25`）。
 - `modelId`：必须存在于当前 Key scope 的可执行目录。
 - `restricted`：是否需要管理员或模型白名单。
-- `chargePolicy`：`fixed`（固定积分/张）、`cost-plus`（目录成本 × 汇率 × 加成，拒绝未知估算）或 `disabled`。
+- `groupRatio`：每映射独立倍率，默认 1；用于结算 `platformCredits × groupRatio`。
 
-系统没有具体默认模型。第一条有效映射是默认映射；空映射或缺少 endpoint route 会明确拒绝生成。
+系统没有具体默认模型。第一条有效映射是默认映射；空映射、缺少 endpoint route 或未匹配契约都会明确拒绝生成。
 
-配置页里的次数、窗口、超时等数值字段使用数字输入，不使用滑竿。低频设置使用 Koishi Schema 的嵌套 `.collapse()` 模式默认收起。配置页顶部提供只读“使用说明 / 命令速查”，用纯文本分区展示首次配置顺序、普通用户命令、管理员命令、常用参数和权限规则。配置页文案采用分层策略：下拉选项和表格列名保持极简，字段描述适度说明用途、单位和权限影响；表格列名优先使用短标签，减少控制台多行换行。日志级别使用 `simple` / `detail`：`simple` 记录关键流程，`detail` 额外记录脱敏请求诊断。
+## 核心机制
 
-## 命令（v0.6.3）
+### Contract-driven 请求构建
+
+- Catalog route 决定协议（openai / gemini / mj），`service.catalogRouteLookup(modelId, operation)` 按 `text-to-image / image-edit / compose-image` 精确匹配 route；不再固定取 `routes[0]`。
+- 契约 id（如 `yunwu.openai.gpt-image-2.generate`、`yunwu.mj.imagine`、`gemini.official.edit`）通过 `ImageRequestContext.contractId` 透传到 provider；provider 只发送契约声明的字段。
+- 找不到契约立即 fail-closed，不会退化到旧 `PROTOCOL_PARAMS`。
+
+### 参数补全 vs 拒绝
+
+- 用户显式值优先；缺失可选参数按契约默认补齐：仅传 `-1k` 补 `1:1`，仅传 `-16:9` 补默认清晰度，未指定尺寸参数补齐契约全部默认。
+- **控制后缀不会进入最终 prompt**：`src/utils/parser.ts::stripImageCommandControls` 按当前 `modelMappings` 索引 + 预设分辨率 / 比例 / `-add` / `-n` 集合从 `[prompt:text]` 中剥离控制 token；命令入口与向导内联路径都在计费预授权与 provider 调用前完成 strip。`文生图 一只猫 -mj -16:9` 只把“一只猫”交给 MJ Imagine，不会导致服务端返回 `parameter error`。
+- 显式无效或契约不支持的参数不静默丢弃：抛出 `ContractRejectedParamsError`，五入口（命令、style、wizard、ChatLuna、YesImBot）在计费预授权之前拦截并 fail-closed，用户看到明确原因。
+
+### 协议差异（简要摘要，完整字段以 `src/contracts/` 与 Apifox / 官方文档为准）
+
+- **Midjourney（yunwu.mj.imagine）**：`POST /mj/submit/imagine`，Body 严格为 `{ botType: 'MID_JOURNEY', prompt, base64Array?, notifyHook?, state? }`；`--ar` / `--stylize` 由公共层作为 `promptAppends` 拼接到 prompt 尾部并去重，不再发送非契约的 `model` 或 `imageUrl`。参考图先下载为 data URL 塞入 `base64Array`；全部下载失败 → fail-closed，不退化为文生图。任务通过 `GET /mj/task/{taskId}/fetch` 轮询，识别 `SUCCESS/FAILURE` + `failReason/description`。
+- **OpenAI Images API（yunwu + 官方）**：`POST /v1/images/generations` JSON 创建、`POST /v1/images/edits` multipart-first 编辑（不再先发 JSON 再回退）；`size` 由 `src/contracts/openai-size.ts` 按 `resolution + aspectRatio + 模型` 精确计算，自定义尺寸校验 ≤3840、16 倍数、长短边比 ≤3:1、总像素 655 360..8 294 400；`-2k` / `-4k` 真正改变请求 `size`；`4:3` 无对应固定 size 时 fail-closed；`quality/format/background/moderation` 仅在契约声明枚举时才发送；`gpt-image-2-c` 明确不支持 `n`，走逐张调用。响应解析同时兼容 `data[].url / data[].b64_json / usage.total_tokens`。
+- **Gemini generateContent（yunwu 2.5 / 3 Pro / 编辑 + 官方）**：`POST /v1beta/models/{model}:generateContent`；云雾 2.5 生成不发 `imageSize`，云雾 3 Pro 生成发 `1K/2K/4K` 大写，云雾编辑不发 `imageConfig`（只发 `responseModalities`）；云雾扩展 `response_format=url` 仅在云雾契约允许时携带；官方 Gemini 移除未经验证的 `LOW/MEDIUM` 映射；图生图输入全部下载失败 → fail-closed。响应解析覆盖 `inlineData` / 顶层 `data[].url` / `b64_json` / `usageMetadata`。
+
+## 命令
 
 命令统一采用无前缀直呼格式，不使用 `aig.` 前缀。
 
@@ -42,116 +61,118 @@
 | `图像查询 [@用户]` | - | 无 @ 时查询自己的积分余额和生成统计；管理员可 @用户 查询他人 |
 | `图像账单 [@用户] [-n 数量]` | - | 无 @ 时查询自己的最近流水；管理员可 @用户 查询他人 |
 | `图像账单 --all [-n 数量]` | - | 管理员查看全局最近积分流水 |
-| `图像充值 @用户 积分 [原因]` | - | 管理员给用户充值；积分为负数时作为余额修正 |
-| `图像排行榜 [-n 数量]` | - | 管理员查看用户生成 / 消耗排行，默认按历史消耗排序 |
+| `图像充值 @用户 <人民币金额> [原因]` | - | 管理员按 `creditsPerCny` 折算为平台积分入账；金额为负数时作为余额修正 |
+| `图像排行榜 [-n 数量]` | - | 管理员查看用户生成 / 消耗排行 |
 | `图像指令` | - | 查看核心生成命令和当前快捷命令 |
 | `图像参数` | - | 查看通用参数、尺寸、比例和受限模型后缀 |
-| `styles` / `styleGroups` 动态命令 | - | 配置页维护的 prompt 预设，可选择文生图 / 图生图 / 合成图模式与默认模型后缀；重载配置后会重新注册 |
+| `styles` / `styleGroups` 动态命令 | - | 配置页维护的 prompt 预设，可选择文生图 / 图生图 / 合成图模式与默认模型后缀；重载配置后自动重新注册 |
 
 当前基础修饰符：
 
-- `-n <数量>`：一次生成图片数量，范围 1-4；未填写时使用 `defaultNumImages`。
-- `-1k` / `-2k` / `-4k`：预设分辨率。
-- `-1024x1024`：自定义分辨率。
+- `-n <数量>`：一次生成图片数量，产品上限 1-4；未填写时使用 `defaultNumImages`。
+- `-1k` / `-2k` / `-4k`：预设分辨率；命中契约的 `resolution` 声明时真正影响 `size`。
+- `-1024x1024`：自定义分辨率；OpenAI 契约会校验合法性，不合法直接 fail-closed。
 - `-1:1` / `-4:3` / `-16:9` / `-9:16` / `-3:2` / `-2:3`：画幅比例。
 - `-add <补充要求>`：追加生成要求。
-- `-模型后缀`：切换到配置中的模型映射。
+- `-<模型后缀>`：切换到 `modelMappings` 中的映射；后缀由 `stripImageCommandControls` 从最终 prompt 中剥离。
 
-模型映射权限：
+命令示例：
 
-- `restricted = false` 的模型后缀正常调用。
-- `restricted = true` 的模型后缀仅管理员和模型白名单用户可用。
-- 永久会员只跳过额度和限流，不自动获得受限模型权限。
+```
+文生图 一只猫 -mj                # 走 MJ Imagine 契约，final prompt 只有“一只猫”
+文生图 一座城市 -16:9 -2k         # OpenAI 契约按比例+2K 计算 size
+图生图 <图片> 改成赛博朋克风格 -gemini25
+文生图 -add 暖色灯光 一间书房
+```
 
-`styles` 与 `styleGroups` 预设支持 `mode` 与 `modelSuffix`：`mode` 决定默认走文生图、图生图或合成图链路；`modelSuffix` 引用模型映射后缀。用户在命令中显式填写模型后缀时，优先级高于 style 默认模型。配置重载时，动态快捷命令会先注销旧命令再按最新配置重新注册。`图像指令` 展示核心生成命令、当前快捷命令、账户命令和管理员命令入口；`图像参数` 独立展示参数、尺寸、比例、积分规则和受限模型后缀。
+## 交互模式
 
-积分计费：
+- `interactionMode`（auto / guided / advanced）默认 `auto`。
+  - `auto`：命令包含直接语法（已配置模型后缀、`-1k/-2k/-4k`、自定义 `-数字x数字`、比例、`-add` 或有效 `-n`）时直接生成；否则群聊直接生成、私聊进入向导。
+  - `guided`：`文生图` / `图生图` / `合成图` / style 快捷命令始终进入向导（即使命令带模型后缀 / 参数语法）。
+  - `advanced`：所有命令始终跳过向导，使用默认值直接生成。
+- `interactionModeOverrides`：按 `session.platform` 覆盖全局模式，用于「飞书私聊走 advanced、QQ 群保留 auto」等平台差异化策略。
+- 直接路径由 contract-driven 参数补全完成：任意后缀 + `-16:9` 缺分辨率会自动补默认，`-1k` 缺比例会自动补默认，未提供模型后缀时使用 style 默认或第一条映射（用户显式后缀始终优先）。
+
+## 计费与豁免
 
 - 生成前在用户余额中真实冻结预计积分；并发请求不能超卖同一余额。
 - 成功后按实际发送图片数结算，未使用部分释放；失败、超时或未返回图片时全额释放。
-- reserve / settle / release 幂等，满足 `reserved = settled + released`；活动 hold 持久化到 `credit-reservations.v1.json`，重启和过期可恢复。
-- 管理员、永久会员和 `unlimitedPlatforms` 平台记录交付与证据但不扣费。
-- per-token 目录只有倍率、没有请求级公式时不生成虚假每图价格，也不允许 cost-plus 扣费。
-- 用户数据与旧流水保持兼容，不重写历史 consume 事件。
+- reserve / settle / release 幂等，满足 `reserved = settled + released`；活动 hold 持久化到 `credit-reservations.v1.json`。
+- 每映射独立 `groupRatio`；运行时根据目录中的计价类型和供应商积分计算成本，目录价格或公式不足时 fail-closed，不生成虚假估算。
+- `图像充值 @用户 <金额>` 中的金额是**人民币金额**，按 `creditsPerCny`（1 元 = N 平台积分）折算为平台积分后入账；负数视为余额修正。
+- 「每日免费试用模型」下拉从 `modelMappings.modelId` 单选一个模型；只有目标 `modelId` 等于该单选项时才走每日免费通道，管理员 / 永久会员 / 免计费平台除外。
+- `freePlatforms`：命中平台绕过 `reserveCredits` / `settleReservation` / `checkFreeTrialForModel` / 每日免费额度写入，只保留限流与模型访问控制；生成完成只回复图片数量，不显示积分文案。
+- 管理员、永久会员和 `unlimitedPlatforms` 平台记录交付与统计但不扣费；首次统计初始化按当前 `dailyFreeCredits` 生成积分快照。
 
-## 版本进度
+## Prompt 预设与快捷命令
 
-- v0.1.x：架构骨架（Provider Registry + Tagged Union Schema + 多 Provider 验证）。
-- v0.2.x：MVP（Service + 简化版 Orchestrator + 文生图 / 图生图 / 额度查询命令）。
-- v0.3.0：OpenAI 兼容图像端点验证 MVP（无前缀命令 + 图像协议选择）。
-- v0.4.0：协议优先配置重写（控制台改为图像协议通道，移除历史供应商顶层选项与注册别名）。
-- v0.5.0：供应商语义 UI 重写（控制台顶层仅保留 `openai-compatible` / `openai-official` / `gemini-official`，OpenAI 兼容入口内部选择图像协议；数值配置改为数字输入）。
-- v0.5.1：尝试修复 OpenAI 兼容入口选择后配置项未展开的问题；后续确认该 Tagged Union 结构在控制台中仍不稳定。
-- v0.5.2：修复供应商设置整体消失问题，改为稳定对象分组结构，并修复模型映射跨运行时 Provider 时的凭证来源错误。
-- v0.5.3：清理当前阶段不应暴露的 ChatLuna 集成配置、未实现命令族常量和后续阶段运行时代码残留；当前阶段只保留 `文生图`、`图生图`、`图像额度`。
-- v0.5.4：增强 OpenAI / OpenAI-compatible 调用链路脱敏诊断日志和错误归一化上下文，便于远端排查 base URL、模型、HTTP 状态、网络错误与超时问题。
-- v0.5.5：将 OpenAI 兼容、OpenAI 官方、Gemini 官方三类供应商详细配置合并到默认收起抽屉中，保留稳定对象分组，避免重新引入 tagged union 渲染不稳定问题。
-- v0.5.6：新增 `图像指令`、`参数指令`，给 `文生图` / `图生图` 显式注册 `-n <num:number>`，并在命令入口拦截 restricted 模型后缀。
-- v0.5.7：将供应商详细设置改为顶层供应商分组内的嵌套折叠对象，并在服务层兼容读取旧版 flat 配置字段。
-- v0.5.8：新增 `合成图`、`图像查询 @用户`、`图像排行榜 [-n 数量]`、动态 styles 命令分发、styles 默认模式 / 默认模型，并优化配置页分组顺序。
-- v0.5.9：供应商与模型分离，供应商仅保存凭证，模型映射统一保存模型 ID 与协议。
-- v0.5.10：修复模型映射无法显式选择供应商的问题，新增 `supplier + protocol` 模型路由，并让 `gpt-official` 凭证可被模型映射使用。
-- v0.5.11：精简 Koishi Console 配置页文案，模型路由、供应商凭证、Prompt 预设、权限、配额、安全和通用设置均改为短标签。
-- v0.5.12：修复上游失败后图像任务锁可能残留的问题，任务锁新增 requestId 与 TTL 兜底清理。
-- v0.5.13：协议名称收敛为 `openai` / `gemini`，移除不使用的聊天补全图像通道。
-- v0.5.14：精简控制台供应商显示名，模型路由中只显示第三方 / OpenAI / Gemini。
-- v0.5.15：修复配置重载后 `styles` / `styleGroups` 新增快捷命令不生效的问题，并让 `图像指令` 展示动态快捷命令。
-- v0.5.16：调整 Koishi Console 配置说明文案，字段描述补充用途、单位和权限影响，选项文本保持极简。
-- v0.5.17：新增配置页顶部只读初始化说明，引导首次配置顺序和关键概念。
-- v0.5.18：重写 `图像指令` 与 `参数指令` 输出，核心命令、快捷命令和参数可选项改为紧凑分区格式。
-- v0.5.19：统一润色聊天可见输出，额度、查询、排行榜、输入引导、生成状态、失败和权限提示改为短标题与一行式条目格式。
-- v0.5.20：将参数帮助命令从 `参数指令` 改名为 `图像参数`，让两个帮助入口统一以 `图像` 开头。
-- v0.5.21：将日志级别显示改为 `simple` / `detail`，并让 `detail` 通过插件配置显式控制脱敏请求诊断日志。
-- v0.5.22：精简模型映射与 Prompt 预设表格列名，降低 Koishi Console 表头换行。
-- v0.5.23：最终生成失败、未返回图片和内容安全拦截提示改为显式发送到聊天窗口，降低长耗时命令依赖 action 返回值自动回复的风险。
-- v0.6.0：引入积分制计费、用户数据 v2、积分流水账本、充值审计、模型级积分单价、管理员充值 / 扣除 / 查账命令和积分化聊天输出。
-- v0.6.1：移除模型映射中的上游成本 / 定价备注配置，仅保留用户侧积分单价；积分配置改为支持小数。
-- v0.6.2：修复管理员扣除 0 或不足额时的聊天反馈，并让豁免用户首次统计记录使用当前配置初始化积分快照。
-- v0.6.3：删除 `图像额度` 和 `图像扣除` 固定命令；`图像查询` 接管用户自助查询；`图像账单` 支持用户自助流水和管理员全局流水；`图像充值` 支持负数余额修正；设置页顶部扩展为命令速查。
-- v0.7.0：新增 ChatLuna 桥接集成，包含 5 个基础工具（文生图/图生图/风格预设/积分查询/风格列表）和动态风格工具，以及 pre-chat 上下文注入和聊天历史清除图像上下文；所有工具调用适配 V2 积分制计费 API。
-- v0.8.0：新增 YesImBot Bridge 集成，包含 5 个 AI Agent 工具（文生图/图生图/风格预设/积分查询/风格列表）和 context:build 上下文注入；工具使用 AI SDK `jsonSchema()` 格式，通过 `ctx["yesimbot.extension"].registerExtension()` 注册，与 ChatLuna 桥接共享积分制计费管线。
+- `styles` / `styleGroups` 由配置页维护；每个预设支持 `mode`（文生图 / 图生图 / 合成图）与 `modelSuffix`（引用 `modelMappings.suffix`）。
+- 用户显式后缀优先于 style 默认；guided 模式下 style 命令也进入向导。
+- 配置重载会先注销旧 style 命令再按最新配置重新注册，无需外部重启。
 
-## 后续计划
+## ChatLuna / YesImBot 桥接
 
-- `0.8.x`：等待远端验证 YesImBot 桥接集成的工具注册、工具调用、上下文注入和配置热重载表现，根据日志修复问题。
-- 后续大功能：Console WebUI 和 V1 迁移工具仍保持 deferred，不进入当前运行时范围。
+- **ChatLuna**（`chatlunaEnabled`）：注册 5 个基础工具 `aigc_generate_image / aigc_edit_image / aigc_apply_style_preset / aigc_get_quota / aigc_list_styles`，每个 style 预设额外注册 `aigc_style_{name}` 动态工具；`chatluna/before-chat` 注入 `[AIGC_CONTEXT]` + `[AIGC_STYLE_CANDIDATES]`；`chatluna/clear-chat-history` 清空对应会话图像上下文。
+- **YesImBot**（`yesimbotEnabled`）：通过 `ctx["yesimbot.tool"]`（ToolService）注册与 ChatLuna 相同能力集的 5 个工具；execute 签名 `({ session, ...params }) → { status, result|error }`；工具返回结果中的 base64 图片 URL 被 `summarizeImageUrl` 替换为占位符，避免撑爆 LLM 上下文。
+- 两个桥接的 `buildRequestContextAndCost` 都透传 `operation`，与命令 / 向导共享同一 contract 结果。
+- 两个桥接均随 Koishi 配置热重载自动 enable / disable；未安装对应上游服务时插件启动照常，仅记日志。
 
-## 远端验证建议
+## 模型排行
 
-`0.6.3` 已在目标 Koishi 环境完成一轮远端测试，暂无大问题，功能正常且用户反馈符合预期。后续新增发布或配置变更后，建议优先回归：
+- 控制台底部「模型排行」折叠面板默认收起，展开时通过 `image-generator/get-model-ranking` 拉取聚合统计：插件调用次数、总生成张数、按模型的生成张数与占比。
+- 用户统计 `UserStatisticsV2.modelUsageCounts: Record<string, number>` 在付费与免计费两条路径都按 `modelId` 累加；旧账户读取时回填空对象。
 
-1. 配置页顶部显示 `📌 使用说明 / 命令速查` 只读引导，并按首次配置、普通用户、管理员、常用参数、权限说明分区展示；供应商凭证、模型映射、Prompt 预设 / 快捷命令、管理员与运营、用户豁免与白名单、积分计费与限流、安全策略、通用设置分组显示；低频权限、计费与安全策略默认折叠。
-2. 模型映射每行可显式设置供应商、接口格式、受限状态和每张积分；每张积分支持小数；供应商显示为第三方 / OpenAI / Gemini，并能区分 OpenAI 官方 GPT、OpenAI-compatible GPT、OpenAI-compatible Gemini、Gemini 官方。
-3. `styles` 每行可设置生成模式和生成模型，模型映射分组位于 Prompt 预设分组上方；在 `styleGroups` 中新增如 `手游化` 的快捷命令后点击重载配置，无需外部重启即可直接调用。
-4. OpenAI-compatible + `openai` 可完成 `文生图 一只猫`；OpenAI-compatible + `gemini` 可调用云雾等第三方 Gemini generateContent 端点。
-5. `文生图 -n 2 一只猫` 按 2 张图进行积分预检；若模型单价为 1，则预计消耗 2 积分。
-6. 将某个模型映射的 `creditCostPerImage` 改为 3 后，使用对应模型后缀生成 2 张图时应按 6 积分预检，并按成功发送图片数扣费。
-7. 普通用户余额不足时，聊天窗口返回 `积分不足`，并显示需要积分、今日免费、已购余额和合计可用。
-8. 生成成功后，普通用户执行 `图像查询` 返回 `图像查询` 标题与用户、今日免费、已购余额、合计可用、已生成、历史消耗等条目。
-9. 当部分图片生成或发送成功时，只按成功发送到聊天窗口的图片数扣费；最终完成提示里的本次消耗应与实际发送图片数一致。
-10. 管理员执行 `图像充值 @用户 20 测试充值` 后，用户已购余额增加，聊天输出包含本次充值、已购余额、合计可用和流水号。
-11. 管理员执行 `图像充值 @用户 -5 测试修正` 后，从用户已购余额中安全修正，并写入积分流水；如果已购余额不足，应显示部分调整或调整失败，而不是普通充值完成。
-12. 普通用户执行 `图像账单 -n 10` 返回自己的最近流水；管理员执行 `图像账单 @用户 -n 10` 返回指定用户最近流水；管理员执行 `图像账单 --all -n 10` 返回全局最近流水。
-13. 管理员执行 `图像查询 @用户` 返回 `图像查询` 标题与用户、今日免费、已购余额、合计可用、已生成、历史消耗等积分化条目；查询不存在的历史用户不会创建数据。
-14. 管理员执行 `图像排行榜 -n 10` 返回 `图像排行榜` 标题，并按历史消耗优先、生成图片数次之排序。
-15. 管理员、永久会员和 `unlimitedPlatforms` 平台可跳过积分扣费和限流，但仍记录生成统计；首次创建豁免用户数据时应按当前 `dailyFreeCredits` 初始化积分快照；模型白名单用户只获得 restricted 模型调用权限，不自动免费。
-16. 非白名单用户调用 restricted 模型后缀会被 `模型受限` 分区提示拒绝，管理员和模型白名单用户可用。
-17. `图像指令` 展示核心生成命令、当前 `styles` / `styleGroups` 快捷命令、账户命令和管理员命令入口；`图像参数` 展示通用参数、尺寸、比例、积分规则和受限模型后缀。
-18. `文生图 -16:9 -2k 一座城市` 能带入画幅与分辨率；`文生图 -add 暖色灯光 一间书房` 能带入追加要求。
-19. `图生图 <图片> 改成赛博朋克风格` 能收集图片并发起编辑；`合成图 -n 2` 后连续发送多张图片，最后发送 prompt 文字后才开始执行。
-20. 插件数据目录中会生成或更新 `users.v2.json`、`users.v2.json.backup`、`credit-ledger.v2.jsonl`、`recharge-records.v2.jsonl`；流水 JSONL 中不应包含 API key。
-21. 输入引导、生成开始、生成完成、积分不足、内容安全拦截和上游失败提示均保持短标题与一行式条目格式，日志不泄露 API key。
-22. 模拟或等待一次最终上游失败时，聊天窗口能收到 `生成失败` 或 `内容安全拦截` 提示；中间 fallback / retry 警告仍只写入日志且不扣费。
-23. 日志级别为 `simple` 时仅记录关键流程；切换到 `detail` 后会额外输出请求 URL、模型路由、脱敏 headers、请求体摘要、超时、尺寸、比例和扣费诊断信息。
+## 配置页
 
-## 发布边界
+- 配置页文案采用分层策略：下拉选项和表格列名保持极简，字段描述适度说明用途、单位和权限影响。
+- 数值字段使用数字输入，不使用滑竿；低频设置使用 Koishi Schema 嵌套 `.collapse()` 默认收起。
+- 保存配置前会校验当前供应商对应 API Key：未填写时弹警告并阻止保存。
+- 顶部提供只读「使用说明 / 命令速查」，按首次配置、普通用户、管理员、常用参数、权限规则分区。
+- 日志级别使用 `simple` / `detail`：`simple` 记录关键流程，`detail` 额外记录脱敏请求诊断（`supplier / modelId / routeId / contractId / operation / 请求字段名 / HTTP 状态`；不记录完整 prompt / base64 / API key，taskId 仅内部关联）。
 
-本仓库默认由助手准备代码、文档、版本号、CHANGELOG 和远端验证步骤；发布由用户手动执行。
+## 安装与配置
 
-从仓库根目录发布本插件：
+1. 在 Koishi 控制台安装 `koishi-plugin-aka-ai-image-generator`。
+2. 打开 aka-tools 页面，在「供应商凭证」中填写 apiKey（`openai-compatible` 还需填写 apiBase 与 `extraHeaders`）。
+3. 在「模型映射」中至少添加一条映射，配置命令后缀、modelId、受限状态与 `groupRatio`；运行时 supplier / protocol 由激活供应商和目录 route 决定，第一条有效映射即为默认模型。
+4. 可选：配置 `freePlatforms`、`interactionMode` / `interactionModeOverrides`、每日免费模型、Prompt 预设、ChatLuna / YesImBot 桥接。
+5. 保存配置，插件目录会生成 / 更新 `users.v2.json`、`credit-ledger.v2.jsonl`、`recharge-records.v2.jsonl`、`credit-reservations.v1.json`。
+
+## 验证建议（新增发布或配置变更后回归）
+
+1. 配置页各分组显示与折叠状态正确；保存前 API Key 校验生效。
+2. yunwu 目录刷新成功；受限模型进入 `unsupported`（MJ Action / Kling / omni-image / 图像识别）。
+3. `文生图 一只猫 -mj -16:9` 成功，`final prompt` 中不残留 `-mj`；Midjourney 任务返回 `SUCCESS`。
+4. `文生图 <描述> -<gpt 后缀> -2k` 走 OpenAI 契约，请求 `size` 实际为 2K 对应尺寸；`-4:3` 无对应固定 size 时 fail-closed。
+5. `图生图 <图片> 改成赛博朋克风格 -gemini25` 使用云雾 Gemini 编辑契约（不发 `imageConfig`）。
+6. auto 模式下私聊仅输入 `文生图 一只猫`（无直接语法）进入向导；`文生图 一只猫 -16:9` 直接生成。
+7. `interactionModeOverrides` 中给某平台设 `advanced`，该平台无参数命令也直接生成。
+8. `freePlatforms` 命中平台不扣积分、不写入试用日次数；限流仍生效；生成完成提示不含积分文案。
+9. 模型级 `groupRatio=2` 时 2 张图按 `pricePerCall × 2 × 2` 结算。
+10. `图像充值 @用户 10 测试充值` 按 `creditsPerCny` 折算为平台积分入账；负数触发余额修正分支。
+11. `图像充值` 与生成结算写入 `credit-ledger.v2.jsonl`；文件中不出现 API key / 完整 prompt。
+12. 控制台底部展开「模型排行」显示正确的调用次数、生成张数与按模型占比。
+13. ChatLuna 启用后 `aigc_generate_image` 与动态 `aigc_style_{name}` 可调用并返回 creditSummary。
+14. YesImBot 启用后 `extension.list` 显示 `aka-ai-image-generator`，AI Agent 通过 ToolService 调用返回 `{ status: 'success', result: {...} }`。
+15. 日志级别切换 `simple` → `detail` 后打印脱敏请求诊断，不泄露 API key / 完整 prompt。
+
+## 开发
+
+```sh
+pnpm install
+pnpm run typecheck
+pnpm run test          # vitest 契约 / provider / shared / commands 全套件
+pnpm run build         # tsup + koishi-console build
+pnpm run probe:yunwu   # 只读脱敏 yunwu 目录探针
+```
+
+## 发布
+
+版本、CHANGELOG、README、docs 由维护流程更新后，从仓库根目录：
 
 ```sh
 ./push.sh aka-ai-image-generator
 ```
 
-除非用户明确要求，助手不自动运行依赖安装、本地 typecheck、build、test、`push.sh`、`pnpm publish` 或 `npm publish`。
+会执行 clean + build + `pnpm publish`。发布前 `pnpm test` 与 `pnpm typecheck` 应通过；`prepublishOnly` 会再跑一次 clean + build。

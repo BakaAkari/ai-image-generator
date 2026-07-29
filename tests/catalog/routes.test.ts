@@ -17,10 +17,11 @@ describe('resolveYunwuRoutes', () => {
     ])
   })
 
-  test('gemini endpoint maps to gemini text-to-image', () => {
+  test('gemini endpoint maps to explicit text-to-image and image-to-image routes', () => {
     const routes = resolveYunwuRoutes(['gemini'])
     expect(routes).toEqual<GenerationRoute[]>([
       { id: 'gemini:text-to-image', protocol: 'gemini', capability: 'text-to-image', endpointName: 'gemini' },
+      { id: 'gemini:image-to-image', protocol: 'gemini', capability: 'image-to-image', endpointName: 'gemini' },
     ])
   })
 
@@ -36,9 +37,13 @@ describe('resolveYunwuRoutes', () => {
     expect(routes).toEqual([])
   })
 
-  test('mixed endpoints drop unknowns and keep known routes', () => {
+  test('mixed endpoints drop unknowns and keep all known capability routes', () => {
     const routes = resolveYunwuRoutes(['image-generation', '图像识别', 'gemini'])
-    expect(routes.map(r => r.protocol)).toEqual(['openai', 'gemini'])
+    expect(routes.map(r => r.id)).toEqual([
+      'openai:text-to-image',
+      'gemini:text-to-image',
+      'gemini:image-to-image',
+    ])
   })
 })
 

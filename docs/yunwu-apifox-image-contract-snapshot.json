@@ -1,0 +1,1573 @@
+{
+  "capture_method": "Apifox published-project JSON API discovered from browser performance resources",
+  "captured_at": "2026-07-29",
+  "published_project_id": 5427167,
+  "branch_id": 5118384,
+  "contracts": {
+    "openai_gpt_image_1_create": {
+      "source_url": "https://yunwu.apifox.cn/api-290549047",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/290549047?branchId=5118384",
+      "updatedAt": "2026-05-15T02:00:33.000Z",
+      "name": "创建  gpt-image-1",
+      "method": "post",
+      "path": "/v1/images/generations",
+      "description": "给定一个提示，该模型将返回一个或多个预测的完成，并且还可以返回每个位置的替代标记的概率。\n\n为提供的提示和参数创建完成\n\n官方文档：https://platform.openai.com/docs/api-reference/images/create",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Accept",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "prompt",
+            "n",
+            "size"
+          ],
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "所需图像的文本描述。最大长度为 1000 个字符。"
+            },
+            "n": {
+              "type": "integer",
+              "description": "要生成的图像数。必须介于 1 和 10 之间。"
+            },
+            "size": {
+              "type": "string",
+              "description": "生成图像的大小。必须是256x256、512x512或 1024x1024之一。"
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "size": "1024x1536",
+              "prompt": "一只可爱的小猪",
+              "model": "gpt-image-1",
+              "n": 1
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "OK",
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "object",
+              "created",
+              "choices",
+              "usage"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "created": {
+                "type": "integer"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "content"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "finish_reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "usage": {
+                "type": "object",
+                "required": [
+                  "prompt_tokens",
+                  "completion_tokens",
+                  "total_tokens"
+                ],
+                "properties": {
+                  "prompt_tokens": {
+                    "type": "integer"
+                  },
+                  "completion_tokens": {
+                    "type": "integer"
+                  },
+                  "total_tokens": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "responseExamples": [
+        {
+          "id": "chatcmpl-123",
+          "object": "chat.completion",
+          "created": 1677652288,
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "\n\nHello there, how may I assist you today?"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 9,
+            "completion_tokens": 12,
+            "total_tokens": 21
+          }
+        }
+      ]
+    },
+    "openai_gpt_image_2_create": {
+      "source_url": "https://yunwu.apifox.cn/api-447792717",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/447792717?branchId=5118384",
+      "updatedAt": "2026-04-24T08:43:24.000Z",
+      "name": "创建  gpt-image-2",
+      "method": "post",
+      "path": "/v1/images/generations",
+      "description": "给定一个提示，该模型将返回一个或多个预测的完成，并且还可以返回每个位置的替代标记的概率。\n\n为提供的提示和参数创建完成\n\n官方文档：https://platform.openai.com/docs/api-reference/images/create",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Accept",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "prompt",
+            "model",
+            "n"
+          ],
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "所需图像的文本描述。最大长度为 1000 个字符。"
+            },
+            "n": {
+              "type": "integer",
+              "description": "要生成的图像数。必须介于 1 和 10 之间。"
+            },
+            "size": {
+              "type": "string",
+              "description": "图片尺寸\n1024x1024      正方形\n1536x1024      横版\n1024x1536      竖版\n2048x2048      2K正方形\n2048x1152      2K横版\n3840x2160      4K横版\n2160x3840      4K竖版\nauto           默认\n\n尺寸严格限制规则\n1. 图片最大边长 ≤ 3840px\n2. 宽高两边像素均为 16px 的倍数\n3. 长边 / 短边 比值 ≤ 3:1\n4. 总像素范围：最小 655360  ~  最大 8294400"
+            },
+            "format": {
+              "type": "string",
+              "description": "图片格式\n可选：png 、 jpeg 、 webp"
+            },
+            "quality": {
+              "type": "string",
+              "description": "图片画质\n可选：low 、 medium 、 high 、 auto（默认）"
+            },
+            "model": {
+              "type": "string",
+              "description": "模型名"
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "model": "gpt-image-2",
+              "prompt": "A childrens book drawing of a veterinarian using a stethoscope to listen to the heartbeat of a baby otter.",
+              "n": 1,
+              "size": "1024x1024",
+              "quality": "low",
+              "format": "jpeg"
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "OK",
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "object",
+              "created",
+              "choices",
+              "usage"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "created": {
+                "type": "integer"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "content"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "finish_reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "usage": {
+                "type": "object",
+                "required": [
+                  "prompt_tokens",
+                  "completion_tokens",
+                  "total_tokens"
+                ],
+                "properties": {
+                  "prompt_tokens": {
+                    "type": "integer"
+                  },
+                  "completion_tokens": {
+                    "type": "integer"
+                  },
+                  "total_tokens": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "responseExamples": [
+        {
+          "id": "chatcmpl-123",
+          "object": "chat.completion",
+          "created": 1677652288,
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "\n\nHello there, how may I assist you today?"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 9,
+            "completion_tokens": 12,
+            "total_tokens": 21
+          }
+        }
+      ]
+    },
+    "openai_gpt_image_2_edit": {
+      "source_url": "https://yunwu.apifox.cn/api-446294920",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/446294920?branchId=5118384",
+      "updatedAt": "2026-06-08T09:38:12.000Z",
+      "name": "编辑  gpt-image-2",
+      "method": "post",
+      "path": "/v1/images/edits",
+      "description": "给定一个提示，该模型将返回一个或多个预测的完成，并且还可以返回每个位置的替代标记的概率。\n\n为提供的提示和参数创建完成\n\n官方文档：https://platform.openai.com/docs/api-reference/images/createEdit",
+      "headers": [
+        {
+          "name": "Accept",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "multipart/form-data",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "image",
+            "prompt",
+            "mask",
+            "model",
+            "n",
+            "quality",
+            "response_format",
+            "size"
+          ],
+          "properties": {
+            "image": {
+              "type": "string",
+              "description": "要编辑的图片。必须是受支持的图片文件或图片数组。对于 gpt-image-1，每张图片应为小于 25MB 的 png、webp 或 jpg 文件。对于 dall-e-2，您只能提供一张图片，并且该图片应为小于 4MB 的方形 png 文件。"
+            },
+            "prompt": {
+              "type": "string",
+              "description": "所需图像的文本描述。dall-e-2 的最大长度为 1000 个字符，gpt-image-1 的最大长度为 32000 个字符。"
+            },
+            "mask": {
+              "type": "string",
+              "description": "一张附加图片，其完全透明区域（例如，alpha 值为零）指示应编辑 image 位置。如果提供了多张图片，则遮罩将应用于第一张图片。必须是有效的 PNG 文件，小于 4MB，且尺寸与 image 相同。"
+            },
+            "model": {
+              "type": "string",
+              "description": "用于生成图像的模型。仅支持 dall-e-2 和 gpt-image-1。除非使用特定于 gpt-image-1 参数，否则默认为 dall-e-2。"
+            },
+            "n": {
+              "type": "integer",
+              "description": "要生成的图像数量。必须介于 1 到 10 之间。"
+            },
+            "quality": {
+              "type": "string",
+              "description": "生成图像的质量。只有 gpt-image-1 支持 high、medium 和 low 质量。dall-e-2 仅支持 standard 质量。默认为 auto。"
+            },
+            "response_format": {
+              "type": "string",
+              "description": "返回生成图像的格式。必须是 url 或 b64_json 之一。URL 在图像生成后 60 分钟内有效。此参数仅适用于 dall-e-2，因为 gpt-image-1 始终返回 base64 编码的图像。"
+            },
+            "size": {
+              "type": "string",
+              "description": "生成图像的尺寸。对于 gpt-image-1，必须为 1024x1024、1536x1024（横向）、1024x1536（纵向）或 auto（默认值）之一；对于 dall-e-2，必须为 256x256、512x512 或 1024x1024 之一。"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "image",
+            "type": "file",
+            "required": true,
+            "description": "要编辑的图片。必须是受支持的图片文件或图片数组。图片应小于16张、50MB以内。\n",
+            "enable": true
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "description": "所需图像的文本描述。\n",
+            "sampleValue": "将他们合并在一个图片里面",
+            "enable": true
+          },
+          {
+            "name": "mask",
+            "type": "string",
+            "required": false,
+            "description": "一张附加图片，其完全透明区域（例如，alpha 值为零）指示应编辑 image 位置。如果提供了多张图片，则遮罩将应用于第一张图片。必须是有效的 PNG 文件，小于 4MB，且尺寸与 image 相同。\n",
+            "sampleValue": "",
+            "enable": false
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "required": false,
+            "description": "用于生成图像的模型。仅 gpt-image-1, gpt-image-1-all  , flux-kontext-pro  , flux-kontext-max,gpt-image-2 ,gpt-image-2-all",
+            "sampleValue": "gpt-image-2",
+            "enable": true
+          },
+          {
+            "name": "n",
+            "type": "string",
+            "required": false,
+            "description": "要生成的图像数量。必须介于 1 到 10 之间。\n",
+            "sampleValue": "1",
+            "enable": true
+          },
+          {
+            "name": "quality",
+            "type": "string",
+            "required": false,
+            "description": "图片画质\n可选：low 、 medium 、 high 、 auto（默认）",
+            "sampleValue": "",
+            "enable": false
+          },
+          {
+            "name": "size",
+            "type": "string",
+            "required": false,
+            "description": "图片尺寸\n1024x1024 正方形\n1536x1024 横版\n1024x1536 竖版\n2048x2048 2K正方形\n2048x1152 2K横版\n3840x2160 4K横版\n2160x3840 4K竖版\nauto 默认\n尺寸严格限制规则\n1.\n图片最大边长 ≤ 3840px\n2.\n宽高两边像素均为 16px 的倍数\n3.\n长边 / 短边 比值 ≤ 3:1\n4.\n总像素范围：最小 655360 ~ 最大 8294400",
+            "sampleValue": "1024x1536",
+            "enable": true
+          },
+          {
+            "name": "background",
+            "type": "string",
+            "required": false,
+            "description": "允许为生成的图像的背景设置透明度。其值必须为 “不透明（opaque）” 或 “自动（auto）”（默认值）之一。当使用 “自动（auto）” 时，模型将自动为图像确定最佳背景。\n",
+            "sampleValue": "transparent",
+            "enable": false
+          },
+          {
+            "name": "moderation",
+            "type": "string",
+            "required": false,
+            "description": "控制由 gpt-image-2 生成的图像的内容审核级别。可以设置为 “low” 以进行限制较少的过滤，也可以设置为 “auto”（默认值）。\n",
+            "sampleValue": "low",
+            "enable": false
+          }
+        ],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "size": "1024x1024",
+              "prompt": "一直可爱的小猪",
+              "model": "gpt-image-1",
+              "n": 1
+            }
+          },
+          {
+            "mediaType": "multipart/form-data",
+            "description": "",
+            "value": {
+              "size": "1024x1024",
+              "prompt": "一直可爱的小猪",
+              "model": "gpt-image-1",
+              "n": 1
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "OK",
+          "schema": {
+            "type": "object",
+            "required": [
+              "created",
+              "background",
+              "data",
+              "output_format",
+              "quality",
+              "size"
+            ],
+            "properties": {
+              "created": {
+                "type": "integer"
+              },
+              "background": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "b64_json"
+                ],
+                "properties": {
+                  "b64_json": {
+                    "type": "string"
+                  }
+                }
+              },
+              "output_format": {
+                "type": "string"
+              },
+              "quality": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "responseExamples": []
+    },
+    "gemini_25_image_ratio": {
+      "source_url": "https://yunwu.apifox.cn/api-358030171",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/358030171?branchId=5118384",
+      "updatedAt": "2026-07-07T02:11:43.000Z",
+      "name": "图片生成 gemini-2.5-flash-image 控制宽高比",
+      "method": "post",
+      "path": "/v1beta/models/gemini-2.5-flash-image:generateContent",
+      "description": "官方文档：https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn#gemini-image-editing",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        }
+      ],
+      "query": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "{{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "contents",
+            "generationConfig"
+          ],
+          "properties": {
+            "contents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "inline_data": {
+                          "type": "object",
+                          "required": [
+                            "mime_type",
+                            "data"
+                          ],
+                          "properties": {
+                            "mime_type": {
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "generationConfig": {
+              "type": "object",
+              "required": [
+                "responseModalities",
+                "imageConfig"
+              ],
+              "properties": {
+                "responseModalities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "imageConfig": {
+                  "type": "object",
+                  "required": [
+                    "aspectRatio"
+                  ],
+                  "properties": {
+                    "aspectRatio": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "response_format": {
+              "type": "string",
+              "description": "填url返回url，不填默认base64"
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "response_format": "url",
+              "contents": [
+                {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "'Hi, This is a picture of me. Can you add a llama next to me"
+                    },
+                    {
+                      "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": "[BASE64_OMITTED]"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "generationConfig": {
+                "responseModalities": [
+                  "TEXT",
+                  "IMAGE"
+                ],
+                "imageConfig": {
+                  "aspectRatio": "16:9"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "responseExamples": []
+    },
+    "gemini_3pro_image": {
+      "source_url": "https://yunwu.apifox.cn/api-379838953",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/379838953?branchId=5118384",
+      "updatedAt": "2026-07-07T02:11:43.000Z",
+      "name": "图片生成 gemini-3-pro-image-preview 控制宽高比 +清晰度",
+      "method": "post",
+      "path": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+      "description": "官方文档：https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn#gemini-image-editing",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        }
+      ],
+      "query": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "{{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "contents",
+            "generationConfig"
+          ],
+          "properties": {
+            "contents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "inline_data": {
+                          "type": "object",
+                          "required": [
+                            "mime_type",
+                            "data"
+                          ],
+                          "properties": {
+                            "mime_type": {
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "generationConfig": {
+              "type": "object",
+              "required": [
+                "responseModalities",
+                "imageConfig"
+              ],
+              "properties": {
+                "responseModalities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "imageConfig": {
+                  "type": "object",
+                  "required": [
+                    "aspectRatio"
+                  ],
+                  "properties": {
+                    "aspectRatio": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "response_format": {
+              "type": "string",
+              "description": "填url返回url，不填默认base64"
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "response_format": "url",
+              "contents": [
+                {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "'Hi, This is a picture of me. Can you add a llama next to me"
+                    },
+                    {
+                      "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": "[BASE64_OMITTED]"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "generationConfig": {
+                "responseModalities": [
+                  "TEXT",
+                  "IMAGE"
+                ],
+                "imageConfig": {
+                  "aspectRatio": "9:16",
+                  "imageSize": "1K"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "responseExamples": []
+    },
+    "gemini_3pro_edit": {
+      "source_url": "https://yunwu.apifox.cn/api-305488471",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/305488471?branchId=5118384",
+      "updatedAt": "2026-07-07T02:11:43.000Z",
+      "name": "图片编辑 ",
+      "method": "post",
+      "path": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+      "description": "官方文档：https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn#gemini-image-editing",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [
+        {
+          "name": "key",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "{{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "contents",
+            "generationConfig"
+          ],
+          "properties": {
+            "contents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "inline_data": {
+                          "type": "object",
+                          "required": [
+                            "mime_type",
+                            "data"
+                          ],
+                          "properties": {
+                            "mime_type": {
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "generationConfig": {
+              "type": "object",
+              "required": [
+                "responseModalities"
+              ],
+              "properties": {
+                "responseModalities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "response_format": {
+              "type": "string",
+              "description": "填url返回url，不填默认base64"
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": null,
+            "value": {
+              "response_format": "url",
+              "contents": [
+                {
+                  "role": "user",
+                  "parts": [
+                    {
+                      "text": "'Hi, This is a picture of me. Can you add a llama next to me"
+                    },
+                    {
+                      "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": "[BASE64_OMITTED]"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "generationConfig": {
+                "responseModalities": [
+                  "TEXT",
+                  "IMAGE"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "responseExamples": []
+    },
+    "mj_upload": {
+      "source_url": "https://yunwu.apifox.cn/api-277975070",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/277975070?branchId=5118384",
+      "updatedAt": "2026-06-12T08:58:41.000Z",
+      "name": "上传图片",
+      "method": "post",
+      "path": "/mj/submit/upload-discord-images",
+      "description": "官方文档：https://docs.midjourney.com/hc/en-us/articles/33329380893325-Managing-Image-Uploads",
+      "headers": [
+        {
+          "name": "content-type",
+          "type": "string",
+          "required": true,
+          "description": "",
+          "sampleValue": "application/json",
+          "enable": true
+        },
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "application/json",
+        "required": false,
+        "schema": {
+          "type": "object",
+          "required": [
+            "base64Array"
+          ],
+          "properties": {
+            "base64Array": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": "",
+            "value": {
+              "base64Array": [
+                "data:image/png;base64,[BASE64_OMITTED]"
+              ]
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "responseExamples": []
+    },
+    "mj_imagine": {
+      "source_url": "https://yunwu.apifox.cn/api-232421938",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/232421938?branchId=5118384",
+      "updatedAt": "2026-06-12T08:58:41.000Z",
+      "name": "提交Imagine任务",
+      "method": "post",
+      "path": "/mj/submit/imagine",
+      "description": "官方文档：https://docs.midjourney.com/hc/en-us/articles/32023408776205-Prompt-Basics",
+      "headers": [
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "application/json",
+        "required": null,
+        "schema": {
+          "type": "object",
+          "required": [
+            "botType",
+            "prompt"
+          ],
+          "properties": {
+            "botType": {
+              "type": "string",
+              "description": "bot类型，mj(默认)或niji",
+              "enum": [
+                "MID_JOURNEY",
+                "NIJI_JOURNEY"
+              ]
+            },
+            "prompt": {
+              "type": "string",
+              "description": "提示词"
+            },
+            "notifyHook": {
+              "type": "string",
+              "description": "回调地址, 为空时使用全局notifyHook\n\n"
+            },
+            "state": {
+              "type": "string",
+              "description": "自定义参数"
+            },
+            "base64Array": {
+              "type": "array",
+              "description": "垫图base64数组\n\n",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "application/json",
+            "description": "",
+            "value": {
+              "base64Array": [],
+              "notifyHook": "",
+              "prompt": "cat",
+              "state": "",
+              "botType": "MID_JOURNEY"
+            }
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      ],
+      "responseExamples": [
+        "{\r\n    \"code\": 1,\r\n    \"description\": \"Submit success\",\r\n    \"result\": \"1730621718151844\",//任务id\r\n    \"properties\": {\r\n        \"discordChannelId\": \"1300842676874379336\",\r\n        \"discordInstanceId\": \"1572398367386955776\"\r\n    }\r\n}"
+      ]
+    },
+    "mj_task_fetch": {
+      "source_url": "https://yunwu.apifox.cn/api-232421939",
+      "api_data_url": "https://yunwu.apifox.cn/raiz5jee8eiph0eeFooV/api/v1/published-projects/5427167/http-apis/232421939?branchId=5118384",
+      "updatedAt": "2026-06-12T08:58:41.000Z",
+      "name": "根据任务ID 查询任务状态",
+      "method": "get",
+      "path": "/mj/task/1743326750223591/fetch",
+      "description": "",
+      "headers": [
+        {
+          "name": "Authorization",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "sampleValue": "Bearer {{YOUR_API_KEY}}",
+          "enable": true
+        }
+      ],
+      "query": [],
+      "requestBody": {
+        "type": "multipart/form-data",
+        "required": null,
+        "schema": {
+          "type": "object",
+          "required": [
+            "prompt"
+          ],
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "用于图像生成的模型。"
+            },
+            "prompt": {
+              "type": "string",
+              "description": "所需图像的文本描述。最大长度为 1000 个字符。"
+            },
+            "n": {
+              "type": "integer",
+              "description": "要生成的图像数。必须介于 1 和 10 之间。"
+            },
+            "size": {
+              "type": "string",
+              "description": "生成图像的大小。必须是256x256、512x512或 1024x1024之一。"
+            },
+            "quality": {
+              "type": "string",
+              "description": "将生成的图像的质量。`hd`创建具有更精细细节和更高一致性的图像。此参数仅支持`dall-e-3`."
+            },
+            "response_format": {
+              "type": "string",
+              "description": "返回生成的图像的格式。必须是 或url之一b64_json。"
+            },
+            "style": {
+              "type": "string",
+              "description": "生成图像的大小。必须是`256x256`、`512x512`或`1024x1024`for之一`dall-e-2`。对于模型来说，必须是`1024x1024`、`1792x1024`、 或之一。`1024x1792``dall-e-3`"
+            },
+            "user": {
+              "type": "string",
+              "description": "生成图像的风格。必须是 或`vivid`之一`natural`。生动使模型倾向于生成超真实和戏剧性的图像。自然使模型生成更自然、不太真实的图像。此参数仅支持`dall-e-3`."
+            }
+          }
+        },
+        "parameters": [],
+        "examples": [
+          {
+            "mediaType": "multipart/form-data",
+            "description": "",
+            "value": ""
+          }
+        ]
+      },
+      "responses": [
+        {
+          "code": 200,
+          "contentType": "json",
+          "name": "成功",
+          "schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "action",
+              "customId",
+              "botType",
+              "prompt",
+              "promptEn",
+              "description",
+              "state",
+              "submitTime",
+              "startTime",
+              "finishTime",
+              "imageUrl",
+              "status",
+              "progress",
+              "failReason",
+              "buttons",
+              "maskBase64",
+              "properties"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "customId": {
+                "type": "string"
+              },
+              "botType": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "promptEn": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "submitTime": {
+                "type": "integer"
+              },
+              "startTime": {
+                "type": "integer"
+              },
+              "finishTime": {
+                "type": "integer"
+              },
+              "imageUrl": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "progress": {
+                "type": "string"
+              },
+              "failReason": {
+                "type": "string"
+              },
+              "buttons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "customId",
+                    "emoji",
+                    "label",
+                    "type",
+                    "style"
+                  ],
+                  "properties": {
+                    "customId": {
+                      "type": "string"
+                    },
+                    "emoji": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "integer"
+                    },
+                    "style": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "maskBase64": {
+                "type": "string"
+              },
+              "properties": {
+                "type": "object",
+                "required": [
+                  "finalPrompt",
+                  "finalZhPrompt"
+                ],
+                "properties": {
+                  "finalPrompt": {
+                    "type": "string"
+                  },
+                  "finalZhPrompt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "responseExamples": [
+        {
+          "id": "1730621826053455",
+          "action": "IMAGINE",
+          "customId": "",
+          "botType": "",
+          "prompt": "pig --v 6.1",
+          "promptEn": "pig --v 6.1",
+          "description": "Submit success",
+          "state": "",
+          "submitTime": 1730621826053,
+          "startTime": 1730621828024,
+          "finishTime": 1730621855817,
+          "imageUrl": "https://cdnmjp.oneabc.org/attachments/1300842274347028520/1302547211321741343/kennedyhernandez46715_74108_pig_3785da15-4f70-4034-9128-f3ff1ac634fa.png?ex=6728831f&is=6727319f&hm=f6d701914d608e4da9298d2290b3616317264a70635fbf08a37ca6c1bb671b50&",
+          "status": "SUCCESS",
+          "progress": "100%",
+          "failReason": "",
+          "buttons": [
+            {
+              "customId": "MJ::JOB::upsample::1::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U1",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::2::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U2",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::3::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U3",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::4::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U4",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::reroll::0::3785da15-4f70-4034-9128-f3ff1ac634fa::SOLO",
+              "emoji": "🔄",
+              "label": "",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::1::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V1",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::2::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V2",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::3::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V3",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::4::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V4",
+              "type": 2,
+              "style": 2
+            }
+          ],
+          "maskBase64": "",
+          "properties": {
+            "finalPrompt": "pig --v 6.1",
+            "finalZhPrompt": ""
+          }
+        },
+        {
+          "id": "1730621826053455",
+          "action": "IMAGINE",
+          "customId": "",
+          "botType": "",
+          "prompt": "pig --v 6.1",
+          "promptEn": "pig --v 6.1",
+          "description": "Submit success",
+          "state": "",
+          "submitTime": 1730621826053,
+          "startTime": 1730621828024,
+          "finishTime": 1730621855817,
+          "imageUrl": "https://cdnmjp.oneabc.org/attachments/1300842274347028520/1302547211321741343/kennedyhernandez46715_74108_pig_3785da15-4f70-4034-9128-f3ff1ac634fa.png?ex=6728831f&is=6727319f&hm=f6d701914d608e4da9298d2290b3616317264a70635fbf08a37ca6c1bb671b50&",
+          "status": "SUCCESS",
+          "progress": "100%",
+          "failReason": "",
+          "buttons": [
+            {
+              "customId": "MJ::JOB::upsample::1::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U1",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::2::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U2",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::3::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U3",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::upsample::4::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "U4",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::reroll::0::3785da15-4f70-4034-9128-f3ff1ac634fa::SOLO",
+              "emoji": "🔄",
+              "label": "",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::1::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V1",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::2::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V2",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::3::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V3",
+              "type": 2,
+              "style": 2
+            },
+            {
+              "customId": "MJ::JOB::variation::4::3785da15-4f70-4034-9128-f3ff1ac634fa",
+              "emoji": "",
+              "label": "V4",
+              "type": 2,
+              "style": 2
+            }
+          ],
+          "maskBase64": "",
+          "properties": {
+            "finalPrompt": "pig --v 6.1",
+            "finalZhPrompt": ""
+          }
+        }
+      ]
+    }
+  }
+}

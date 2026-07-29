@@ -2,10 +2,28 @@
 
 ## Current status
 
-- Current package version: `0.9.0`.
-- Current line: `0.9.0` rebuilds the Yunwu catalog, pricing, routing, reservations, and aka-tools contract; prior `0.8.13` hardens runtime reliability: rate-limit ordering fix, volatile map pruning, task TTL cap, userId guard, ChatLuna bridge send isolation, and download-image magic-byte validation; `0.8.12` fixes command-timeout stale Provider callbacks; `0.8.0` adds YesImBot bridge integration; `0.7.0` ChatLuna bridge integration is implemented and pending remote validation; `0.6.x` credit billing and user data v2 is remote-validated through `0.6.3`; `0.5.x` runtime stabilization is archived as stable after remote validation.
-- Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle + YesImBot bridge toggle.
-- Current publish boundary: the assistant prepares code, docs, versions, changelog, and validation notes; the user publishes manually from the workspace root with `./push.sh aka-ai-image-generator`.
+- Current package version: `1.2.7`.
+- Current line: `1.2.7` closes contract-driven routing across OpenAI / Gemini / Midjourney, and fixes the real MJ / OpenAI generation failure root cause (dynamic model suffix + control tokens polluting the final prompt) via `stripImageCommandControls` at all command / wizard entries. Preceded within the same session by four iteration boundaries `1.2.4 → 1.2.5 → 1.2.6 → 1.2.7`; see `CHANGELOG.md` for the per-iteration breakdown.
+- Current UI model: supplier credentials + model mapping unified config + ChatLuna bridge toggle + YesImBot bridge toggle + interaction-mode configuration + per-platform overrides + model ranking drawer + free platforms.
+- Current contract coverage (implemented, contract-driven): yunwu OpenAI GPT Image 1 / 2 / 2-c create, GPT Image 2 edit (multipart-first), yunwu Gemini 2.5 generate, Gemini 3 Pro generate / edit, Gemini official create / edit, yunwu MJ Imagine (text-to-image + reference-image ids), OpenAI official create / edit.
+- Fail-closed at the catalog level (not implemented): MJ Action / Blend / Describe / Modal / Upload, Kling image / multi-image / outpainting, omni-image, image recognition.
+
+## Next version direction
+
+Independent contracts for the currently unsupported capabilities, split so each ships with its own request builder + tests before being taken out of `unsupported`:
+
+- MJ Action chain (Upscale / Variation / Reroll / Pan / Zoom) with `buttons[].customId` handling.
+- MJ Blend / Describe / Modal / Upload contracts.
+- Kling image / multi-image / outpainting contracts (currently share a route with MJ but need separate provider paths).
+- omni-image and image recognition contracts.
+
+Real-probe follow-ups still open (non-blocking, tracked in `docs/official-image-contract-investigation-and-repair-plan.md`):
+
+- Whether yunwu MJ appends `--stylize/--relax/--v` on the server side for specific botType / account combinations.
+- yunwu GPT Image 1 schema vs example contradictions (size / model fields).
+- Whether yunwu Gemini accepts Authorization-only auth without the query `?key=`.
+- Whether Gemini official `imageSize` accepts uppercase `1K/2K/4K` for every model or only some.
+- Real OpenAI official gpt-image edit response shape (Apifox schema known to be mis-filled).
 
 ## Stable scope
 
@@ -31,6 +49,19 @@ Stable runtime direction:
 5. Keep remote Koishi validation as the source of truth for runtime behavior.
 
 ## Completed milestones
+
+### `1.2.7` Contract-driven routing and final-prompt sanitization
+
+Status: implemented and remotely validated by Kari (2026-07-29). Real text-to-image generation succeeded on Midjourney (yunwu Imagine) and OpenAI GPT Image 2 (yunwu); Kari confirmed further live tests as "all normal".
+
+Consolidated release for four intra-session iterations `1.2.4 → 1.2.5 → 1.2.6 → 1.2.7`:
+
+- **`1.2.4`** — auto/advanced direct-intent detection (`detectDirectIntent`) plus the shared parameter auto-completion layer (`protocol-param-resolver` + `generation-setup`) across all five entrances (commands / styles / wizard / ChatLuna / YesImBot). Regression fixes: `3:2` / `2:3` aspect ratios reunified, `-n` registered on the three core commands, style command wizardHandler wiring, MJ `--ar` / `--stylize` prompt-append dedup.
+- **`1.2.5`** — `contractId + operation` precise contract layer (`src/contracts/registry.ts` + `param-resolver.ts` + `openai-size.ts`), covering 14 concrete contracts across yunwu / OpenAI-official / Gemini-official / MJ Imagine. Full provider rewrites: MJ Imagine strict Body (`botType + prompt + base64Array?`), OpenAI multipart-first edit + real `size` from `resolution + aspectRatio + model`, Gemini yunwu / official dialect separation and fail-closed image-input paths. Catalog fail-closed: recognition / upload / video / template / non-Imagine MJ / Kling excluded from routes; four prior catalog test failures resolved. Route selection switched from `routes[0]` to `catalogRouteLookup(modelId, operation)` at all five entrances.
+- **`1.2.6`** — `contractFields` / `rejectedParams` / `defaults` accounting; `ContractRejectedParamsError` fail-closed before credit reservation and provider call at all five entrances; route reachability defenses distinguishing missing-model / missing-operation-route / missing-contract failures; contract and multi-entry defensive tests closed out.
+- **`1.2.7`** — real generation smoke found and fixed the actual root cause of MJ `parameter error` and OpenAI parameter failures: Koishi `[prompt:text]` retains unrecognized options (`-mj`, `-16:9`, `-2k`, `-1024x1024`, `-add`, `-n <n>`) inside the prompt string, so provider requests received these tokens as part of the final prompt. Fix: `stripImageCommandControls(prompt, modelMappingIndex)` in `src/utils/parser.ts`, called before credit reservation / provider dispatch at command entries and the wizard inline path. Previously suspected root causes (server-side `--stylize` appending / duplicate stylize flags) were falsified by real logs. Post-fix real tests: MJ text-to-image with dynamic suffix succeeds (`SUCCESS`, `finalPrompt` clean), OpenAI GPT Image 2 `-2k` returns images with the correct `size`; Kari confirmed multi-round manual verification passed.
+
+Still-open observation items (non-blocking, tracked in `docs/official-image-contract-investigation-and-repair-plan.md`): yunwu MJ server-side stylize behavior, yunwu GPT Image 1 schema / example contradictions, yunwu Gemini auth alternatives, Gemini official `imageSize` per-model enum, OpenAI official gpt-image edit response shape.
 
 ### `0.9.0` Yunwu sourced catalog and atomic billing
 
@@ -368,4 +399,4 @@ Before any publishable change in this plugin:
 2. Update `CHANGELOG.md` with version impact and known limitations.
 3. Update `README.md` so it only documents currently implemented user-facing behavior.
 4. Keep related plan documents marked as active, completed, deferred, or historical to avoid stale guidance.
-5. Do not run publish commands automatically; the user publishes manually with `./push.sh aka-ai-image-generator`.
+5. Publish from the workspace root via `./push.sh aka-ai-image-generator` (runs clean + build + `pnpm publish`); `pnpm test` and `pnpm typecheck` should pass first.

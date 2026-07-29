@@ -22,20 +22,14 @@ const ENDPOINT_ROUTE_MAP: RouteSpec[] = [
   { endpoint: 'dall-e-3', protocol: 'openai', capability: 'text-to-image' },
   { endpoint: 'dall-e-2', protocol: 'openai', capability: 'text-to-image' },
   { endpoint: 'openai', protocol: 'openai', capability: 'text-to-image' },
+  // Gemini generateContent 同一 endpoint 同时承载文生图与参考图编辑。
+  // 显式产出两条 capability route，避免在运行时对整个 Gemini 协议做宽泛回退。
   { endpoint: 'gemini', protocol: 'gemini', capability: 'text-to-image' },
-  // Midjourney (async)
+  { endpoint: 'gemini', protocol: 'gemini', capability: 'image-to-image' },
+  // Midjourney Imagine —— 本轮唯一已实现契约（yunwu.mj.imagine）
   { endpoint: 'mj想象模式', protocol: 'mj', capability: 'text-to-image' },
-  { endpoint: 'mj动作',     protocol: 'mj', capability: 'image-edit' },
-  { endpoint: 'mj混合',     protocol: 'mj', capability: 'image-edit' },
-  { endpoint: 'mj描述模式', protocol: 'mj', capability: 'image-recognition' },
-  { endpoint: 'mj模态模式', protocol: 'mj', capability: 'text-to-image' },
-  { endpoint: 'mj图片上传', protocol: 'mj', capability: 'image-edit' },
-  // Kling (async, same protocol)
-  { endpoint: 'kling生图',     protocol: 'mj', capability: 'text-to-image' },
-  { endpoint: 'kling多图生图', protocol: 'mj', capability: 'text-to-image' },
-  { endpoint: 'kling扩图',     protocol: 'mj', capability: 'image-edit' },
-  { endpoint: 'omni-image',    protocol: 'mj', capability: 'text-to-image' },
-  { endpoint: '图像识别',      protocol: 'mj', capability: 'image-recognition' },
+  // 其他 MJ Action/Blend/Describe/Kling/upload/图像识别 目前无契约支持，
+  // fail-closed：在此不生成路由，模型会被 catalog 归入 unsupported。
 ]
 
 function normalizeEndpoint(endpoint: string): string {

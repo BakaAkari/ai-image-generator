@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.2.7 - 2026-07-29
+
+本轮从 `1.2.3` 起进行了四次迭代（`1.2.4 → 1.2.5 → 1.2.6 → 1.2.7`），四次迭代均在同一天完成、未逐版单独发布，统一以 `1.2.7` 打包。四次迭代的真实边界如下。
+
+### 1.2.4 — auto/advanced 直接意图与五入口共享参数补全
+
+- 新增 `src/shared/direct-intent.ts` 的 `detectDirectIntent`，配置驱动地识别本次消息是否包含直接命令语法：任一已配置 `modelMappings.suffix` 被 `parseStyleCommandModifiers` 解析成功、任一参数修饰符（预设分辨率 `-1k/-2k/-4k`、自定义分辨率 `-数字x数字`、比例 `-1:1/-4:3/-16:9/-9:16/-3:2/-2:3`、`-add`），或存在有效 `-n <数字>`。命中即视为直接生成意图，`auto` 模式下跳过向导；`advanced` 保持始终直接生成；`guided` 保持始终强制向导。动态新增的 mapping 后缀立即生效，不硬编码模型名。
+- 新增协议参数规范化 + 缺失值自动补全的公共层：`src/shared/protocol-param-resolver.ts` 与 `src/shared/generation-setup.ts`。所有五个入口（命令 `文生图`/`图生图`/`合成图`、Prompt/style 快捷命令、交互向导、ChatLuna bridge、YesImBot bridge）共享同一份 `buildProtocolRequestContext`：用户显式值优先；只传 `-1k` 自动补 `1:1`，只传 `-16:9` 自动补默认分辨率；未指定尺寸参数时按协议默认补齐；未知协议保守不盲补也不阻止请求。
+- MJ 协议的 `ar` / `stylize` 在公共层统一转成 `--ar` / `--stylize` prompt 后缀，并对 `--ar` / `--stylize` / `--s` 做去重；`ImageRequestContext` 新增可选 `promptAppends`。
+- 兼容性回归：`PROTOCOL_PARAMS` 的 openai / gemini / mj `aspectRatio`（含 MJ `ar` prompt flag）补齐 `3:2` / `2:3`，与 `parser.ts` 的 `validAspectRatios`、provider `ASPECT_RATIO_SIZE_MAP` 归入同一事实源。
+- 核心 `文生图` / `图生图` / style 命令补齐 `-n <num>` 选项声明（此前仅 `合成图`）。修复 style 命令未把 `wizardHandler` 透传到 `registerStyleCommands` 的旧遗漏；guided 对 style 命令也真正生效。
+
+### 1.2.5 — contractId + operation 精细契约层与 fail-closed 路由
+
+- 将“协议默认”升级为“供应商 + 协议 + 操作 + 模型”四元组精确契约。新增 `src/contracts/`：`types.ts`、`registry.ts`、`param-resolver.ts`、`openai-size.ts`。当前注册的契约覆盖：yunwu OpenAI GPT Image 1 / 2 / 2-c create、GPT Image 2 edit（multipart-first）、yunwu Gemini 2.5 / 3 Pro 生成与编辑、Gemini 官方 create / edit、yunwu MJ Imagine（文生图 + 参考图两个 id）、OpenAI 官方 create / edit。
+- `src/contracts/openai-size.ts` 完整实现 GPT Image 2 固定 size 表 + 自定义尺寸规则（≤3840、16 倍数、长短边比 ≤3:1、总像素 655 360..8 294 400）；`-2k` / `-4k` 现在真正改变请求 `size`；`4:3` 无对应固定 size 时 fail-closed，不再偷偷降级为 3:2。
+- `src/service/model-route-selection.ts` 引入 `operation` 参数；`src/index.ts` 中 `service.catalogRouteLookup` 按 `operation` 精确匹配 route，禁止继续固定取 `routes[0]`。图生图 fallback 到 text-to-image（MJ Imagine 图生图同 endpoint + `base64Array`）。
+- `AiImageGeneratorService.buildGenerationSetup / requestProviderImages` 均按 operation 定位契约，找不到契约时 fail-closed 抛错。契约 id 通过 `ImageRequestContext.contractId` 透传到 provider。
+- Provider 全面重写为契约驱动：
+  - `providers/midjourney.ts` 严格按官方 Imagine Body 发送 `botType + prompt`，可选 `base64Array/notifyHook/state`；**删除**旧实现里非契约的 `model` 与 `imageUrl` 字段。参考图统一为 data URL 放入 `base64Array`；输入图全部下载失败 → fail-closed，不退化为文生图；非 Imagine 契约 id → 拒绝。
+  - `providers/openai.ts` 编辑直接走 multipart `/v1/images/edits`（不再先发 JSON 再回退）；`size` 由契约层 param-resolver 决定；`quality/format/background/moderation` 仅在契约声明枚举时才发送；不支持 n 的契约（如 `gpt-image-2-c`）逐张调用；响应解析同时兼容 `data[].url` / `data[].b64_json` / `usage.total_tokens`；忽略 Apifox 中被误填成 Chat Completions 的 response schema。
+  - `providers/gemini.ts` 拆分云雾与官方方言：云雾 2.5 生成契约不发送 `imageSize`；云雾 3 Pro 生成契约发送大写 `1K/2K/4K`；云雾编辑契约不发送 `imageConfig`，只发送 `responseModalities`；`response_format=url` 仅在云雾契约允许时携带；官方 Gemini 移除未经验证的 `LOW/MEDIUM` 映射，改为契约声明的大写 `1K/2K/4K`；图生图输入全部下载失败 → fail-closed。响应解析新增顶层 `data[].url` / `b64_json`（云雾 URL 扩展）。
+- catalog fail-closed 修复：`src/suppliers/yunwu/capability.ts` 增加 `图像识别 / 上传 / 视频 / 模板` 以及非 Imagine MJ / Kling endpoint 的 `NON_GENERATION_PATTERNS`；`src/suppliers/yunwu/routes.ts` 仅保留有契约支持的 endpoint（当前仅 `mj想象模式`）；`normalizer.ts` 把上述 reason 视为阻断，模型进入 `unsupported`。修复此前 4 个 catalog 测试失败。
+- 入口统一透传 operation：命令入口 `文生图 / 图生图 / 合成图 / style` 分别以 `text-to-image / image-edit / compose-image` 调用；`wizard-handler.ts` 通过 `service.resolveContractForMapping` 定位契约；`bridge/chatluna/tool-runtime.ts` 与 `bridge/yesimbot/tool-runtime.ts` 的 `buildRequestContextAndCost` 全部新增 operation 参数。五类入口共享同一契约选择结果。
+
+### 1.2.6 — contract 参数分层、拒绝语义与 route 可达性防御
+
+- `src/shared/generation-setup.ts` 明确产出 `contractFields`、`defaults`、`rejectedParams`，命中契约时精确记录哪些字段来自用户显式值、哪些是契约默认、哪些被契约拒绝（例：`quality=low` 传给未声明 quality 的契约）。
+- `ContractRejectedParamsError` 在五入口的计费预授权与 provider 调用之前拦截并 fail-closed，避免把不被支持的参数偷偷丢弃。
+- route 可达性防御：service 层在解析 contract 前先按 `operation` 校验模型是否存在匹配 route；找不到时明确抛错并区分“模型未在 catalog / 无对应 operation route / 无对应契约”三类失败路径。
+- 契约层与五入口测试进一步收口：`tests/contracts/registry.test.ts` / `openai-size.test.ts` / `param-resolver.test.ts`、`tests/providers/midjourney.test.ts` / `openai-contract.test.ts` / `gemini-contract.test.ts`、`tests/shared/generation-setup-contract.test.ts`、`tests/commands/image-command-routing.test.ts` 覆盖：contract-driven 分支写入 `requestContext` 与被拒参数、OpenAI 固定 / 自定义 size、Gemini 云雾 / 官方分流、MJ 最小 Body 与 ar/stylize 去重、`4:3` 不错配、Imagine SUCCESS/FAILURE、`base64Array` 参考图与下载失败 fail-closed、多入口 auto/guided/advanced 路由。发布前 `pnpm test` 将重新运行完整套件。
+
+### 1.2.7 — 修复动态模型后缀 / 控制参数污染最终 prompt（本次真实实测发布点）
+
+- 真实实测定位到 MJ 文生图 `parameter error` 的根因：Koishi `[prompt:text]` 会保留未识别 option（例如动态模型后缀 `-mj`、`-16:9`、`-2k`、自定义 `-1024x1024`、`-add`、`-n <数字>`），命令入口把这段“未剥离控制语法”的原始文本作为 prompt 发给 provider，导致 MJ 服务端解析成非法参数。此前一度怀疑是服务端自动追加 `--stylize` 引发的重复 flag，被真实日志与本轮 `1.2.5` 的去重路径证伪。
+- 修复：新增 `src/utils/parser.ts` 中的 `stripImageCommandControls(prompt, modelMappingIndex)`，按当前 `modelMappings` 索引 + 预设分辨率/比例/`-add`/`-n` 集合识别控制 token 并从 prompt 剥离。命令入口（`文生图 / 图生图 / 合成图` 及 style 快捷命令）与向导内联路径统一在计费预授权与 provider 调用前调用 strip，得到干净 prompt 再进入契约层。
+- 实测结果：
+  - Midjourney `文生图 <描述> -mj -16:9` 返回 `SUCCESS`，异步任务 `finalPrompt` 中不再残留 `-mj`；此前的 `parameter error` 已消除。
+  - OpenAI GPT Image 2 `文生图 <描述> -<gpt 后缀> -2k`（走 yunwu 官方契约 `/v1/images/generations`）返回图像，`size` 由契约层 param-resolver 决定，`-2k` 真正生效。
+  - 后续多轮 style 预设、参考图、`-add` 组合实测由 Kari 完成，反馈“一切正常”。
+- 日志脱敏保持不变：不记录完整 prompt / base64 / API key；只记录 `supplier / modelId / routeId / contractId / operation / 请求字段名列表 / HTTP 状态`，taskId 仅内部关联。
+
+### 仍需真实探针继续观察（非阻断）
+
+- 云雾 MJ 服务端是否在特定 botType / 帐户下自动追加 `--stylize/--relax/--v`；本次真实文生图未观察到该现象，也未观察到重复 flag，但样本量有限，作为观察项保留。
+- 云雾 GPT Image 1 页面 schema 与 example 的字段矛盾（size / model），本轮以契约层 fail-closed 兜底，不当作默认路径。
+- 云雾 Gemini 请求鉴权当前仍走 query `?key=`，是否可仅用 Authorization 未验证。
+- Gemini 官方 `imageSize` 是否所有模型都接受大写 `1K/2K/4K`，本轮 fail-closed 保守列出。
+- OpenAI 官方 GPT Image 编辑响应结构（Apifox 已知误填）仍以真实响应为准。
+
+### 未实现范围（目录级 fail-closed）
+
+- MJ Action / Blend / Describe / Modal / Upload、Kling 生图 / 多图生图 / 扩图、omni-image、图像识别 —— 相关模型进入 `unsupported`，后续按需拆分独立契约再放行。
+
+### 文档
+
+- `README.md` 全面重写以匹配 v1.2.7 现状（契约驱动 routing、参数补全、`ContractRejectedParamsError` fail-closed、auto/guided/advanced、per-platform override、`freePlatforms`、模型排行、`图像充值` 人民币语义、ChatLuna / YesImBot 桥接、控制后缀不进入最终 prompt）。
+- `ROADMAP.md` 将本轮从 Next 移入 Completed milestone，Next 聚焦未实现契约（MJ Action / Kling / omni-image / 图像识别）。
+- `docs/midjourney-plan.md` 状态改为已实现并完成 v1.2.7 真实文生图验证；根因结论更新为“控制后缀污染最终 prompt”，此前对服务端 stylize 追加的怀疑不再作为主根因。
+- `docs/official-image-contract-investigation-and-repair-plan.md` 状态改为 v1.2.7 release-ready，Kari 手工验收已完成；MJ / OpenAI GPT Image 2 真实文生图成功证据入档，不泄露具体 prompt / 用户 / taskId。
+
 ## 1.2.3
 
 - 控制台配置页新增「模型排行」折叠面板，默认收起并位于页面底部，展开时按需拉取聚合统计。
@@ -80,10 +141,6 @@
 - Add the maintained Yunwu catalog, pricing, configuration migration, and JSON settings-store implementation.
 - Pin Vitest to the Vite 5 compatible major used by the Koishi console toolchain.
 - Declare the `element-plus` client build dependency required by the aka-tools console page.
-
-## Unreleased
-
-- 暂无。
 
 ## 0.9.1
 

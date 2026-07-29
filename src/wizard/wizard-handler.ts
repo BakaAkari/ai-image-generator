@@ -25,8 +25,9 @@ import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOr
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type { WizardSession, WizardSessionManager } from '../services/wizard-session.js'
 import type { ImageGenerationModifiers, ModelMappingConfig } from '../shared/types.js'
+import { applyPromptAppends, buildProtocolRequestContext, ContractRejectedParamsError } from '../shared/generation-setup.js'
 import { parseMessageImagesAndText } from '../utils/input.js'
-import { buildModelMappingIndex, parseStyleCommandModifiers } from '../utils/parser.js'
+import { buildModelMappingIndex, parseStyleCommandModifiers, stripImageCommandControls } from '../utils/parser.js'
 
 export interface CreateWizardHandlerParams {
   ctx: Context
@@ -434,53 +435,8 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       // 先清理向导会话，释放用户状态（用户可立刻发新命令）
       wizardSessions.cancel(w.userId)
 
-      // 构造 prompt（拼接 MJ 风格后缀参数）
+      // -add 追加内容并入 prompt（wizard 内部不再单独产生 MJ flag；下方统一走公共层）
       let finalPrompt = w.prompt ?? ''
-      if (w.protocol) {
-        const pp = PROTOCOL_PARAMS[w.protocol]
-        if (pp) {
-          for (const param of pp.params) {
-            if (!param.promptAppend) continue
-            const val = w.params[param.key]
-            if (val === undefined) continue
-            if (param.key === 'ar') finalPrompt += ` --ar ${val}`
-            else if (param.key === 'stylize') finalPrompt += ` --s ${val}`
-          }
-        }
-      }
-
-      // 构造请求上下文
-      const requestContext: Record<string, unknown> = {}
-      if (w.modelId) requestContext.modelId = w.modelId
-      if (w.protocol) requestContext.provider = w.protocol
-
-      // 非 prompt 追加参数放入上下文
-      if (w.protocol) {
-        const pp = PROTOCOL_PARAMS[w.protocol]
-        if (pp) {
-          for (const param of pp.params) {
-            if (param.promptAppend) continue
-            const val = w.params[param.key]
-            if (val === undefined) continue
-            if (param.key === 'resolution' || param.key === 'imageSize') {
-              requestContext.resolution = val
-            } else if (param.key === 'aspectRatio' || param.key === 'ar') {
-              requestContext.aspectRatio = val
-            } else if (param.key === 'n') {
-              requestContext.numImages = Number(val)
-            }
-          }
-        }
-      }
-
-      // 命令行 flag 已解析的参数覆盖：用户显式在命令里带了 -16:9/-1k 等就走这些值
-      if (w.preResolution && requestContext.resolution === undefined) {
-        requestContext.resolution = w.preResolution
-      }
-      if (w.preAspectRatio && requestContext.aspectRatio === undefined) {
-        requestContext.aspectRatio = w.preAspectRatio
-      }
-      // -add 追加内容并入 prompt
       if (w.preCustomAdditions?.length) {
         finalPrompt = [finalPrompt, ...w.preCustomAdditions]
           .map(s => s.trim())
@@ -488,12 +444,56 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
           .join(' - ')
       }
 
+      // 使用公共层完成契约参数补全（contract-driven 分支 + 未知回退到 PROTOCOL_PARAMS）。
+      // wizard 收集到的 w.params 作为显式值，命令行 flag（w.preResolution / preAspectRatio）
+      // 作为兜底，未提供的参数由 param-resolver / PROTOCOL_PARAMS 补齐。
+      const wizardMapping = w.modelId ? findMappingByModelId(w.modelId) : undefined
+      const wizardOperation = w.mode === 'text-to-image' ? 'text-to-image' : 'image-edit'
+      const wizardContract = wizardMapping
+        ? service.resolveContractForMapping(wizardMapping, wizardOperation)
+        : undefined
+      let requestContext
+      try {
+        const built = buildProtocolRequestContext({
+          protocol: w.protocol,
+          modelMapping: wizardMapping,
+          operation: wizardOperation,
+          ...(wizardContract ? { contractId: wizardContract.id } : {}),
+          explicit: {
+            resolution: (w.params.resolution as string | undefined) ?? w.preResolution,
+            aspectRatio: (w.params.aspectRatio as string | undefined) ?? w.preAspectRatio,
+            imageSize: w.params.imageSize as string | undefined,
+            ar: w.params.ar as string | undefined,
+            stylize: w.params.stylize as number | string | undefined,
+            n: typeof w.params.n === 'number' ? w.params.n : undefined,
+            numImages: typeof w.params.n === 'number' ? w.params.n : undefined,
+          },
+          defaultNumImages: getConfig().defaultNumImages || 1,
+          existingPrompt: finalPrompt,
+        })
+        if (built.rejectedParams && built.rejectedParams.length > 0) {
+          throw new ContractRejectedParamsError(built.rejectedParams)
+        }
+        requestContext = built.requestContext
+      } catch (error) {
+        if (error instanceof ContractRejectedParamsError) return error.message
+        throw error
+      }
+
+      // 兼容 wizard 旧行为：即使 catalog 中未拿到 modelMapping，也把 modelId 透传下去
+      if (w.modelId && !requestContext.modelId) requestContext.modelId = w.modelId
+
+      // MJ 类协议的 --ar / --stylize 由公共层写入 requestContext.promptAppends；
+      // 立即拼接到 finalPrompt，与命令入口保持一致
+      finalPrompt = applyPromptAppends(finalPrompt, requestContext.promptAppends)
+      if (requestContext.promptAppends) delete requestContext.promptAppends
+
       // 调用编排器（失败时 orchestrator 已有的错误处理会发消息给用户）
       if (w.mode === 'text-to-image') {
         return handlers.executeTextToImage(
           session,
           finalPrompt,
-          requestContext as any,
+          requestContext,
           undefined,
           w.commandName ?? '文生图',
           w.commandName,
@@ -503,7 +503,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         session,
         w.imageUrls?.[0],
         finalPrompt,
-        requestContext as any,
+        requestContext,
         undefined,
         w.commandName ?? '图生图',
         w.commandName,
@@ -580,7 +580,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 无 argv 时回退到 content 中的纯文本
     let cleanInlinePrompt: string | undefined
     if (typeof inlineText === 'string' && inlineText.trim()) {
-      cleanInlinePrompt = inlineText.trim()
+      cleanInlinePrompt = stripImageCommandControls(inlineText, modelIndex)
     } else if (!argv) {
       const parsedFallback = parseMessageImagesAndText(session.content ?? '')
       cleanInlinePrompt = parsedFallback.text?.trim() || undefined

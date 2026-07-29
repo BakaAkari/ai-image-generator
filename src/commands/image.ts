@@ -12,6 +12,7 @@ import type { Argv, Command, Context, Session } from 'koishi'
 
 import type { Config } from '../shared/config.js'
 import { COMMANDS } from '../shared/constants.js'
+import { detectDirectIntent } from '../shared/direct-intent.js'
 import { resolveInteractionMode } from '../shared/interaction-mode.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
@@ -22,11 +23,13 @@ import type {
   StyleMode,
 } from '../shared/types.js'
 import type { CreditLedgerEventV2 } from '../services/UserManager.js'
+import { ContractRejectedParamsError } from '../shared/generation-setup.js'
 import type { WizardHandler } from '../wizard/wizard-handler.js'
 import {
   buildModelMappingIndex,
   normalizeSuffix,
   parseStyleCommandModifiers,
+  stripImageCommandControls,
 } from '../utils/parser.js'
 
 export interface RegisterImageCommandsParams {
@@ -50,21 +53,31 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.TXT_TO_IMG} [prompt:text]`, '文生图')
     .alias('t2i')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
+      const numOption = getCommandOptionNumber(argv, 'num')
+      const modelIndex = buildModelMappingIndex(config.modelMappings)
+      const { parsed, resolved: modifiers } = resolveCommandModifiers(argv, undefined, config)
+      const cleanPrompt = mergePrompt('', stripImageCommandControls(prompt, modelIndex), modifiers.customAdditions)
+      const hasDirectIntent = detectDirectIntent(parsed, numOption)
+      const mode = resolveInteractionMode(
+        config.interactionMode,
+        config.interactionModeOverrides,
+        session,
+        { hasDirectIntent },
+      )
 
-      // guided 模式 → 走交互向导
+      // guided 模式 → 走交互向导（管理员强制向导，即使命令带后缀也保持）
       if (mode === 'guided' && wizardHandler) {
         return wizardHandler.handleCommand(session, COMMANDS.TXT_TO_IMG, argv, undefined, prompt)
       }
 
-      // advanced / auto（群聊）→ 直接生成（默认值）
-      const modifiers = buildCommandModifiers(argv, undefined, config)
+      // advanced / auto（群聊或识别到直接语法）→ 直接生成（默认值 + 协议自动补全）
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
@@ -72,14 +85,21 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
-      const setup = service.buildGenerationSetup(
-        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
-        modifiers,
-      )
+      let setup
+      try {
+        setup = service.buildGenerationSetup(
+          resolveCommandNum(numOption, config.defaultNumImages || 1),
+          modifiers,
+          'text-to-image',
+        )
+      } catch (error) {
+        if (error instanceof ContractRejectedParamsError) return error.message
+        throw error
+      }
 
       return handlers.executeTextToImage(
         session,
-        prompt,
+        cleanPrompt,
         setup.requestContext,
         setup.displayInfo,
       )
@@ -90,21 +110,31 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
   // ---------------------------------------------------------------------------
   ctx.command(`${COMMANDS.IMG_TO_IMG} [img] [prompt:text]`, '图生图')
     .alias('i2i')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
+      const numOption = getCommandOptionNumber(argv, 'num')
+      const modelIndex = buildModelMappingIndex(config.modelMappings)
+      const { parsed, resolved: modifiers } = resolveCommandModifiers(argv, img, config)
+      const cleanPrompt = mergePrompt('', stripImageCommandControls(prompt, modelIndex), modifiers.customAdditions)
+      const hasDirectIntent = detectDirectIntent(parsed, numOption)
+      const mode = resolveInteractionMode(
+        config.interactionMode,
+        config.interactionModeOverrides,
+        session,
+        { hasDirectIntent },
+      )
 
       // guided 模式 → 走交互向导
       if (mode === 'guided' && wizardHandler) {
         return wizardHandler.handleCommand(session, COMMANDS.IMG_TO_IMG, argv, img, prompt)
       }
 
-      // advanced / auto（群聊）→ 直接生成（默认值）
-      const modifiers = buildCommandModifiers(argv, img, config)
+      // advanced / auto（群聊或识别到直接语法）→ 直接生成
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
@@ -112,15 +142,22 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
-      const setup = service.buildGenerationSetup(
-        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
-        modifiers,
-      )
+      let setup
+      try {
+        setup = service.buildGenerationSetup(
+          resolveCommandNum(numOption, config.defaultNumImages || 1),
+          modifiers,
+          'image-edit',
+        )
+      } catch (error) {
+        if (error instanceof ContractRejectedParamsError) return error.message
+        throw error
+      }
 
       return handlers.executeImageToImage(
         session,
         img,
-        prompt,
+        cleanPrompt,
         setup.requestContext,
         setup.displayInfo,
       )
@@ -137,16 +174,25 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       if (!session) return ''
 
       const config = getConfig()
-      const mode = resolveInteractionMode(config.interactionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
+      const numOption = getCommandOptionNumber(argv, 'num')
+      const modelIndex = buildModelMappingIndex(config.modelMappings)
+      const { parsed, resolved: modifiers } = resolveCommandModifiers(argv, undefined, config)
+      const cleanPrompt = mergePrompt('', stripImageCommandControls(prompt, modelIndex), modifiers.customAdditions)
+      const hasDirectIntent = detectDirectIntent(parsed, numOption)
+      const mode = resolveInteractionMode(
+        config.interactionMode,
+        config.interactionModeOverrides,
+        session,
+        { hasDirectIntent },
+      )
 
       // guided 模式 → 走交互向导
       if (mode === 'guided' && wizardHandler) {
         return wizardHandler.handleCommand(session, COMMANDS.COMPOSE_IMAGE, argv, undefined, prompt)
       }
 
-      // advanced / auto（群聊）→ 直接生成（默认值）
-      const modifiers = buildCommandModifiers(argv, undefined, config)
+      // advanced / auto（群聊或识别到直接语法）→ 直接生成
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
@@ -154,14 +200,21 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
-      const setup = service.buildGenerationSetup(
-        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
-        modifiers,
-      )
+      let setup
+      try {
+        setup = service.buildGenerationSetup(
+          resolveCommandNum(numOption, config.defaultNumImages || 1),
+          modifiers,
+          'compose-image',
+        )
+      } catch (error) {
+        if (error instanceof ContractRejectedParamsError) return error.message
+        throw error
+      }
 
       return handlers.executeComposeImage(
         session,
-        prompt,
+        cleanPrompt,
         setup.requestContext,
         setup.displayInfo,
       )
@@ -172,6 +225,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
     service,
     handlers,
     getConfig,
+    wizardHandler: params.wizardHandler,
     logger,
   })
 
@@ -409,25 +463,33 @@ function registerStyleCommand(
   reservedNames.add(style.commandName)
 
   const command = ctx.command(`${style.commandName} [img] [prompt:text]`, style.description || 'Prompt 预设')
+    .option('num', '-n <num:number> 生成图片数量（1-4）')
     .action(async (argv: Argv, img?: unknown, prompt?: string) => {
       const session = argv.session
       if (!session) return ''
 
       const config = getConfig()
-      const modifiers = buildCommandModifiers(argv, img, config, style)
-
-      // 按交互模式分流
-      const rawInteractionMode = config.interactionMode
-      const resolvedInteractionMode = resolveInteractionMode(rawInteractionMode, config.interactionModeOverrides, session)
       const wizardHandler = params.wizardHandler
+      const numOption = getCommandOptionNumber(argv, 'num')
+      // 关键：parsed 只反映用户本次消息里显式提供的语法。style 默认后缀在 resolved 内追加，
+      // 因此不会污染 hasDirectIntent 判断 —— 用户显式后缀依然优先于 style 默认。
+      const { parsed, resolved: modifiers } = resolveCommandModifiers(argv, img, config, style)
+      const cleanPrompt = stripImageCommandControls(prompt, buildModelMappingIndex(config.modelMappings))
+      const hasDirectIntent = detectDirectIntent(parsed, numOption)
+      const resolvedInteractionMode = resolveInteractionMode(
+        config.interactionMode,
+        config.interactionModeOverrides,
+        session,
+        { hasDirectIntent },
+      )
 
       if (resolvedInteractionMode === 'guided' && wizardHandler) {
-        // guided → 进入向导选模型和参数
+        // guided → 进入向导选模型和参数（管理员强制向导，即使命令带后缀也保持）
         return wizardHandler.handleCommand(session, style.commandName, argv, img, prompt)
       }
 
-      if (rawInteractionMode === 'auto') {
-        // auto → 有默认模型时跳过向导（原逻辑），否则进入向导
+      if (resolvedInteractionMode !== 'advanced' && !hasDirectIntent) {
+        // auto 且未识别到直接语法 → 沿用旧行为：style 有默认模型时跳过向导，否则进入向导
         const hasDefaultModel = !!resolveStyleModelMapping(
           style,
           buildModelMappingIndex(config.modelMappings),
@@ -437,7 +499,7 @@ function registerStyleCommand(
         }
       }
 
-      // advanced 或 auto（有默认模型）→ 直接生成
+      // advanced 或 auto（识别到直接语法 / 有默认模型）→ 直接生成
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
@@ -445,12 +507,25 @@ function registerStyleCommand(
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
-      const setup = service.buildGenerationSetup(
-        resolveCommandNum(getCommandOptionNumber(argv, 'num'), config.defaultNumImages || 1),
-        modifiers,
-      )
-      const finalPrompt = mergePrompt(style.prompt, prompt, modifiers.customAdditions)
-      const mode = resolveStyleMode(style.mode)
+      const styleMode = resolveStyleMode(style.mode)
+      const operationForStyle = styleMode === 'text-to-image'
+        ? 'text-to-image'
+        : styleMode === 'compose-image'
+          ? 'compose-image'
+          : 'image-edit'
+      let setup
+      try {
+        setup = service.buildGenerationSetup(
+          resolveCommandNum(numOption, config.defaultNumImages || 1),
+          modifiers,
+          operationForStyle,
+        )
+      } catch (error) {
+        if (error instanceof ContractRejectedParamsError) return error.message
+        throw error
+      }
+      const finalPrompt = mergePrompt(style.prompt, cleanPrompt, modifiers.customAdditions)
+      const mode = styleMode
 
       if (mode === 'text-to-image') {
         return handlers.executeTextToImage(
@@ -492,23 +567,35 @@ function registerStyleCommand(
   return command
 }
 
-function buildCommandModifiers(
+/**
+ * 命令入口的修饰符解析（含直接意图判定所需的原始解析结果）。
+ *
+ * - `parsed`：仅包含用户在本次消息里显式提供的语法（供 detectDirectIntent 判定，
+ *   不含 style 默认模型 / 首个映射兜底，避免"无脑落到 direct"）。
+ * - `resolved`：在 `parsed` 基础上追加 style 默认模型与首条 mapping 兜底，
+ *   直接生成路径下传给服务层使用。
+ */
+function resolveCommandModifiers(
   argv: Argv,
   imgParam: unknown,
   config: Config,
   style?: ResolvedStyleConfig,
-): ImageGenerationModifiers {
+): { parsed: ImageGenerationModifiers; resolved: ImageGenerationModifiers } {
   const modelIndex = buildModelMappingIndex(config.modelMappings)
-  const modifiers = parseStyleCommandModifiers(argv, imgParam, modelIndex)
-  if (!modifiers.modelMapping) {
+  const parsed = parseStyleCommandModifiers(argv, imgParam, modelIndex)
+  const resolved: ImageGenerationModifiers = {
+    ...parsed,
+    customAdditions: parsed.customAdditions ? [...parsed.customAdditions] : [],
+  }
+  if (!resolved.modelMapping) {
     const defaultMapping = resolveStyleModelMapping(style, modelIndex)
-    if (defaultMapping) modifiers.modelMapping = defaultMapping
+    if (defaultMapping) resolved.modelMapping = defaultMapping
   }
   // 0.9.0：无后缀、无 style 默认模型时取第一个可用映射
-  if (!modifiers.modelMapping) {
-    modifiers.modelMapping = (config.modelMappings ?? [])[0]
+  if (!resolved.modelMapping) {
+    resolved.modelMapping = (config.modelMappings ?? [])[0]
   }
-  return modifiers
+  return { parsed, resolved }
 }
 
 function resolveStyleModelMapping(

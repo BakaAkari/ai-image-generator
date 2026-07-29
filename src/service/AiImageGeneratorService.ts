@@ -27,10 +27,16 @@ import { PLUGIN_NAME } from '../shared/constants.js'
 import { isDetailLogLevel, normalizeLogLevel } from '../shared/logging.js'
 import { ImageContextStore } from '../core/image-context-store.js'
 import type { ProviderRegistry } from '../providers/registry.js'
-import type { ImageProvider as RuntimeImageProvider } from '../providers/types.js'
+import type { ImageProvider as RuntimeImageProvider, ImageGenerationOptions as ProviderImageGenerationOptions } from '../providers/types.js'
+type ImageGenerationOptionsWithContract = ProviderImageGenerationOptions
 import type { CreditLedgerEventV2, CreditSummary } from '../services/UserManager.js'
 import { UserManager } from '../services/UserManager.js'
 import { MissingModelMappingError, MissingCatalogRouteError } from './model-route-selection.js'
+import type { CatalogRouteLookup } from './model-route-selection.js'
+import { buildProtocolRequestContext, ContractRejectedParamsError } from '../shared/generation-setup.js'
+import type { ContractOperation } from '../contracts/types.js'
+import { getContractById, resolveContract } from '../contracts/registry.js'
+import type { ImageContract } from '../contracts/types.js'
 
 declare module 'koishi' {
   interface Context {
@@ -140,9 +146,30 @@ export class AiImageGeneratorService extends Service {
     const targetModelId = requestContext?.modelId
     const effectiveModelId = targetModelId || this.resolveDefaultModelId()
     const factoryConfig = this.buildProviderFactoryConfig(provider, requestContext)
-    const imageOptions = {
+
+    // 定位契约：若 requestContext 提供了 contractId 则精确匹配；否则按当前 mapping+operation 查询。
+    const operation: ContractOperation = requestContext?.operation ?? 'text-to-image'
+    const contract = this.locateContractForRequest(requestContext, operation)
+    if (!contract) {
+      throw new Error(`模型 ${effectiveModelId || 'unknown'} 在 ${operation} 操作下没有可用契约（fail-closed）`)
+    }
+
+    // fail-closed：contract-driven 分支产生的 rejected 参数在此拦截；
+    // 五个入口（普通命令、style、wizard、ChatLuna、YesImBot）都必须先经 buildGenerationSetup
+    // 或 buildProtocolRequestContext，理论上不会走到这里，但保留兜底防御防止绕过。
+    if (requestContext?.rejectedParams && requestContext.rejectedParams.length > 0) {
+      throw new ContractRejectedParamsError(requestContext.rejectedParams)
+    }
+
+    const imageOptions: ImageGenerationOptionsWithContract = {
       resolution: requestContext?.resolution,
       aspectRatio: requestContext?.aspectRatio,
+      contract,
+      operation,
+      numImages,
+    }
+    if (requestContext?.contractFields) {
+      imageOptions.contractFields = { ...requestContext.contractFields }
     }
 
     const requestLog = {
@@ -428,15 +455,20 @@ export class AiImageGeneratorService extends Service {
   /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
   lastProviderUsage: number | null = null
 
-  public catalogRouteLookup: ((modelId: string) => { routeId: string; protocol: ProviderType } | undefined) | undefined
+  public catalogRouteLookup: CatalogRouteLookup | undefined
 
   /**
    * 后生成定价构建：使用慷慨预留金额（200 平台积分）替代预计算成本。
+   *
+   * 同时通过 shared/generation-setup.buildProtocolRequestContext 完成
+   * “协议参数规范化 + 缺失值自动补全”：显式值优先，缺失值使用当前协议默认，
+   * 未知协议保持保守；MJ 协议的 ar/stylize 会以 promptAppends 返回。
    */
-  buildGenerationSetup(numImages: number, modifiers?: ImageGenerationModifiers) {
-    const requestContext: ImageRequestContext = { numImages }
-    const modelMapping = modifiers?.modelMapping
-
+  buildGenerationSetup(
+    numImages: number,
+    modifiers?: ImageGenerationModifiers,
+    operation: ContractOperation = 'text-to-image',
+  ) {
     // 使用慷慨预留金额（200 平台积分），不再预计算 exact cost
     const generationCost: GenerationCost = {
       totalCredits: 200,
@@ -445,21 +477,42 @@ export class AiImageGeneratorService extends Service {
       costSource: 'post-generation',
     }
 
+    const modelMapping = modifiers?.modelMapping
+
+    let protocol: string | undefined
+    let supplier: ImageProvider | undefined
+    let routeId: string | undefined
+    let contractId: string | undefined
     if (modelMapping) {
-      const resolvedRoute = this.resolveModelRoute(modelMapping)
-      requestContext.supplier = resolvedRoute.supplier
-      requestContext.provider = resolvedRoute.protocol
-      requestContext.routeId = this.catalogRouteLookup?.(modelMapping.modelId)?.routeId
+      const resolvedRoute = this.resolveModelRoute(modelMapping, operation)
+      supplier = resolvedRoute.supplier
+      protocol = resolvedRoute.protocol
+      routeId = this.catalogRouteLookup?.(modelMapping.modelId, operation)?.routeId
+      contractId = this.resolveContractForMapping(modelMapping, operation)?.id
     }
-    if (modelMapping?.modelId) {
-      requestContext.modelId = modelMapping.modelId
-      requestContext.modelSuffix = modelMapping.suffix
-    }
-    if (modifiers?.resolution) {
-      requestContext.resolution = modifiers.resolution
-    }
-    if (modifiers?.aspectRatio) {
-      requestContext.aspectRatio = modifiers.aspectRatio
+
+    const { requestContext, rejectedParams } = buildProtocolRequestContext({
+      protocol,
+      supplier,
+      modelMapping,
+      routeId,
+      operation,
+      contractId,
+      explicit: {
+        resolution: modifiers?.resolution,
+        aspectRatio: modifiers?.aspectRatio,
+        numImages,
+      },
+      defaultNumImages: numImages,
+    })
+
+    // 保持传入的 numImages 语义（命令层已用 config.defaultNumImages / -n 决定）
+    requestContext.numImages = numImages
+
+    // fail-closed：命令层调用此方法紧接着做计费预授权，任何被契约拒绝的显式参数
+    // 都必须在此抛出，避免出现“先扣积分后失败”的静默失真。
+    if (rejectedParams && rejectedParams.length > 0) {
+      throw new ContractRejectedParamsError(rejectedParams)
     }
 
     const displayInfo: GenerationDisplayInfo = {}
@@ -472,6 +525,57 @@ export class AiImageGeneratorService extends Service {
     }
 
     return { requestContext, displayInfo, generationCost }
+  }
+
+  /** 由 catalog route 决定的协议查询（未知模型返回 undefined）。 */
+  getProtocolForModelId(
+    modelId: string | undefined | null,
+    operation: ContractOperation = 'text-to-image',
+  ): ProviderType | undefined {
+    if (!modelId) return undefined
+    return this.catalogRouteLookup?.(modelId, operation)?.protocol
+  }
+
+  /**
+   * 请求期契约定位。优先使用 requestContext.contractId；否则回退 modelId+operation。
+   */
+  private locateContractForRequest(
+    requestContext: ImageRequestContext | undefined,
+    operation: ContractOperation,
+  ): ImageContract | undefined {
+    // 优先精确契约 id
+    if (requestContext?.contractId) {
+      const contract = getContractById(requestContext.contractId)
+      if (contract) return contract
+    }
+    const modelId = requestContext?.modelId
+    if (!modelId) return undefined
+    const mapping = this.pluginConfig.modelMappings?.find(m => (requestContext?.modelSuffix ? m.suffix === requestContext.modelSuffix : m.modelId === modelId))
+      ?? { suffix: '', modelId }
+    return this.resolveContractForMapping(mapping, operation)
+  }
+
+  /**
+   * 定位 mapping + operation 对应的图像契约。
+   * 找不到时返回 undefined；provider 应基于 undefined fail-closed。
+   */
+  resolveContractForMapping(
+    mapping: ModelMappingConfig,
+    operation: ContractOperation,
+  ): ImageContract | undefined {
+    if (!mapping?.modelId) return undefined
+    const route = this.catalogRouteLookup?.(mapping.modelId, operation)
+    if (!route) return undefined
+    const supplier = this.resolveActiveSupplierRoute(route.protocol, mapping)
+    const contractSupplier = mapSupplierToContract(this.pluginConfig.activeSupplier, supplier)
+    if (!contractSupplier) return undefined
+    const result = resolveContract({
+      modelId: mapping.modelId,
+      supplier: contractSupplier,
+      protocol: route.protocol,
+      operation,
+    })
+    return result.ok ? result.contract : undefined
   }
 
   /**
@@ -597,9 +701,12 @@ export class AiImageGeneratorService extends Service {
     return this.resolveModelRoute(firstMapping)
   }
 
-  private resolveModelRoute(mapping: ModelMappingConfig): { supplier: ImageProvider; protocol: ProviderType } {
-    const route = this.catalogRouteLookup?.(mapping.modelId)
-    if (!route) throw new MissingCatalogRouteError(mapping.modelId)
+  private resolveModelRoute(
+    mapping: ModelMappingConfig,
+    operation: ContractOperation = 'text-to-image',
+  ): { supplier: ImageProvider; protocol: ProviderType } {
+    const route = this.catalogRouteLookup?.(mapping.modelId, operation)
+    if (!route) throw new MissingCatalogRouteError(mapping.modelId, operation)
     const supplier = this.resolveActiveSupplierRoute(route.protocol, mapping)
     this.assertRouteSupported(supplier, route.protocol, mapping)
     return { supplier, protocol: route.protocol }
@@ -799,6 +906,19 @@ function buildQueryTerms(query: string): string[] {
   }
 
   return Array.from(unique)
+}
+
+function mapSupplierToContract(
+  activeSupplier: string | undefined,
+  supplier: ImageProvider,
+): 'yunwu' | 'openai-official' | 'gemini-official' | undefined {
+  if (activeSupplier === 'yunwu' || activeSupplier === 'gptgod') return 'yunwu'
+  if (activeSupplier === 'openai-official') return 'openai-official'
+  if (activeSupplier === 'gemini-official') return 'gemini-official'
+  if (supplier === 'openai-compatible') return 'yunwu'
+  if (supplier === 'gpt-official') return 'openai-official'
+  if (supplier === 'gemini-official') return 'gemini-official'
+  return undefined
 }
 
 function normalizeApiBase(base?: string): string | undefined {

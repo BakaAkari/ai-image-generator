@@ -23,6 +23,7 @@ import type {
   ResolvedStyleConfig,
   StyleMatchCandidate,
 } from '../../shared/types.js'
+import { applyPromptAppends, buildProtocolRequestContext, ContractRejectedParamsError } from '../../shared/generation-setup.js'
 import type { AiImageGeneratorService } from '../../service/AiImageGeneratorService.js'
 import type {
   ToolDefinitionForToolService,
@@ -109,7 +110,8 @@ async function runGenerateImageTool(
   const freePlatform = aiGenerator.isFreePlatform(session.platform || null)
   return withImageTaskLock(session, aiGenerator, async (requestId) => {
     const prompt = expectString(args.prompt, 'prompt')
-    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config, aiGenerator, prompt, 'text-to-image')
+    const providerPrompt = applyPromptAppends(prompt, requestContext.promptAppends)
 
     if (!freePlatform) {
       const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
@@ -119,7 +121,7 @@ async function runGenerateImageTool(
     }
 
     const images = await aiGenerator.requestProviderImages(
-      prompt,
+      providerPrompt,
       [],
       generationCost.numImages,
       requestContext,
@@ -179,7 +181,8 @@ async function runEditImageTool(
       return Failed('未能解析到参考图片。请提供图片 URL 或在消息中附带图片。')
     }
 
-    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config, aiGenerator, prompt, 'image-edit')
+    const providerPrompt = applyPromptAppends(prompt, requestContext.promptAppends)
 
     if (!freePlatform) {
       const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
@@ -189,7 +192,7 @@ async function runEditImageTool(
     }
 
     const images = await aiGenerator.requestProviderImages(
-      prompt,
+      providerPrompt,
       imageUrls,
       generationCost.numImages,
       requestContext,
@@ -263,7 +266,9 @@ async function runStylePresetTool(
       return Failed('未能解析到参考图片。')
     }
 
-    const { requestContext, generationCost } = buildRequestContextAndCost(args, config)
+    const styleOperation = referenceMode === 'none' ? 'text-to-image' : 'image-edit'
+    const { requestContext, generationCost } = buildRequestContextAndCost(args, config, aiGenerator, prompt, styleOperation)
+    const providerPrompt = applyPromptAppends(prompt, requestContext.promptAppends)
 
     if (!freePlatform) {
       const reservation = await aiGenerator.reserveCredits(session.userId, session.username || session.userId, requestId, generationCost, session.platform || undefined)
@@ -273,7 +278,7 @@ async function runStylePresetTool(
     }
 
     const images = await aiGenerator.requestProviderImages(
-      prompt,
+      providerPrompt,
       imageUrls,
       generationCost.numImages,
       requestContext,
@@ -361,49 +366,57 @@ function runListStylesTool(
 
 // ---------------------------------------------------------------------------
 // 请求上下文 & 费用构建
+//
+// 通过 shared/generation-setup.buildProtocolRequestContext 统一完成
+// “协议参数规范化 + 缺失值自动补全”，与命令入口、向导、ChatLuna bridge 共享同一实现。
 // ---------------------------------------------------------------------------
-
-const VALID_ASPECT_RATIOS = new Set(['1:1', '4:3', '16:9', '9:16', '3:2', '2:3'])
-const VALID_RESOLUTIONS = new Set(['1k', '2k', '4k'])
-const CUSTOM_RESOLUTION_RE = /^\d{3,5}x\d{3,5}$/
 
 function buildRequestContextAndCost(
   args: Record<string, unknown>,
   config: Config,
+  aiGenerator: AiImageGeneratorService,
+  prompt?: string,
+  operation: 'text-to-image' | 'image-edit' | 'compose-image' = 'text-to-image',
 ): { requestContext: ImageRequestContext; generationCost: ReturnType<typeof calculateGenerationCost> } {
   let numImages = config.defaultNumImages || 1
   if (typeof args.numImages === 'number' && Number.isFinite(args.numImages)) {
     numImages = Math.max(1, Math.min(4, Math.round(args.numImages)))
   }
 
-  const requestContext: ImageRequestContext = { numImages }
-
-  if (typeof args.aspectRatio === 'string' && VALID_ASPECT_RATIOS.has(args.aspectRatio)) {
-    requestContext.aspectRatio = args.aspectRatio as ImageRequestContext['aspectRatio']
-  }
-
-  if (typeof args.resolution === 'string') {
-    const res = args.resolution.trim()
-    if (VALID_RESOLUTIONS.has(res) || CUSTOM_RESOLUTION_RE.test(res)) {
-      requestContext.resolution = res as ImageRequestContext['resolution']
-    }
-  }
-
   const modelSuffix = typeof args.modelSuffix === 'string' ? args.modelSuffix.trim() : ''
-  let modelMapping: ModelMappingConfig | undefined
-  if (modelSuffix) {
-    modelMapping = (config.modelMappings || []).find((item) => item.suffix === modelSuffix)
-  } else {
-    modelMapping = (config.modelMappings || [])[0]
+  const modelMapping: ModelMappingConfig | undefined = modelSuffix
+    ? (config.modelMappings || []).find((item) => item.suffix === modelSuffix)
+    : (config.modelMappings || [])[0]
+
+  const protocol = modelMapping ? aiGenerator.getProtocolForModelId(modelMapping.modelId, operation) : undefined
+  const contract = modelMapping ? aiGenerator.resolveContractForMapping(modelMapping, operation) : undefined
+
+  const { requestContext, rejectedParams } = buildProtocolRequestContext({
+    protocol,
+    ...(modelMapping?.supplier !== undefined ? { supplier: modelMapping.supplier } : {}),
+    ...(modelMapping !== undefined ? { modelMapping } : {}),
+    operation,
+    ...(contract ? { contractId: contract.id } : {}),
+    explicit: {
+      resolution: typeof args.resolution === 'string' ? args.resolution : undefined,
+      aspectRatio: typeof args.aspectRatio === 'string' ? args.aspectRatio : undefined,
+      imageSize: typeof args.imageSize === 'string' ? args.imageSize : undefined,
+      ar: typeof args.ar === 'string' ? args.ar : undefined,
+      stylize: typeof args.stylize === 'number' || typeof args.stylize === 'string'
+        ? (args.stylize as number | string)
+        : undefined,
+      numImages,
+    },
+    defaultNumImages: numImages,
+    ...(prompt !== undefined ? { existingPrompt: prompt } : {}),
+  })
+
+  // fail-closed：契约拒绝任何显式参数时立刻抛错，避免预授权先扣积分后失败
+  if (rejectedParams && rejectedParams.length > 0) {
+    throw new ContractRejectedParamsError(rejectedParams)
   }
 
-  if (modelMapping) {
-    requestContext.supplier = modelMapping.supplier
-    requestContext.provider = modelMapping.protocol
-    if (modelMapping.modelId) {
-      requestContext.modelId = modelMapping.modelId
-    }
-  }
+  requestContext.numImages = numImages
 
   const generationCost = calculateGenerationCost({
     numImages,

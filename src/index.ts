@@ -14,6 +14,7 @@ import { createGeminiProvider } from './providers/gemini.js'
 import { createMjProvider } from './providers/midjourney.js'
 import { ProviderRegistry } from './providers/registry.js'
 import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
+import { selectRouteForOperation } from './service/model-route-selection.js'
 import { UserManager } from './services/UserManager.js'
 import { WizardSessionManager } from './services/wizard-session.js'
 import { createWizardHandler } from './wizard/wizard-handler.js'
@@ -142,11 +143,13 @@ export async function apply(ctx: Context, config: Config) {
   const catalog = new ImageCatalogService(ctx, logger, dataDir)
 
   // 目录只负责模型与 route；运行时自动定价完全读取 config.modelCostProbes。
-  service.catalogRouteLookup = (modelId: string) => {
+  //
+  // route 选择按 operation 精确匹配：文生图 → text-to-image；图生图/合成图 → image-edit
+  // （若模型未声明 image-edit route，则回退到能表达图生图能力的 text-to-image / image-to-image）。
+  // 不再固定取 routes[0]，防止 recognition/upload/video/未实现 MJ 动作错入 Imagine。
+  service.catalogRouteLookup = (modelId, operation) => {
     const model = catalog.current?.models.find(m => m.id === modelId)
-    const route = model?.routes[0]
-    if (!route || (route.protocol !== 'openai' && route.protocol !== 'gemini' && route.protocol !== 'mj')) return undefined
-    return { routeId: route.id, protocol: route.protocol }
+    return selectRouteForOperation(model, operation ?? 'text-to-image')
   }
 
   const handlers = createImageGenerationHandlers({

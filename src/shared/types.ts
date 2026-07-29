@@ -86,10 +86,28 @@ export interface ImageRequestContext {
   /** 模型映射后缀；用于同一 modelId 存在多条映射时精确定位独立倍率。 */
   modelSuffix?: string
   routeId?: string
+  /** 精确契约 id（yunwu.openai.gpt-image-2.generate 等）；provider 层由此决定发送形态。 */
+  contractId?: string
+  /** 本次调用的操作，决定契约选择（text-to-image / image-edit / …）。 */
+  operation?: 'text-to-image' | 'image-edit' | 'image-to-image' | 'compose-image'
   apiFormat?: ApiFormat
   // resolution 支持预设值 (1k/2k/4k) 或自定义尺寸 (如 '1024x2048')
   resolution?: '1k' | '2k' | '4k' | `${number}x${number}`
   aspectRatio?: '1:1' | '4:3' | '16:9' | '9:16' | '3:2' | '2:3'
+  /**
+   * 协议参数规范化产生的 prompt 追加片段（当前用于 MJ `--ar` / `--stylize`）。
+   * 由公共层 resolveProtocolParams 生成，orchestrator 在调用 provider 前拼接到 prompt 尾部。
+   */
+  promptAppends?: string[]
+  /**
+   * contract-driven 分支解析出的额外字段（openai size/quality、gemini imageSize/aspectRatio、
+   * MJ botType 等）。仅存储字段本身，不含 base64/prompt 等敏感值。
+   */
+  contractFields?: Record<string, string | number>
+  /**
+   * 用户显式提供但被契约拒绝的参数。存在任何条目时应在计费预授权前 fail-closed。
+   */
+  rejectedParams?: Array<{ key: string; value: unknown; reason: string }>
 }
 
 export interface GenerationDisplayInfo {

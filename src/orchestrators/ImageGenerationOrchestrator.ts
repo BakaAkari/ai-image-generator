@@ -28,6 +28,7 @@ import type {
   GenerationDisplayInfo,
   ImageRequestContext,
 } from '../shared/types.js'
+import { applyPromptAppends } from '../shared/generation-setup.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type { UserManager } from '../services/UserManager.js'
 import {
@@ -434,8 +435,11 @@ export function createImageGenerationHandlers(
       }
 
       // 4. 实际调用 Provider（包在 race 中以兜住命令级超时）
+      // 协议参数补全阶段可能生成 promptAppends（如 MJ --ar / --stylize），
+      // 由 shared/generation-setup 统一去重，在此拼接到最终 prompt 尾部。
+      const providerPrompt = applyPromptAppends(options.finalPrompt, options.requestContext?.promptAppends)
       const generationPromise = service.requestProviderImages(
-        options.finalPrompt,
+        providerPrompt,
         options.imageUrls,
         options.numImages,
         options.requestContext,

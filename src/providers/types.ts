@@ -1,18 +1,29 @@
 import type { Context } from 'koishi'
 
 import type { LogLevel } from '../shared/logging.js'
+import type { ImageContract, ContractOperation } from '../contracts/types.js'
 
 /**
  * 图像生成参数
  *
- * 与 v1 的 ImageGenerationOptions 兼容，但移除了对 ProviderConfig 的依赖。
- * 配置通过构造函数注入而非选项字段传递，保持本结构精简。
+ * 与 v1 的 ImageGenerationOptions 兼容；本轮新增精确契约、操作类型和 rejected 参数列表
+ * 以支持契约驱动的请求构建。契约不为空时，provider 严格按契约生成请求。
  */
 export interface ImageGenerationOptions {
   /** 分辨率预设：'1k' / '2k' / '4k' 或自定义 'WIDTHxHEIGHT'（如 '1024x1536'） */
   resolution?: '1k' | '2k' | '4k' | `${number}x${number}`
   /** 宽高比预设；当未指定 resolution 时由各 Provider 映射到具体尺寸 */
   aspectRatio?: '1:1' | '4:3' | '16:9' | '9:16' | '3:2' | '2:3'
+  /** 精确契约。provider 若能识别该 id/字段，将按契约构建请求；否则应 fail-closed。 */
+  contract?: ImageContract
+  /** 生成操作；provider 需按此决定 API 分支（如 create vs edit）。 */
+  operation?: ContractOperation
+  /** 契约参数解析出的额外字段（quality/format/background/moderation/imageSize/botType 等）。 */
+  contractFields?: Record<string, string | number>
+  /** 用户显式但被契约拒绝的参数（provider 或上层用于报错）。 */
+  rejectedParams?: Array<{ key: string; value: unknown; reason: string }>
+  /** 目标生成张数（provider 需在契约允许时批量或串行调度）。 */
+  numImages?: number
 }
 
 /**

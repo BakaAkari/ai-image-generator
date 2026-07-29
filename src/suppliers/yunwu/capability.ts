@@ -23,8 +23,16 @@ const OPENAI_IMAGE_ENDPOINTS = new Set([
 
 const GEMINI_IMAGE_ENDPOINTS = new Set(['gemini'])
 
+/**
+ * 已实现契约的 MJ/Kling endpoint —— 目前仅 MJ Imagine（yunwu.mj.imagine 契约）。
+ * 其他 MJ Action/Blend/Describe/Kling 未接入契约层，本轮显式 fail-closed。
+ */
 const MJ_KLING_IMAGE_ENDPOINTS = new Set([
   'mj想象模式',
+])
+
+/** 已识别但尚未接入契约的 MJ/Kling endpoint —— 显式记录理由，避免被误判成默认 openai。 */
+const UNSUPPORTED_MJ_KLING_ENDPOINTS = new Set([
   'mj动作',
   'mj混合',
   'mj描述模式',
@@ -34,13 +42,14 @@ const MJ_KLING_IMAGE_ENDPOINTS = new Set([
   'kling多图生图',
   'kling扩图',
   'omni-image',
-  '图像识别',
 ])
 
 const NON_GENERATION_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /数字人|avatar|image2video|image-to-video|video/, reason: 'avatar/video endpoint' },
   { pattern: /上传|upload/, reason: 'upload endpoint' },
   { pattern: /图片模板|image.template|template/, reason: 'image template endpoint' },
+  { pattern: /图像识别|image[- ]?recognition|recognize/, reason: 'recognition-only endpoint' },
+  { pattern: /^mj动作$|^mj混合$|^mj描述模式$|^mj模态模式$|^kling生图$|^kling多图生图$|^kling扩图$|^omni-image$/, reason: 'unsupported MJ/Kling operation (no contract)' },
 ]
 
 function isImageModelType(modelType?: string): boolean {
