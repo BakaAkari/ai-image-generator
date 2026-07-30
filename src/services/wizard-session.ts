@@ -14,7 +14,7 @@ export interface WizardSession {
   userId: string
   userName: string
   /** 当前向导步骤 */
-  step: 'await-prompt' | 'model-select' | 'param-select' | 'confirm' | 'generating'
+  step: 'await-prompt' | 'model-select' | 'param-resolution' | 'param-select' | 'confirm' | 'generating'
   /** 生成模式 */
   mode: 'text-to-image' | 'image-to-image' | 'compose-image'
   /** 用户输入的 prompt */

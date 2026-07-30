@@ -25,6 +25,50 @@ export type ResolveOpenAiSizeResult =
 
 const RESOLUTION_LEVELS: UserResolutionLevel[] = ['1k', '2k', '4k']
 
+/** 固定表中有映射的分辨率等级（按 1k/2k/4k 顺序）。 */
+export function availableResolutionLevels(capability: OpenAiSizeCapability): UserResolutionLevel[] {
+  const table = capability.fixedByResolutionAndAspect
+  if (!table) return []
+  return RESOLUTION_LEVELS.filter((level) => Object.keys(table[level] ?? {}).length > 0)
+}
+
+/** 指定分辨率等级下可用的比例（按固定表声明顺序）。 */
+export function availableAspectRatios(
+  capability: OpenAiSizeCapability,
+  level: UserResolutionLevel,
+): UserAspectRatio[] {
+  const map = capability.fixedByResolutionAndAspect?.[level]
+  return map ? (Object.keys(map) as UserAspectRatio[]) : []
+}
+
+/** 某比例在哪些等级下有固定映射（按 1k/2k/4k 顺序）。 */
+export function levelsForAspectRatio(
+  capability: OpenAiSizeCapability,
+  ratio: UserAspectRatio,
+): UserResolutionLevel[] {
+  return RESOLUTION_LEVELS.filter(
+    (level) => capability.fixedByResolutionAndAspect?.[level]?.[ratio] !== undefined,
+  )
+}
+
+/** 组合 miss 时的可读说明：「1K 可用比例：1:1、3:2、2:3｜9:16 可用于：4K」。 */
+function describeComboMiss(
+  capability: OpenAiSizeCapability,
+  resolution: UserResolutionLevel,
+  aspectRatio: UserAspectRatio,
+): string {
+  const parts: string[] = []
+  const ratios = availableAspectRatios(capability, resolution)
+  if (ratios.length > 0) {
+    parts.push(`${resolution.toUpperCase()} 可用比例：${ratios.join('、')}`)
+  }
+  const otherLevels = levelsForAspectRatio(capability, aspectRatio)
+  if (otherLevels.length > 0) {
+    parts.push(`${aspectRatio} 可用于：${otherLevels.map((l) => l.toUpperCase()).join('、')}`)
+  }
+  return parts.length > 0 ? `｜${parts.join('｜')}` : ''
+}
+
 export function resolveOpenAiSize(input: ResolveOpenAiSizeInput): ResolveOpenAiSizeResult {
   const capability = input.capability
   if (!capability) {
@@ -47,7 +91,7 @@ export function resolveOpenAiSize(input: ResolveOpenAiSizeInput): ResolveOpenAiS
     if (size) return { ok: true, size }
     return {
       ok: false,
-      error: `当前契约在 ${resolution.toUpperCase()} + ${aspectRatio} 组合下没有对应固定 size；请调整比例或分辨率`,
+      error: `当前契约在 ${resolution.toUpperCase()} + ${aspectRatio} 组合下没有对应固定 size${describeComboMiss(capability, resolution, aspectRatio)}`,
     }
   }
 

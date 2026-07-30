@@ -29,7 +29,7 @@ import { applyPromptAppends, buildProtocolRequestContext, ContractRejectedParams
 import { isSupportedImageUrl, parseMessageImagesAndText } from '../utils/input.js'
 import { buildModelMappingIndex, parseStyleCommandModifiers, stripImageCommandControls } from '../utils/parser.js'
 import { filterParamsForContract } from '../contracts/wizard-params.js'
-import { resolveOpenAiSize } from '../contracts/openai-size.js'
+import { availableAspectRatios, availableResolutionLevels, resolveOpenAiSize } from '../contracts/openai-size.js'
 import type { ContractOperation, ImageContract } from '../contracts/types.js'
 
 export interface CreateWizardHandlerParams {
@@ -117,6 +117,24 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   function paramDefsOf(w: WizardSession): ParamDef[] {
     if (w.paramDefs) return w.paramDefs
     return (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? []
+  }
+
+  /**
+   * 是否启用「先选分辨率 → 再收窄比例」依赖式参数流。
+   * 仅 OpenAI 契约且固定表等级数 >1 时启用（组合级约束只存在于这种契约）；
+   * gpt-image-1（单等级）、Gemini / MJ（参数独立）、无契约保守分支均保持单页行为。
+   */
+  function usesDependentResolutionFlow(w: WizardSession): boolean {
+    const contract = resolveWizardContract(w)
+    if (contract?.protocol !== 'openai' || !contract.openai?.size) return false
+    return availableResolutionLevels(contract.openai.size).length > 1
+  }
+
+  /** 依赖式分辨率页可选等级（启用依赖流时必非空） */
+  function resolutionLevelsOf(w: WizardSession): string[] {
+    const contract = resolveWizardContract(w)
+    if (contract?.protocol !== 'openai' || !contract.openai?.size) return []
+    return availableResolutionLevels(contract.openai.size)
   }
 
   /** 校验用户是否可访问该模型（受限模型仅管理员/白名单）——wizard/style 都必须走这里 */
@@ -225,6 +243,51 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return lines.join('\n')
   }
 
+  /** 依赖式参数流第 1 步：分辨率选择页（仅展示契约固定表中的可用等级） */
+  function renderResolutionList(w: WizardSession): string {
+    const levels = resolutionLevelsOf(w)
+    const labels: Record<string, string> = { '1k': '标清 1K', '2k': '高清 2K', '4k': '超清 4K' }
+    const providerLabel = PROTOCOL_LABELS[w.protocol ?? ''] ?? (w.protocol ?? '').toUpperCase()
+    return [
+      `${providerLabel} 参数设置 · 第 1 步：选择分辨率`,
+      '',
+      ...levels.map((lv, i) => `${i + 1} · ${labels[lv] ?? lv.toUpperCase()}${i === 0 ? '【默认】' : ''}`),
+      '',
+      '输入编号，或回复「跳过」使用默认',
+    ].join('\n')
+  }
+
+  /**
+   * 选定分辨率后收窄参数定义（幂等：始终从契约过滤后的基础列表重算，支持反复进出）：
+   * 移除 resolution 参数项；aspectRatio 选项收窄为该等级在契约固定表中的可用集合，
+   * 默认值不合法时替换为首个可选项，保证「跳过」一定是合法组合。
+   */
+  function narrowParamDefsForResolution(w: WizardSession, level: string): void {
+    const contract = resolveWizardContract(w)
+    const ratios = contract?.openai?.size
+      ? availableAspectRatios(contract.openai.size, level as Parameters<typeof availableAspectRatios>[1])
+      : []
+    const base = filterParamsForContract(contract, (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? [])
+    const next: ParamDef[] = []
+    for (const p of base) {
+      if (p.key === 'resolution') continue
+      if (p.key === 'aspectRatio' && ratios.length > 0 && p.options?.length) {
+        const keepIdx = p.options
+          .map((opt, i) => ({ opt, i }))
+          .filter(({ opt }) => (ratios as string[]).includes(opt))
+          .map(({ i }) => i)
+        if (!keepIdx.length) continue // 该等级无可用比例 → 移除参数（极端情况）
+        const options = keepIdx.map((i) => p.options![i])
+        const displayValues = p.displayValues ? keepIdx.map((i) => p.displayValues![i]) : undefined
+        const defaultValue = options.includes(String(p.default)) ? p.default : options[0]
+        next.push({ ...p, options, displayValues, default: defaultValue })
+        continue
+      }
+      next.push(p)
+    }
+    w.paramDefs = next
+  }
+
   function renderConfirm(w: WizardSession): string {
     const lines: string[] = ['确认生成（回复「确认」或「取消」）：', '']
 
@@ -246,7 +309,15 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     }
 
     if (w.protocol) {
-      for (const param of paramDefsOf(w)) {
+      const defs = paramDefsOf(w)
+      // 依赖式参数流：resolution 已从参数页移除，但确认页仍需展示已选值
+      // （定义取自单事实源 PROTOCOL_PARAMS，保证标签/展示文案一致）
+      const baseResolutionDef = PROTOCOL_PARAMS[w.protocol]?.params.find((p) => p.key === 'resolution')
+      const orderedDefs =
+        baseResolutionDef && w.params['resolution'] !== undefined && !defs.some((d) => d.key === 'resolution')
+          ? [baseResolutionDef, ...defs]
+          : defs
+      for (const param of orderedDefs) {
         const val = w.params[param.key]
         if (val !== undefined) {
           const display = param.type === 'enum' && param.displayValues
@@ -398,13 +469,50 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 按所选模型的契约收窄参数定义：不可用选项不显示、不支持的参数移除（无契约走保守分支）
     const contract = resolveWizardContract(w)
     w.paramDefs = filterParamsForContract(contract, PROTOCOL_PARAMS[w.protocol]?.params ?? [])
-    w.step = 'param-select'
 
     if (!w.paramDefs.length) {
       // 无参数，直接跳到确认
       w.step = 'confirm'
       return renderConfirm(w)
     }
+    // OpenAI 组合级约束契约：先选分辨率，再在下一步收窄可用比例（非法组合交互层消失）
+    if (usesDependentResolutionFlow(w)) {
+      w.step = 'param-resolution'
+      return renderResolutionList(w)
+    }
+    w.step = 'param-select'
+    return renderParamList(w)
+  }
+
+  /** param-resolution 步骤：先选分辨率，按契约收窄比例后进入 param-select */
+  async function handleParamResolution(w: WizardSession, text: string): Promise<string | void> {
+    const levels = resolutionLevelsOf(w)
+    // 兜底：契约/配置在会话期间变化导致无表可查时回到单页参数流
+    if (!levels.length) {
+      w.step = 'param-select'
+      if (!paramDefsOf(w).length) { w.step = 'confirm'; return renderConfirm(w) }
+      return renderParamList(w)
+    }
+
+    let level: string
+    if (text === '跳过' || text === 'skip') {
+      level = levels[0]
+    } else {
+      const num = parseInt(text, 10)
+      if (isNaN(num) || num < 1 || num > levels.length) {
+        return `请输入 1-${levels.length} 之间的编号，或回复「跳过」使用默认`
+      }
+      level = levels[num - 1]
+    }
+
+    w.params['resolution'] = level
+    narrowParamDefsForResolution(w, level)
+    // 收窄后若无剩余参数（极端：比例唯一且无其他参数），直接进确认
+    if (!paramDefsOf(w).length) {
+      w.step = 'confirm'
+      return renderConfirm(w)
+    }
+    w.step = 'param-select'
     return renderParamList(w)
   }
 
@@ -795,13 +903,32 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
             ? (w.imageUrls?.length ? '请输入修改描述' : '请先发送 1 张图片')
             : '请重新发送画面描述'
         }
+        if (w.step === 'param-resolution') {
+          w.params = {}
+          w.step = 'model-select'
+          return renderModelList(userId, w.platform)
+        }
         if (w.step === 'param-select') {
           w.params = {}
+          // 依赖式参数流：回到分辨率选择页，并恢复未收窄的参数定义
+          if (usesDependentResolutionFlow(w)) {
+            const contract = resolveWizardContract(w)
+            w.paramDefs = filterParamsForContract(contract, (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? [])
+            w.step = 'param-resolution'
+            return renderResolutionList(w)
+          }
           w.step = 'model-select'
           return renderModelList(userId, w.platform)
         }
         if (w.step === 'confirm') {
           w.params = {}
+          // 依赖式参数流：分辨率也需重选，回到分辨率页并恢复参数定义
+          if (usesDependentResolutionFlow(w)) {
+            const contract = resolveWizardContract(w)
+            w.paramDefs = filterParamsForContract(contract, (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? [])
+            w.step = 'param-resolution'
+            return renderResolutionList(w)
+          }
           w.step = 'param-select'
           return w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)
         }
@@ -825,6 +952,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
             ? `已更新图片（当前 ${w.imageUrls!.length} 张）`
             : '已更新图片'
           if (w.step === 'model-select') return `${prefix}\n${renderModelList(userId, w.platform)}`
+          if (w.step === 'param-resolution') return `${prefix}\n${renderResolutionList(w)}`
           if (w.step === 'param-select') return `${prefix}\n${w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)}`
           if (w.step === 'confirm') return `${prefix}\n${renderConfirm(w)}`
         }
@@ -837,6 +965,8 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
           return handleAwaitPrompt(w, session, text, images)
         case 'model-select':
           return handleModelSelect(w, text)
+        case 'param-resolution':
+          return handleParamResolution(w, text)
         case 'param-select':
           return handleParamSelect(w, text)
         case 'confirm':

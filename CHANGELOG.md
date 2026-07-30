@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.8 - 2026-07-30
+
+依赖式参数引导:OpenAI 契约「分辨率 × 比例」组合级约束在交互层消失。方案见 `plans/aka-ai-image-generator-dependent-resolution-params.md`。
+
+### 新增
+
+- **向导「先选分辨率 → 再收窄比例」两步参数流**:多等级 OpenAI 契约(如 gpt-image-2:1K 有 1:1/3:2/2:3,4K 才有 16:9/9:16)选定模型后先进入分辨率选择页,选定后按比例可用集合收窄——非法组合(如 1K + 9:16)在交互层直接消失,不再在输入后才报错。收窄幂等重算,支持「上一步」反复进出(参数页/确认页均回分辨率页);确认页补充展示已选分辨率。gpt-image-1(单等级)、Gemini / MJ(参数相互独立)、未知模型(无契约)保持原单页行为。
+
+### 改进
+
+- **组合错误文案列出可用组合**:`resolveOpenAiSize` 组合 miss 时输出「1K 可用比例:1:1、3:2、2:3｜9:16 可用于:4K」,高级模式经 rejected 参数错误自动获得可操作提示;新增 `availableResolutionLevels` / `availableAspectRatios` / `levelsForAspectRatio` 契约辅助函数。
+
+### 测试
+
+- 新增 `tests/wizard/wizard-dependent-resolution.test.ts`(7 例:逐级收窄/跳过默认/上一步导航/幂等重选/完整链路),`openai-size.test.ts` 补 5 例(新文案 + 辅助函数),`wizard-contract-params.test.ts` 2 例改写为依赖流。`pnpm test` 506 全绿,`typecheck` / `build` 通过。
+
 ## 1.3.7 - 2026-07-30
 
 上游错误透出修复（生产排障盲区收口）。分析与方案见 `plans/aka-ai-image-generator-sticker-error-surfacing.md`。

@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'vitest'
 
 import { getContractById } from '../../src/contracts/registry.js'
-import { resolveOpenAiSize } from '../../src/contracts/openai-size.js'
+import {
+  availableAspectRatios,
+  availableResolutionLevels,
+  levelsForAspectRatio,
+  resolveOpenAiSize,
+} from '../../src/contracts/openai-size.js'
 
 const GPT_IMAGE_2_GENERATE = getContractById('yunwu.openai.gpt-image-2.generate')!
 const cap = GPT_IMAGE_2_GENERATE.openai!.size!
@@ -72,5 +77,42 @@ describe('resolveOpenAiSize (GPT Image 2)', () => {
   test('no params + supportsAuto → auto', () => {
     const r = resolveOpenAiSize({ capability: cap })
     expect(r.ok && r.size).toBe('auto')
+  })
+
+  test('组合 miss 错误文案列出可用组合（1K 可用比例 + 9:16 可用等级）', () => {
+    const r = resolveOpenAiSize({ resolution: '1k', aspectRatio: '9:16', capability: cap })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain('1K + 9:16')
+      expect(r.error).toContain('1K 可用比例：1:1、3:2、2:3')
+      expect(r.error).toContain('9:16 可用于：4K')
+    }
+  })
+
+  test('组合 miss 且比例在全表不可用时不输出「可用于」段', () => {
+    const r = resolveOpenAiSize({ resolution: '2k', aspectRatio: '3:2', capability: cap })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain('2K 可用比例：1:1、16:9')
+      expect(r.error).toContain('3:2 可用于：1K')
+    }
+  })
+})
+
+describe('openai-size 组合辅助函数', () => {
+  test('availableResolutionLevels 返回有映射的等级', () => {
+    expect(availableResolutionLevels(cap)).toEqual(['1k', '2k', '4k'])
+  })
+
+  test('availableAspectRatios 按等级收窄', () => {
+    expect(availableAspectRatios(cap, '1k')).toEqual(['1:1', '3:2', '2:3'])
+    expect(availableAspectRatios(cap, '2k')).toEqual(['1:1', '16:9'])
+    expect(availableAspectRatios(cap, '4k')).toEqual(['16:9', '9:16'])
+  })
+
+  test('levelsForAspectRatio 反查比例可用等级', () => {
+    expect(levelsForAspectRatio(cap, '9:16')).toEqual(['4k'])
+    expect(levelsForAspectRatio(cap, '1:1')).toEqual(['1k', '2k'])
+    expect(levelsForAspectRatio(cap, '4:3')).toEqual([])
   })
 })
