@@ -48,6 +48,22 @@ export interface ExecuteGenerationOptions {
   stylePreset?: string
 }
 
+export interface ExecuteImageToImageOptions {
+  /**
+   * 是否从 session.quote（引用消息）收集图片，默认 true。
+   * 向导确认路径传 false：图片已由向导显式收集，
+   * 防止「确认」消息引用的无关图片混入或盖过向导图片。
+   */
+  includeQuote?: boolean
+}
+
+export interface ExecuteComposeImageOptions {
+  /** 同 includeQuote 语义，默认 true；向导确认路径传 false */
+  includeQuote?: boolean
+  /** 已预收集的图片（向导路径）；与命令消息/引用图片合并后去重截断 */
+  initialImages?: string[]
+}
+
 /** 计价所需的目录快照访问器（不含完整 ImageCatalogService 依赖）。 */
 interface CatalogAccessor {
   current: { models: CatalogModelForPricing[] } | null
@@ -85,6 +101,7 @@ export interface ImageGenerationHandlers {
     displayInfo?: GenerationDisplayInfo,
     styleName?: string,
     stylePreset?: string,
+    options?: ExecuteImageToImageOptions,
   ): Promise<string>
 
   /** 合成图主流程：收集多张图片，直到收到 prompt 文字后触发生成。 */
@@ -95,6 +112,7 @@ export interface ImageGenerationHandlers {
     displayInfo?: GenerationDisplayInfo,
     styleName?: string,
     stylePreset?: string,
+    options?: ExecuteComposeImageOptions,
   ): Promise<string>
 
 }
@@ -107,6 +125,62 @@ const SECURITY_BLOCK_KEYWORDS = [
   'blocked',
   'safety_filter',
 ]
+
+// ---------------------------------------------------------------------------
+// 等待用户输入（Bug 5 修复）
+// ---------------------------------------------------------------------------
+
+/** 等待用户下一条输入的结果类别 */
+type WaitInputResult =
+  | { kind: 'message'; content: string }
+  /** 检测到新指令：消息已放行给指令系统，本次收集应静默结束 */
+  | { kind: 'interrupted' }
+  /** 用户回复「取消」，消息已吞掉 */
+  | { kind: 'cancelled' }
+  | { kind: 'timeout' }
+
+const CANCEL_WORDS = new Set(['取消', 'cancel'])
+
+/**
+ * 判断消息是否为可解析的指令调用（任意插件注册的指令，含别名）。
+ * 用 stripped.content（已剥离 at 与前缀）的首个 token 查 commander。
+ */
+function isCommandInvocation(session: Session, text: string): boolean {
+  const stripped = session.stripped?.content?.trim() || text.trim()
+  const firstToken = stripped.split(/\s+/)[0]
+  if (!firstToken) return false
+  const commander = (session.app as unknown as {
+    $commander?: { get(name: string, session?: Session): unknown }
+  }).$commander
+  if (!commander?.get) return false
+  try {
+    return Boolean(commander.get(firstToken, session))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 等待用户输入，替代裸 session.prompt：
+ * - 新指令 → callback 返回 null，Koishi prompt 内部会 next() 放行，指令正常执行（不被等待吞掉）
+ * - 「取消」→ 吞掉消息，返回 cancelled
+ * - 其它消息 → 返回原始 content
+ *
+ * 注意：prompt 的会话级中间件会在任一匹配消息到达时自销毁，因此放行指令后
+ * 本等待一定结束，不会残留监听器。
+ */
+async function waitUserInput(session: Session, timeoutMs: number): Promise<WaitInputResult> {
+  const result = await session.prompt<WaitInputResult | null | undefined>((incoming) => {
+    const content = incoming.content ?? ''
+    const text = parseMessageImagesAndText(content).text
+    if (text && isCommandInvocation(incoming, text)) return null
+    if (text && CANCEL_WORDS.has(text.trim().toLowerCase())) return { kind: 'cancelled' }
+    return { kind: 'message', content }
+  }, { timeout: timeoutMs })
+  if (result === null) return { kind: 'interrupted' }
+  if (result === undefined) return { kind: 'timeout' }
+  return result
+}
 
 export function createImageGenerationHandlers(
   params: CreateImageGenerationHandlersParams,
@@ -172,11 +246,13 @@ export function createImageGenerationHandlers(
     const trimmed = typeof initialPrompt === 'string' ? initialPrompt.trim() : ''
     if (trimmed) return { prompt: trimmed }
 
-    await session.send('请发送画面描述')
-    const msg = await session.prompt(getPromptTimeoutMs(config))
-    if (!msg) return { error: formatPromptTimeoutError(config) }
+    await session.send('请发送画面描述；回复「取消」中止')
+    const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+    if (wait.kind === 'interrupted') return { error: '' }
+    if (wait.kind === 'cancelled') return { error: '已取消' }
+    if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
 
-    const parsed = parseMessageImagesAndText(msg)
+    const parsed = parseMessageImagesAndText(wait.content)
     if (parsed.images.length > 0) {
       return { error: '输入不匹配｜文生图仅支持文字描述' }
     }
@@ -186,14 +262,15 @@ export function createImageGenerationHandlers(
     return { prompt: parsed.text }
   }
 
-  /** 收集图生图输入：先合并参数+引用图，必要时再 prompt 用户补充。 */
+  /** 收集图生图输入：先合并参数+引用图，必要时再等待用户补充。 */
   async function collectImageInput(
     session: Session,
     imgParam: unknown,
     initialPrompt: string | undefined,
+    options?: { includeQuote?: boolean },
   ): Promise<{ images: string[]; prompt: string } | { error: string }> {
     const config = getConfig()
-    const collected: string[] = collectImagesFromParamAndQuote(session, imgParam)
+    const collected: string[] = collectImagesFromParamAndQuote(session, imgParam, options?.includeQuote !== false)
     let promptText = typeof initialPrompt === 'string' ? initialPrompt.trim() : ''
 
     // 已有图片：直接使用，prompt 可由命令参数补全
@@ -204,10 +281,12 @@ export function createImageGenerationHandlers(
         }
       }
       if (!promptText) {
-        await session.send('请发送图片修改描述')
-        const msg = await session.prompt(getPromptTimeoutMs(config))
-        if (!msg) return { error: formatPromptTimeoutError(config) }
-        const parsed = parseMessageImagesAndText(msg)
+        await session.send('请发送图片修改描述；回复「取消」中止')
+        const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+        if (wait.kind === 'interrupted') return { error: '' }
+        if (wait.kind === 'cancelled') return { error: '已取消' }
+        if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
+        const parsed = parseMessageImagesAndText(wait.content)
         if (!parsed.text) return { error: '已取消｜未检测到描述' }
         promptText = parsed.text
       }
@@ -215,12 +294,14 @@ export function createImageGenerationHandlers(
     }
 
     // 没有图片：循环等待用户上传图片+描述
-    await session.send(`请在 ${getPromptTimeoutText(config)}内发送 1 张图片`)
+    await session.send(`请在 ${getPromptTimeoutText(config)}内发送 1 张图片；回复「取消」中止`)
     while (true) {
-      const msg = await session.prompt(getPromptTimeoutMs(config))
-      if (!msg) return { error: formatPromptTimeoutError(config) }
+      const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+      if (wait.kind === 'interrupted') return { error: '' }
+      if (wait.kind === 'cancelled') return { error: '已取消' }
+      if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
 
-      const parsed = parseMessageImagesAndText(msg)
+      const parsed = parseMessageImagesAndText(wait.content)
       if (parsed.images.length > 0) {
         for (const img of parsed.images) {
           if (img.attrs?.src) collected.push(img.attrs.src as string)
@@ -230,10 +311,12 @@ export function createImageGenerationHandlers(
         }
         if (parsed.text) promptText = parsed.text
         if (!promptText) {
-          await session.send('请发送图片修改描述')
-          const msg2 = await session.prompt(getPromptTimeoutMs(config))
-          if (!msg2) return { error: formatPromptTimeoutError(config) }
-          const parsed2 = parseMessageImagesAndText(msg2)
+          await session.send('请发送图片修改描述；回复「取消」中止')
+          const wait2 = await waitUserInput(session, getPromptTimeoutMs(config))
+          if (wait2.kind === 'interrupted') return { error: '' }
+          if (wait2.kind === 'cancelled') return { error: '已取消' }
+          if (wait2.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
+          const parsed2 = parseMessageImagesAndText(wait2.content)
           if (!parsed2.text) return { error: '已取消｜未检测到描述' }
           promptText = parsed2.text
         }
@@ -243,30 +326,54 @@ export function createImageGenerationHandlers(
       if (parsed.text) {
         return { error: '输入不匹配｜未检测到图片，请重新发起指令' }
       }
+
+      // 既无图又无文字（贴纸/表情/语音等）：给出反馈后继续等待，不再静默空转（Bug 7）
+      await session.send(`未检测到图片，还需 1 张图片；回复「取消」中止`)
     }
   }
 
-  /** 收集合成图输入：累计多张图片，直到收到 prompt 文字后执行。 */
+  /** 收集合成图输入：先收集同条消息/引用/预收集图片，再按进度等待补充，直到收到描述后执行。 */
   async function collectComposeInput(
     session: Session,
     initialPrompt: string | undefined,
+    options?: ExecuteComposeImageOptions,
   ): Promise<{ images: string[]; prompt: string } | { error: string }> {
     const config = getConfig()
     const collected: string[] = []
     const initialPromptText = typeof initialPrompt === 'string' ? initialPrompt.trim() : ''
 
-    await session.send(`请在 ${getPromptTimeoutText(config)}内发送至少 2 张图片；发送合成描述后开始`)
+    // Bug 6：同条命令消息与引用消息中的图片不再被忽略；向导预收集图片合并进来
+    const pushImages = (srcs: (string | undefined)[]) => {
+      for (const src of srcs) {
+        if (src && !collected.includes(src) && collected.length < 8) collected.push(src)
+      }
+    }
+    pushImages(options?.initialImages ?? [])
+    pushImages(parseMessageImagesAndText(session.content ?? '').images.map(i => i.attrs?.src))
+    if (options?.includeQuote !== false && session.quote?.elements) {
+      pushImages(h.select(session.quote.elements, 'img').map(i => i.attrs?.src))
+    }
+
+    // 已有 ≥2 图且有描述 → 直接生成，无需等待
+    if (collected.length >= 2 && initialPromptText) {
+      return { images: collected, prompt: initialPromptText }
+    }
+
+    // 按当前进度给出提示
+    if (collected.length > 0) {
+      await session.send(`已收到 ${collected.length} 张，合成至少需要 2 张；继续发图或发送合成描述；回复「取消」中止`)
+    } else {
+      await session.send(`请在 ${getPromptTimeoutText(config)}内发送至少 2 张图片；发送合成描述后开始；回复「取消」中止`)
+    }
 
     while (true) {
-      const msg = await session.prompt(getPromptTimeoutMs(config))
-      if (!msg) return { error: formatPromptTimeoutError(config) }
+      const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+      if (wait.kind === 'interrupted') return { error: '' }
+      if (wait.kind === 'cancelled') return { error: '已取消' }
+      if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
 
-      const parsed = parseMessageImagesAndText(msg)
-      for (const img of parsed.images) {
-        if (img.attrs?.src && collected.length < 8) {
-          collected.push(img.attrs.src as string)
-        }
-      }
+      const parsed = parseMessageImagesAndText(wait.content)
+      pushImages(parsed.images.map(i => i.attrs?.src))
 
       const promptText = parsed.text || initialPromptText
       if (promptText) {
@@ -697,9 +804,10 @@ export function createImageGenerationHandlers(
     displayInfo?: GenerationDisplayInfo,
     styleName = '图生图',
     stylePreset?: string,
+    options?: ExecuteImageToImageOptions,
   ): Promise<string> {
     const config = getConfig()
-    const collected = await collectImageInput(session, imgParam, initialPrompt)
+    const collected = await collectImageInput(session, imgParam, initialPrompt, options)
     if ('error' in collected) return collected.error
 
     const numImages = setupContext?.numImages || config.defaultNumImages || 1
@@ -722,9 +830,10 @@ export function createImageGenerationHandlers(
     displayInfo?: GenerationDisplayInfo,
     styleName = '合成图',
     stylePreset?: string,
+    options?: ExecuteComposeImageOptions,
   ): Promise<string> {
     const config = getConfig()
-    const collected = await collectComposeInput(session, initialPrompt)
+    const collected = await collectComposeInput(session, initialPrompt, options)
     if ('error' in collected) return collected.error
 
     const numImages = setupContext?.numImages || config.defaultNumImages || 1

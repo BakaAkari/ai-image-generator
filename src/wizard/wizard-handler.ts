@@ -26,8 +26,11 @@ import type { AiImageGeneratorService } from '../service/AiImageGeneratorService
 import type { WizardSession, WizardSessionManager } from '../services/wizard-session.js'
 import type { ImageGenerationModifiers, ModelMappingConfig } from '../shared/types.js'
 import { applyPromptAppends, buildProtocolRequestContext, ContractRejectedParamsError } from '../shared/generation-setup.js'
-import { parseMessageImagesAndText } from '../utils/input.js'
+import { isSupportedImageUrl, parseMessageImagesAndText } from '../utils/input.js'
 import { buildModelMappingIndex, parseStyleCommandModifiers, stripImageCommandControls } from '../utils/parser.js'
+import { filterParamsForContract } from '../contracts/wizard-params.js'
+import { resolveOpenAiSize } from '../contracts/openai-size.js'
+import type { ContractOperation, ImageContract } from '../contracts/types.js'
 
 export interface CreateWizardHandlerParams {
   ctx: Context
@@ -98,6 +101,24 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return (getConfig().modelMappings ?? []).find(m => m.modelId === modelId)
   }
 
+  /** 向导模式 → 契约操作（与 handleConfirm 的 wizardOperation 保持一致） */
+  function wizardOperationOf(mode: WizardSession['mode']): ContractOperation {
+    return mode === 'text-to-image' ? 'text-to-image' : mode === 'compose-image' ? 'compose-image' : 'image-edit'
+  }
+
+  /** 定位当前会话所选模型的契约（mapping 缺失或无契约时返回 undefined，走保守分支） */
+  function resolveWizardContract(w: WizardSession): ImageContract | undefined {
+    const mapping = w.modelId ? findMappingByModelId(w.modelId) : undefined
+    if (!mapping) return undefined
+    return service.resolveContractForMapping(mapping, wizardOperationOf(w.mode))
+  }
+
+  /** 当前会话生效的参数定义：优先契约过滤结果，回退协议级 PROTOCOL_PARAMS */
+  function paramDefsOf(w: WizardSession): ParamDef[] {
+    if (w.paramDefs) return w.paramDefs
+    return (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? []
+  }
+
   /** 校验用户是否可访问该模型（受限模型仅管理员/白名单）——wizard/style 都必须走这里 */
   function checkModelAccessByModelId(userId: string, modelId: string) {
     const mapping = findMappingByModelId(modelId)
@@ -162,19 +183,20 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return lines.join('\n')
   }
 
-  /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集；每个参数的可选项各占一行，方便区分 */
-  function renderParamList(protocol: string): string {
-    const pp = PROTOCOL_PARAMS[protocol]
-    if (!pp?.params.length) return '该模型无额外参数'
+  /** 一次性列出所有参数，用户以逗号分隔输入，不再逐项收集；每个参数的可选项各占一行，方便区分。
+   *  参数定义优先取契约过滤结果（w.paramDefs），不可用选项不显示。 */
+  function renderParamList(w: WizardSession): string {
+    const params = paramDefsOf(w)
+    if (!params.length) return '该模型无额外参数'
 
-    const providerLabel = PROTOCOL_LABELS[protocol] ?? protocol.toUpperCase()
+    const providerLabel = PROTOCOL_LABELS[w.protocol ?? ''] ?? (w.protocol ?? '').toUpperCase()
     const lines: string[] = [
       `${providerLabel} 参数设置`,
-      `按「${pp.params.map(p => p.label).join(' → ')}」顺序逗号分隔输入，或回复「跳过」使用全部默认值`,
+      `按「${params.map(p => p.label).join(' → ')}」顺序逗号分隔输入，或回复「跳过」使用全部默认值`,
       '',
     ]
 
-    pp.params.forEach((p, idx) => {
+    params.forEach((p, idx) => {
       if (idx > 0) lines.push('')
       if (p.type === 'enum') {
         lines.push(`${p.label}：`)
@@ -191,7 +213,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     })
 
     // 生成示例（默认值）
-    const exampleParts = pp.params.map((p) => {
+    const exampleParts = params.map((p) => {
       if (p.type === 'enum') {
         const defaultIdx = (p.options ?? []).indexOf(String(p.default))
         return String(defaultIdx >= 0 ? defaultIdx + 1 : 1)
@@ -206,7 +228,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   function renderConfirm(w: WizardSession): string {
     const lines: string[] = ['确认生成（回复「确认」或「取消」）：', '']
 
-    lines.push(`模式 · ${w.mode === 'text-to-image' ? '文生图' : '图生图'}`)
+    lines.push(`模式 · ${w.mode === 'text-to-image' ? '文生图' : w.mode === 'compose-image' ? '合成图' : '图生图'}`)
     lines.push(`描述 · ${(w.prompt ?? '').slice(0, 200)}`)
 
     if (w.imageUrls?.length) lines.push(`图片 · ${w.imageUrls.length} 张`)
@@ -224,16 +246,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     }
 
     if (w.protocol) {
-      const pp = PROTOCOL_PARAMS[w.protocol]
-      if (pp) {
-        for (const param of pp.params) {
-          const val = w.params[param.key]
-          if (val !== undefined) {
-            const display = param.type === 'enum' && param.displayValues
-              ? param.displayValues[param.options!.indexOf(String(val))] ?? val
-              : val
-            lines.push(`${param.label} · ${display}`)
-          }
+      for (const param of paramDefsOf(w)) {
+        const val = w.params[param.key]
+        if (val !== undefined) {
+          const display = param.type === 'enum' && param.displayValues
+            ? param.displayValues[param.options!.indexOf(String(val))] ?? val
+            : val
+          lines.push(`${param.label} · ${display}`)
         }
       }
     }
@@ -282,6 +301,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   /**
    * await-prompt 步骤：保存 prompt，进入模型选择。
    * 图生图模式下分两步收集：先收图片，再收描述。
+   * 合成图模式下跨消息累计 2-8 张图片，再收合成描述。
    */
   async function handleAwaitPrompt(
       w: WizardSession,
@@ -320,6 +340,27 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       return renderModelList(w.userId, w.platform)
     }
 
+    // 合成图：跨消息累计 2-8 张图片 + 描述
+    if (w.mode === 'compose-image') {
+      if (images.length > 0) {
+        w.imageUrls = [...(w.imageUrls ?? []), ...images].slice(0, 8)
+      }
+      const count = w.imageUrls?.length ?? 0
+      // 锁定 prompt（style 预设）时不再覆盖
+      if (text && !w.lockedPrompt) w.prompt = text
+
+      if (count >= 2 && w.prompt) {
+        w.step = 'model-select'
+        return renderModelList(w.userId, w.platform)
+      }
+      // 含已达 8 张上限但未给描述的情况（超出 8 张的图片按上限截断）
+      if (count >= 2) return '请输入合成描述'
+      const needText = w.prompt ? '' : '；也可发送合成描述'
+      return count > 0
+        ? `已收到 ${count} 张，合成至少需要 2 张，请继续发图${needText}`
+        : `请发送至少 2 张图片（2-8 张）${needText}`
+    }
+
     // 文生图
     if (!text) return '请发送画面描述'
     w.prompt = text
@@ -354,26 +395,26 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     w.modelId = mapping.modelId
     w.protocol = resolveProtocol(mapping.modelId)
     w.params = {}
+    // 按所选模型的契约收窄参数定义：不可用选项不显示、不支持的参数移除（无契约走保守分支）
+    const contract = resolveWizardContract(w)
+    w.paramDefs = filterParamsForContract(contract, PROTOCOL_PARAMS[w.protocol]?.params ?? [])
     w.step = 'param-select'
 
-    const pp = PROTOCOL_PARAMS[w.protocol]
-    if (!pp?.params.length) {
+    if (!w.paramDefs.length) {
       // 无参数，直接跳到确认
       w.step = 'confirm'
       return renderConfirm(w)
     }
-    return renderParamList(w.protocol)
+    return renderParamList(w)
   }
 
   /** param-select 步骤：一次性列出所有参数，逗号分隔输入 */
   async function handleParamSelect(w: WizardSession, text: string): Promise<string | void> {
     if (!w.protocol) { w.step = 'confirm'; return renderConfirm(w) }
-    const pp = PROTOCOL_PARAMS[w.protocol]
-    if (!pp?.params.length) { w.step = 'confirm'; return renderConfirm(w) }
+    const params = paramDefsOf(w)
+    if (!params.length) { w.step = 'confirm'; return renderConfirm(w) }
 
-    const params = pp.params
-
-    // 「跳过」→ 全部使用默认值
+    // 「跳过」→ 全部使用默认值（过滤后的默认值必为合法组合）
     if (text === '跳过' || text === 'skip') {
       for (const p of params) {
         w.params[p.key] = p.default
@@ -415,6 +456,24 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       }
     }
 
+    // OpenAI 契约：「分辨率 × 比例」组合在输入时即时校验（单选项过滤排除不了组合冲突，
+    // 如契约表有 1K 和 16:9 但无 1K+16:9 的固定 size）；非法即时报错重选，不再等确认后失败
+    const contract = resolveWizardContract(w)
+    if (contract?.protocol === 'openai' && contract.openai?.size) {
+      const resolution = w.params['resolution']
+      const aspectRatio = w.params['aspectRatio']
+      if (resolution !== undefined || aspectRatio !== undefined) {
+        const sizeResult = resolveOpenAiSize({
+          resolution: resolution !== undefined ? String(resolution) : undefined,
+          aspectRatio: aspectRatio !== undefined ? String(aspectRatio) : undefined,
+          capability: contract.openai.size,
+        })
+        if (!sizeResult.ok) {
+          return `参数组合不被当前模型接受｜${sizeResult.error}，请重新输入`
+        }
+      }
+    }
+
     w.step = 'confirm'
     return renderConfirm(w)
   }
@@ -427,13 +486,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       if (w.modelId) {
         const access = checkModelAccessByModelId(w.userId, w.modelId)
         if (!access.allowed) {
-          wizardSessions.cancel(w.userId)
+          wizardSessions.cancel(w.sessionKey)
           return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
         }
       }
 
       // 先清理向导会话，释放用户状态（用户可立刻发新命令）
-      wizardSessions.cancel(w.userId)
+      wizardSessions.cancel(w.sessionKey)
 
       // -add 追加内容并入 prompt（wizard 内部不再单独产生 MJ flag；下方统一走公共层）
       let finalPrompt = w.prompt ?? ''
@@ -448,7 +507,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       // wizard 收集到的 w.params 作为显式值，命令行 flag（w.preResolution / preAspectRatio）
       // 作为兜底，未提供的参数由 param-resolver / PROTOCOL_PARAMS 补齐。
       const wizardMapping = w.modelId ? findMappingByModelId(w.modelId) : undefined
-      const wizardOperation = w.mode === 'text-to-image' ? 'text-to-image' : 'image-edit'
+      const wizardOperation = wizardOperationOf(w.mode)
       const wizardContract = wizardMapping
         ? service.resolveContractForMapping(wizardMapping, wizardOperation)
         : undefined
@@ -499,6 +558,18 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
           w.commandName,
         )
       }
+      if (w.mode === 'compose-image') {
+        return handlers.executeComposeImage(
+          session,
+          finalPrompt,
+          requestContext,
+          undefined,
+          w.commandName ?? '合成图',
+          w.commandName,
+          // 图片已由向导显式收集，忽略「确认」消息可能引用的无关图片
+          { includeQuote: false, initialImages: w.imageUrls ?? [] },
+        )
+      }
       return handlers.executeImageToImage(
         session,
         w.imageUrls?.[0],
@@ -507,11 +578,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         undefined,
         w.commandName ?? '图生图',
         w.commandName,
+        // 图片已由向导显式收集，忽略「确认」消息可能引用的无关图片
+        { includeQuote: false },
       )
     }
 
     if (t === '取消' || t === 'cancel') {
-      wizardSessions.cancel(w.userId)
+      wizardSessions.cancel(w.sessionKey)
       return '已取消生成'
     }
 
@@ -519,6 +592,16 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
   }
 
   // ─── 对外接口 ──────────────────────────────────────────────────────────────
+
+  /**
+   * 向导会话键：platform:userId —— 「跟账户走」。
+   * 每个用户全局有且仅有一条图像生成链路（用户明确的设计决策）：
+   * 跨群/私聊共享同一条向导，避免同一账户并发发起多条生成链路；
+   * 用户在任何频道发消息都会驱动这唯一的向导，「取消」也全局生效。
+   */
+  function wizardScopeKey(session: Session): string {
+    return `${session.platform}:${session.userId}`
+  }
 
   function handleCommand(
     session: Session,
@@ -530,14 +613,21 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     const userId = session.userId
     if (!userId) return Promise.resolve('无法识别用户身份')
     const userName = session.username || session.author?.name || userId
+    const scopeKey = wizardScopeKey(session)
 
-    // 判断模式
-    let mode: 'text-to-image' | 'image-to-image' = 'text-to-image'
+    // 判断模式（Bug 4：合成图不再错走文生图向导）
+    let mode: 'text-to-image' | 'image-to-image' | 'compose-image' = 'text-to-image'
     const style = service.getStylePreset(commandName)
     if (style) {
-      mode = style.mode === 'text-to-image' ? 'text-to-image' : 'image-to-image'
+      mode = style.mode === 'text-to-image'
+        ? 'text-to-image'
+        : style.mode === 'compose-image'
+          ? 'compose-image'
+          : 'image-to-image'
     } else if (commandName === '图生图') {
       mode = 'image-to-image'
+    } else if (commandName === '合成图') {
+      mode = 'compose-image'
     }
 
     // 使用统一解析器提取 flags（-1k/-16:9/-add ...）与模型后缀，避免把命令词/flags
@@ -553,7 +643,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     let imageUrls: string[] = []
     if (imgParam && typeof imgParam === 'object' && (imgParam as any).attrs?.src) {
       imageUrls.push((imgParam as any).attrs.src)
-    } else if (typeof imgParam === 'string' && (imgParam.startsWith('http') || imgParam.startsWith('data:'))) {
+    } else if (typeof imgParam === 'string' && isSupportedImageUrl(imgParam)) {
       imageUrls.push(imgParam)
     }
     if (session.quote?.elements) {
@@ -587,7 +677,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     }
 
     // 启动会话
-    const result = wizardSessions.start(userId, userName, mode, {
+    const result = wizardSessions.start(scopeKey, userId, userName, mode, {
       prompt: style?.prompt || undefined,
       mode: !!style?.prompt,
       commandName,
@@ -603,13 +693,19 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     // 记录会话所在平台，用于后续渲染步骤（免计费平台省略成本文案）
     if (session.platform) w.platform = session.platform
 
-    // 图生图：保存图片
+    // 图生图：保存图片（1 张）；合成图：保存图片（2-8 张）
     if (mode === 'image-to-image' && imageUrls.length > 0) {
       w.imageUrls = imageUrls.slice(0, 1)
     }
+    if (mode === 'compose-image' && imageUrls.length > 0) {
+      w.imageUrls = imageUrls.slice(0, 8)
+    }
 
-    // 预设命令（带锁定 prompt）：直接进模型选择
+    // 预设命令（带锁定 prompt）：直接进模型选择；合成图不足 2 张时先收图
     if (style?.prompt) {
+      if (mode === 'compose-image' && (w.imageUrls?.length ?? 0) < 2) {
+        return Promise.resolve(`请发送至少 2 张图片（2-8 张，已收到 ${w.imageUrls?.length ?? 0} 张）`)
+      }
       w.step = 'model-select'
       return Promise.resolve(renderModelList(userId, w.platform))
     }
@@ -621,6 +717,11 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         w.prompt = cleanInlinePrompt
         return Promise.resolve('请先发送 1 张图片')
       }
+      // 合成图但不足 2 张 → 仍需要图片
+      if (mode === 'compose-image' && (w.imageUrls?.length ?? 0) < 2) {
+        w.prompt = cleanInlinePrompt
+        return Promise.resolve(`请发送至少 2 张图片（2-8 张，已收到 ${w.imageUrls?.length ?? 0} 张）`)
+      }
       w.prompt = cleanInlinePrompt
       w.step = 'model-select'
       return Promise.resolve(renderModelList(userId, w.platform))
@@ -631,6 +732,18 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       return Promise.resolve('请先发送 1 张图片')
     }
 
+    // 图生图已有图但无描述 → 提示修改描述（此前误用文生图文案）
+    if (mode === 'image-to-image') {
+      return Promise.resolve('请输入修改描述')
+    }
+
+    // 合成图：按已收集图片数提示
+    if (mode === 'compose-image') {
+      const count = w.imageUrls?.length ?? 0
+      if (count >= 2) return Promise.resolve('请输入合成描述')
+      return Promise.resolve(`请发送至少 2 张图片（2-8 张${count > 0 ? `，已收到 ${count} 张` : ''}）`)
+    }
+
     return Promise.resolve('请发送画面描述')
   }
 
@@ -638,9 +751,18 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return async (session: Session, next: () => Promise<void | Fragment>): Promise<void | Fragment | string> => {
       const userId = session.userId
       if (!userId) return next()
+      const scopeKey = wizardScopeKey(session)
+
+      // 超时回收提醒（Bug 3.3）：用户超时后第一次发消息时提醒一次，
+      // 随后放行该消息（新指令等仍可正常执行），不再静默落空
+      const expired = wizardSessions.takeIfExpired(scopeKey)
+      if (expired) {
+        await session.send('之前的生成向导已超时退出，请重新发起指令')
+        return next()
+      }
 
       // 仅处理有活跃向导会话的消息；无会话则完全放行
-      const w = wizardSessions.get(userId)
+      const w = wizardSessions.get(scopeKey)
       if (!w) return next()
       if (w.step === 'generating') return next()
 
@@ -653,7 +775,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
 
       // 向导控制命令
       if (text === '取消' || text === 'cancel') {
-        wizardSessions.cancel(userId)
+        wizardSessions.cancel(scopeKey)
         return '已退出生成向导'
       }
       if (text === '上一步' || text === 'back') {
@@ -666,6 +788,9 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (w.step === 'model-select') {
           w.prompt = undefined
           w.step = 'await-prompt'
+          if (w.mode === 'compose-image') {
+            return `已收到 ${w.imageUrls?.length ?? 0} 张；继续发图或发送合成描述`
+          }
           return w.mode === 'image-to-image'
             ? (w.imageUrls?.length ? '请输入修改描述' : '请先发送 1 张图片')
             : '请重新发送画面描述'
@@ -678,12 +803,32 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         if (w.step === 'confirm') {
           w.params = {}
           w.step = 'param-select'
-          return w.protocol ? renderParamList(w.protocol) : renderModelList(userId, w.platform)
+          return w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)
         }
         return '已在第一步，无法返回'
       }
       if (text === '?帮助' || text === '？帮助' || text === 'help') {
         return renderHelp()
+      }
+
+      // 图生图/合成图：后续步骤（选模型/参数/确认）中补发或更换图片。
+      // 此前这些步骤只取文本，图片消息会被静默吞掉。
+      // 图生图替换（限 1 张）；合成图追加（上限 8 张）。
+      if (images.length > 0 && w.mode !== 'text-to-image' && w.step !== 'await-prompt') {
+        if (w.mode === 'image-to-image') {
+          w.imageUrls = images.slice(0, 1)
+        } else {
+          w.imageUrls = [...(w.imageUrls ?? []), ...images].slice(0, 8)
+        }
+        if (!text) {
+          const prefix = w.mode === 'compose-image'
+            ? `已更新图片（当前 ${w.imageUrls!.length} 张）`
+            : '已更新图片'
+          if (w.step === 'model-select') return `${prefix}\n${renderModelList(userId, w.platform)}`
+          if (w.step === 'param-select') return `${prefix}\n${w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)}`
+          if (w.step === 'confirm') return `${prefix}\n${renderConfirm(w)}`
+        }
+        // 图片已更新；若同时带有文本则继续按当前步骤处理
       }
 
       // 按步骤路由

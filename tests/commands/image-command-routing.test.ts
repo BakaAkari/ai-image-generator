@@ -394,3 +394,25 @@ describe('图生图 / 合成图 命令同样支持 direct 意图', () => {
     expect(trace.directImageCalled).toBe(0)
   })
 })
+
+// ─── 场景：图生图无图 → 进入编排器等待补图（方案 A，2026-07-30） ──────────────
+
+describe('图生图无图：直连路径不再提前拒绝，进入等待补图流程（Bug 2 方案 A）', () => {
+  test('advanced 强制模式 · 无图 → 进入 executeImageToImage（等待补图）', async () => {
+    const { commands, trace } = setup(baseConfig({ interactionMode: 'advanced' as any }), { freePlatform: true })
+    const session = makeSession()
+    const result = await invoke(commands, COMMANDS.IMG_TO_IMG, makeArgv(session, '图生图 猫'), undefined, '猫')
+    expect(trace.wizardCalled).toBe(0)
+    expect(trace.directImageCalled).toBe(1)
+    expect(result).toBe('direct-i2i')
+  })
+
+  test('auto 群聊 · 无图 → 同样进入 executeImageToImage（等待补图）', async () => {
+    const { commands, trace } = setup(baseConfig(), { freePlatform: true })
+    const session = makeSession({ isDirect: false, guildId: 'g1' })
+    const result = await invoke(commands, COMMANDS.IMG_TO_IMG, makeArgv(session, '图生图 猫'), undefined, '猫')
+    expect(trace.wizardCalled).toBe(0)
+    expect(trace.directImageCalled).toBe(1)
+    expect(result).toBe('direct-i2i')
+  })
+})

@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.3.5 - 2026-07-30
+
+向导契约感知参数过滤：引导过程中就按所选模型的契约收窄可选参数。方案见 `plans/aka-ai-image-generator-wizard-contract-params.md`。
+
+- aka-tools 集成完成：图像页「视频生成设置」按钮跳转 `/aka-tools-video`，视频页已独立实现完整 aka-tools 浮动工具条。视频插件同时暴露 Koishi 左侧导航「视频生成」入口。
+
+### 变更
+
+- **不可用参数不再显示**：新增 `src/contracts/wizard-params.ts` 的 `filterParamsForContract()`，选定模型后按契约收窄参数定义——OpenAI 按 `fixedByResolutionAndAspect` 过滤分辨率等级与宽高比（如 gpt-image-1 只剩 1K + 1:1，gpt-image-2 不再显示 4:3），`supportsN=false`（如 gpt-image-2-c）移除「生成张数」；Gemini 按 `imageSizes`/`aspectRatios` 过滤，`imageConfig.enabled=false`（编辑契约）或不发送 `imageSize`（云雾 2.5）时移除对应参数；MJ 按 `aspectRatios`/`supportsStylize` 过滤并收窄 stylize 范围。过滤后默认值不再合法时替换为首个可选项，保证「跳过」必为合法组合。无契约的未知模型保守展示协议全集。
+- **非法组合即时报错**：OpenAI 的「分辨率 × 比例」组合冲突（如 1K + 16:9 无固定 size）单选项过滤排除不掉，`handleParamSelect` 输入时即用 `resolveOpenAiSize` 试算，非法立即提示「参数组合不被当前模型接受｜…请重新输入」，停留参数步骤重选，不再等确认生成时才失败。
+- 向导参数页、确认页、「上一步」回退渲染统一使用过滤后的参数定义（`WizardSession.paramDefs`）。
+
+### 测试
+
+- 新增 `tests/contracts/wizard-params.test.ts`（10 例，基于 registry 真实契约）与 `tests/wizard/wizard-contract-params.test.ts`（4 例向导链路）。`pnpm test` 470 全绿，`typecheck` / `build` 通过。
+
+## 1.3.4 - 2026-07-30
+
+按用户明确决策回退 1.3.3 的向导会话频道隔离：恢复「跟账户走」语义。
+
+### 变更
+
+- **向导会话键恢复为用户级（platform:userId）**：每个用户全局有且仅有一条图像生成链路——跨群/私聊共享同一条向导，用户在任何频道发消息都会驱动这唯一的向导，重复发起报冲突，「取消」全局生效。设计意图：避免同一账户并发发起多条生成链路、防止频繁调用。1.3.3 的 `platform:channelId:userId` 频道隔离为错误方向，已回退。
+- 保留 1.3.3 的超时修复（Bug 3.3）：每步超时由 `apiTimeout` 驱动、超时后第一次发消息提醒一次并放行。
+
+### 测试
+
+- `tests/wizard/wizard-session-scope.test.ts` 改写为用户级语义（跨频道共享唯一向导、B 频道消息驱动同一向导、重复发起冲突、取消全局生效）。`pnpm test` 456 全绿，`typecheck` / `build` 通过。
+
+## 1.3.3 - 2026-07-30
+
+向导会话收口（第三批），诊断与实施记录见 `plans/aka-ai-image-generator-i2i-flow-bugfix.md`。至此该计划内 Bug 1-7 全部修复。
+
+### 修复
+
+- **向导会话键（Bug 3.4，已于 1.3.4 回退）**：1.3.3 曾将会话键改为 `platform:channelId:userId` 做频道隔离；用户明确设计决策为「跟账户走」（每用户全局唯一链路），1.3.4 已回退为用户级键。
+- **向导每步超时与配置不一致（Bug 3.3）**：`WizardSessionManager` 超时由配置驱动（`apiTimeout`，与编排器等待提示同源），替代硬编码 120s；超时回收后用户下一次发消息时会收到一次「之前的生成向导已超时退出，请重新发起指令」提醒，且该消息正常放行（新指令不被吞），不再静默落空。
+
+### 测试
+
+- 新增 `tests/wizard/wizard-session-scope.test.ts`（6 例：跨频道隔离、同频道冲突保护、按频道取消、配置驱动超时、超时提醒仅一次且消息放行、未超时不提醒）。`pnpm test` 456 全绿，`typecheck` / `build` 通过。
+
+## 1.3.2 - 2026-07-30
+
+合成图链路修复（引导向导 + 高级模式），诊断与实施记录见 `plans/aka-ai-image-generator-i2i-flow-bugfix.md`。
+
+### 修复
+
+- **合成图 guided 模式错走文生图向导（Bug 4）**：`WizardSession.mode` 与向导入口支持 `compose-image`；`合成图` 命令（及 compose-image 模式的 style 命令）进入向导后跨消息累计 2-8 张图片、再收合成描述，确认页显示「模式 · 合成图 / 图片 · N 张」，确认后走 `executeComposeImage`，不再错走文生图；confirm 步骤收到图片时按合成语义追加（最多 8 张）并提示「已更新图片（当前 N 张）」。
+- **合成图同条消息/引用图片被忽略（Bug 6）**：`ImageGenerationOrchestrator.collectComposeInput` 重写——先合并向导预收集图片（`initialImages`）、命令同条消息图片与引用图片（去重，上限 8 张），≥2 张且有描述时直接生成，不再要求用户重发；不足时按进度提示（「已收到 N 张，合成至少需要 2 张」）后进入等待循环。`executeComposeImage` 新增 `options.includeQuote / initialImages`，向导确认路径传 `includeQuote: false`。
+- **补图等待对非图消息静默空转（Bug 7）**：图生图补图循环收到贴纸/表情/语音等既无图又无文字的消息时，反馈「未检测到图片，还需 1 张图片；回复『取消』中止」后继续等待，不再无响应空转。
+
+### 测试
+
+- 新增 `tests/wizard/wizard-compose.test.ts`（3 例）；`tests/orchestrators/image-input-collection.test.ts` 补充 Bug 7 反馈用例与合成图收集 5 例。`pnpm test` 450 全绿，`typecheck` / `build` 通过。
+
+### 已知残留（后续批次）
+
+- 向导每步超时 120s 与提示文案不一致、向导会话键仅 `userId`（第三批，后续小版本）。
+
+## 1.3.1 - 2026-07-30
+
+图生图流程修复（引导向导 + 高级模式），诊断与实施记录见 `plans/aka-ai-image-generator-i2i-flow-bugfix.md`。
+
+### 修复
+
+- **向导确认后误报「请在 240 秒内发送 1 张图片」**：图片 URL 采集层只接受 `http`/`data:` 字符串，Lark 默认入站图（`internal:` 协议）在向导「确认」传给编排器时被静默丢弃。新增 `src/utils/input.ts` 的 `isSupportedImageUrl()`，统一接受 `http/https/data:/internal:/file:/base64://`，与下载层 `downloadImageAsBase64()` 能力对齐；`collectImagesFromParamAndQuote`、`wizard-handler`、`utils/parser` 三处统一改用。
+- **高级/直连模式不支持"先命令后图"**：删除 `commands/image.ts` 中"同一条消息必须附带图片"的提前拒绝，无图时统一进入编排器的等待补图流程（方案 A，与用户对齐），与 style 命令行为一致。
+- **等待补图/补描述期间新指令被 `session.prompt` 吞掉**：`ImageGenerationOrchestrator` 新增 `waitUserInput()`，基于 `session.prompt(callback)` 语义——检测到可解析的新指令时放行给指令系统并静默结束收集；收到「取消」明确中止；文生图/图生图/合成图三个收集函数全部改用，等待提示统一补充「回复『取消』中止」。
+- **向导杂项**：图生图带图无描述的提示从「请发送画面描述」修正为「请输入修改描述」；model-select / param-select / confirm 步骤收到图片时更新图片并重新渲染（此前静默吞掉）；`executeImageToImage` 新增 `options.includeQuote`，向导确认路径传 `false`，防止「确认」消息引用的无关图片混入。
+
+### 测试
+
+- 新增 `tests/utils/input.test.ts`、`tests/wizard/wizard-i2i-confirm.test.ts`、`tests/orchestrators/image-input-collection.test.ts`；`tests/commands/image-command-routing.test.ts` 补充无图直连 2 例。`pnpm test` 441 全绿，`typecheck` / `build` 通过。
+
+### 已知残留（后续批次）
+
+- 合成图 guided 模式错走文生图向导、合成图同条消息图片被忽略、补图等待对非图消息静默空转（第二批）。
+- 向导每步超时 120s 与提示文案不一致、向导会话键仅 `userId`（后续小版本）。
+
 ## 1.2.7 - 2026-07-29
 
 本轮从 `1.2.3` 起进行了四次迭代（`1.2.4 → 1.2.5 → 1.2.6 → 1.2.7`），四次迭代均在同一天完成、未逐版单独发布，统一以 `1.2.7` 打包。四次迭代的真实边界如下。

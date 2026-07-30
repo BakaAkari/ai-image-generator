@@ -153,7 +153,9 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         if (error instanceof ContractRejectedParamsError) return error.message
         throw error
       }
-
+      // 无图时不再提前拒绝（方案 A，2026-07-30 对齐）：
+      // 交由编排器进入「等待补发图片」流程，符合先命令后图的聊天习惯；
+      // 与 style 命令（i2i 模式，本来就会进入等待）行为一致。
       return handlers.executeImageToImage(
         session,
         img,

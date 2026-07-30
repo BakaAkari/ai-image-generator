@@ -1,5 +1,6 @@
 import { Argv, h } from 'koishi'
 import type { ImageGenerationModifiers, ModelMappingConfig } from '../shared/types.js'
+import { isSupportedImageUrl } from './input.js'
 
 /**
  * 规范化后缀名称
@@ -102,9 +103,13 @@ export function parseStyleCommandModifiers(
       argsList.push(...restParts)
     }
 
-    if (imgParam && typeof imgParam === 'string' && !imgParam.startsWith('http') && !imgParam.startsWith('data:')) {
-      const imgParts = imgParam.split(/\s+/).filter(Boolean)
-      argsList.push(...imgParts)
+    if (imgParam && typeof imgParam === 'string') {
+      // 非图片 URL 的字符串 imgParam 视为文本参数（图片 URL 判定与 utils/input 对齐）
+      const imgParamIsImage = isSupportedImageUrl(imgParam)
+      if (!imgParamIsImage) {
+        const imgParts = imgParam.split(/\s+/).filter(Boolean)
+        argsList.push(...imgParts)
+      }
     }
   }
 

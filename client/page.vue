@@ -12,7 +12,7 @@
       <div class="tool-btn active" title="图像生成设置">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
       </div>
-      <div class="tool-btn disabled" title="视频生成设置（即将推出）">
+      <div class="tool-btn" title="视频生成设置" @click="openVideoTools">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="15" height="16" rx="2"/><path d="m17 9 5-3v12l-5-3"/></svg>
       </div>
       <div class="tool-btn disabled" title="存储管理（即将推出）">
@@ -506,7 +506,7 @@
 
 <script lang="ts" setup>
 import { computed, onActivated, onDeactivated, onMounted, ref } from 'vue'
-import { send, store } from '@koishijs/client'
+import { router, send, store } from '@koishijs/client'
 import { ElMessage } from 'element-plus'
 import { normalizeConfig, objectToRows, rowsToObject, sanitizeHeaders } from './normalize'
 
@@ -515,6 +515,10 @@ import { normalizeConfig, objectToRows, rowsToObject, sanitizeHeaders } from './
 const isAkaToolsRoute = ref(true)
 onActivated(() => { isAkaToolsRoute.value = true })
 onDeactivated(() => { isAkaToolsRoute.value = false })
+
+function openVideoTools(): void {
+  void router.push('/aka-tools-video')
+}
 
 const panelActive = ref(['models'])
 const rankingPanelActive = ref<string[]>([])

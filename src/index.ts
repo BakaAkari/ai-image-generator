@@ -17,6 +17,7 @@ import { AiImageGeneratorService } from './service/AiImageGeneratorService.js'
 import { selectRouteForOperation } from './service/model-route-selection.js'
 import { UserManager } from './services/UserManager.js'
 import { WizardSessionManager } from './services/wizard-session.js'
+import { getPromptTimeoutMs } from './shared/prompt-timeout.js'
 import { createWizardHandler } from './wizard/wizard-handler.js'
 import { Config as ConfigSchema } from './shared/config.js'
 import type { Config as PluginConfig } from './shared/config.js'
@@ -162,7 +163,8 @@ export async function apply(ctx: Context, config: Config) {
   })
 
   // ── Wizard 向导系统 ──────────────────────────────────────────────────────
-  const wizardSessions = new WizardSessionManager()
+  // 每步超时与 apiTimeout / 编排器等待提示一致（Bug 3.3）；会话键含频道（Bug 3.4）
+  const wizardSessions = new WizardSessionManager(() => getPromptTimeoutMs(currentConfig))
   const wizardHandler = createWizardHandler({
     ctx,
     catalog,
