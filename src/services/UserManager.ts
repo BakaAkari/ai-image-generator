@@ -357,6 +357,14 @@ export class UserManager {
   private normalizeStore(value: any): UsersStoreV2 {
     const now = new Date().toISOString()
     if (value?.schemaVersion === 2 && value.users && typeof value.users === 'object') {
+      // 旧版（积分制）计费字段迁移：加载时一次性、幂等地补全/换算每个用户的 balance
+      let migrated = 0
+      for (const [userId, user] of Object.entries(value.users as Record<string, any>)) {
+        if (user && typeof user === 'object' && this.normalizeBalanceShape(user)) migrated += 1
+      }
+      if (migrated > 0) {
+        this.logger.info('旧版用户计费字段已迁移为新结构', { migrated })
+      }
       return {
         schemaVersion: 2,
         createdAt: value.createdAt || now,
@@ -370,7 +378,50 @@ export class UserManager {
         },
       }
     }
+    // 格式异常：告警而非静默（原文件在保存前会被复制为 .backup）
+    this.logger.warn('用户积分数据格式异常（非 schemaVersion 2 包装），已重置为空数据，原文件备份见 .backup', {
+      topLevelKeys: value && typeof value === 'object' ? Object.keys(value).slice(0, 5) : typeof value,
+    })
     return this.createEmptyStore()
+  }
+
+  /**
+   * 旧版（中间积分制）→ 当前（张数制）balance 迁移与形状补全，幂等。
+   * 返回 true 表示发生了迁移/补全。
+   */
+  private normalizeBalanceShape(user: any): boolean {
+    let changed = false
+    if (!user.balance || typeof user.balance !== 'object') {
+      user.balance = {}
+      changed = true
+    }
+    const balance = user.balance
+    const today = new Date().toISOString().slice(0, 10)
+
+    // 积分字段三代同名同义，缺失/非法时补 0（purchasedCredits 等值无损继承）
+    for (const key of ['purchasedCredits', 'totalGrantedCredits', 'totalConsumedCredits', 'totalRefundedCredits'] as const) {
+      if (typeof balance[key] !== 'number' || !Number.isFinite(balance[key])) {
+        balance[key] = 0
+        changed = true
+      }
+    }
+
+    // 免费额度：旧版 dailyFreeCreditsUsed 是积分单位，新版 trialImagesUsed 是图片张数，
+    // 单位不同不能直赋。旧版当天已使用过免费额度 → 视为当天额度已用完
+    // （MAX_SAFE_INTEGER 哨兵，getTrialRemaining 夹取为 0 剩余）；否则从 0 开始。
+    if (typeof balance.trialImagesUsed !== 'number' || !Number.isFinite(balance.trialImagesUsed)) {
+      const legacyUsed = Number(balance.dailyFreeCreditsUsed ?? 0)
+      const legacyDate = typeof balance.dailyResetDate === 'string' ? balance.dailyResetDate : undefined
+      balance.trialImagesUsed = legacyDate === today && legacyUsed > 0 ? Number.MAX_SAFE_INTEGER : 0
+      changed = true
+    }
+    if (typeof balance.trialDate !== 'string' || !balance.trialDate) {
+      balance.trialDate = typeof balance.dailyResetDate === 'string' && balance.dailyResetDate
+        ? balance.dailyResetDate
+        : today
+      changed = true
+    }
+    return changed
   }
 
   private async saveUsersStoreInternal(): Promise<void> {
@@ -473,7 +524,9 @@ export class UserManager {
       userData.balance.trialImagesUsed = 0
       userData.balance.trialDate = today
     }
-    return Math.max(0, limit - userData.balance.trialImagesUsed)
+    // 防御：部分写入/旧记录可能导致 trialImagesUsed 缺失，避免 limit - undefined = NaN
+    const used = Number(userData.balance.trialImagesUsed)
+    return Math.max(0, limit - (Number.isFinite(used) ? used : 0))
   }
 
   async getUserData(userId: string, userName: string, config?: Config): Promise<UserAccountV2> {

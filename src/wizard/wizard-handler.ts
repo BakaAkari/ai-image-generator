@@ -386,7 +386,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
     }
     if (!service.isFreePlatform(w.platform)) {
-      const freeTrialAccess = service.checkFreeTrialForModel(w.userId, mapping, w.platform)
+      const freeTrialAccess = await service.checkFreeTrialForModel(w.userId, mapping, w.platform)
       if (!freeTrialAccess.allowed) {
         return freeTrialAccess.message || ['模型不在免费列表', '', '- 说明丨此模型不开放每日免费'].join('\n')
       }

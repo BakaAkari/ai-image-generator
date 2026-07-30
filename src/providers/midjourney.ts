@@ -117,6 +117,7 @@ export class MjProvider extends BaseImageProvider {
     let base64Array: string[] | undefined
     if (hasInput) {
       const encoded: string[] = []
+      let firstDownloadError: string | undefined
       for (const url of refs) {
         try {
           const { data, mimeType } = await downloadImageAsBase64(
@@ -127,6 +128,7 @@ export class MjProvider extends BaseImageProvider {
           )
           encoded.push(`data:${mimeType};base64,${data}`)
         } catch (err) {
+          firstDownloadError ??= err instanceof Error ? err.message : String(err)
           this.logger.error(
             'provider=%s event=download_failed url=%s error=%s',
             this.name,
@@ -136,7 +138,10 @@ export class MjProvider extends BaseImageProvider {
         }
       }
       if (encoded.length === 0) {
-        throw new BadRequestError('所有输入图片下载失败，无法生成', { providerName: this.name })
+        throw new BadRequestError(
+          `所有输入图片下载失败，无法生成${firstDownloadError ? `｜${firstDownloadError}` : ''}`,
+          { providerName: this.name },
+        )
       }
       base64Array = encoded
     }

@@ -148,7 +148,11 @@ export async function downloadImageAsBase64(
           error: sanitizeError(internalError),
           message: internalError?.message
         })
-        throw new Error(`无法获取飞书/Lark 图片资源: ${internalError?.message || '未知错误'}`)
+        // 提取上游 HTTP 状态码（satori 透传格式："...status code: 500"），
+        // 让用户可见的错误能定位到具体失败层面（飞书资源 500 / 权限 403 等）
+        const statusMatch = /status code:\s*(\d+)/i.exec(internalError?.message ?? '')
+        const statusText = statusMatch ? `(HTTP ${statusMatch[1]})` : ''
+        throw new Error(`无法获取飞书/Lark 图片资源${statusText}，可能是表情包等飞书不开放下载的资源或资源已失效`)
       }
     } else {
       // 标准 HTTP/HTTPS URL
@@ -229,7 +233,11 @@ export async function downloadImageAsBase64(
   } catch (error: any) {
     logger.error('下载图片失败', { url, error: sanitizeError(error) })
 
-    if (error?.message?.includes('图片大小超过限制') || error?.message?.includes('不是有效图片')) {
+    if (
+      error?.message?.includes('图片大小超过限制') ||
+      error?.message?.includes('不是有效图片') ||
+      error?.message?.startsWith('无法获取')
+    ) {
       throw error
     }
     throw new Error('下载图片失败，请检查图片链接是否有效')

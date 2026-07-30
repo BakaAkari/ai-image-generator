@@ -66,6 +66,7 @@ export class GeminiProvider extends BaseImageProvider {
     // 编辑操作：契约声明要求参考图；全部下载失败 → 明确失败，不退化为文生图
     const imageParts: Array<{ inline_data: { mime_type: string; data: string } }> = []
     if (validUrls.length > 0) {
+      let firstDownloadError: string | undefined
       for (const url of validUrls) {
         try {
           const { data, mimeType } = await downloadImageAsBase64(
@@ -76,6 +77,7 @@ export class GeminiProvider extends BaseImageProvider {
           )
           imageParts.push({ inline_data: { mime_type: mimeType, data } })
         } catch (error) {
+          firstDownloadError ??= error instanceof Error ? error.message : String(error)
           this.logger.error(
             'provider=%s event=download_failed url=%s error=%s',
             this.name,
@@ -85,9 +87,12 @@ export class GeminiProvider extends BaseImageProvider {
         }
       }
       if (isEdit && imageParts.length === 0) {
-        throw new BadRequestError('所有输入图片下载失败，无法进行图像编辑', {
-          providerName: this.name,
-        })
+        throw new BadRequestError(
+          `所有输入图片下载失败，无法进行图像编辑${firstDownloadError ? `｜${firstDownloadError}` : ''}`,
+          {
+            providerName: this.name,
+          },
+        )
       }
       if (isEdit && imageParts.length !== validUrls.length) {
         this.logger.warn(

@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.3.7 - 2026-07-30
+
+上游错误透出修复（生产排障盲区收口）。分析与方案见 `plans/aka-ai-image-generator-sticker-error-surfacing.md`。
+
+### 修复
+
+- **供应商 HTTP 错误不再只剩 statusText**：`normalizeProviderError` 现在从错误响应体提取供应商原始错误信息（兼容 new-api/OpenAI 的 `error.message`、扁平 `message`/`msg`、纯文本），脱敏截断后并入 `ProviderError.message`——例如云雾 403 从干巴巴的「Forbidden」变为「Forbidden｜当前分组 xxx 无可用渠道」这类可操作信息，直接呈现在「生成失败 - 原因」中。
+- **internal: 图片下载失败保留状态码**：`downloadImageAsBase64` 对 Koishi internal 协议下载失败提取上游 HTTP 状态码（如飞书资源 500），外层不再用「下载图片失败，请检查图片链接是否有效」笼统文案吞掉详细错误。
+- **「所有输入图片下载失败」聚合错误带首个失败原因**：openai / gemini / midjourney 三个 provider 在全部输入图下载失败时，把首个具体失败原因附在错误后（如「｜无法获取飞书/Lark 图片资源(HTTP 500)，可能是表情包等飞书不开放下载的资源或资源已失效」）。
+
+### 背景
+
+- 生产环境实测确认：飞书「获取消息中的资源文件」API **不支持表情包资源下载**（官方文档明确），自定义表情（msg_type=sticker）经适配器解码为 img 元素后，图生图下载阶段必现上游 500。贴纸转图像的可行性探测与适配器侧配合改动见上述计划文档，待探测结果后实施。
+- 适配器侧（`koishi-plugin-aka-adapter-lark` 0.4.2）新增 internal 路由上游错误日志，生产可直接看到飞书返回的真实错误体。
+
+### 测试
+
+- 新增 `tests/providers/errors.test.ts`（11 例：上游信息提取 7 例 + 归一化透出 4 例）、`tests/providers/download-utils.test.ts`（2 例）。`pnpm test` 494 全绿，`typecheck` / `build` 通过。
+
+## 1.3.6 - 2026-07-30
+
+计费兼容性修复与旧用户数据迁移。分析与方案见 `plans/aka-ai-image-generator-billing-compat-migration.md`。
+
+### 修复
+
+- **有购买余额的用户被「模型不在免费列表」误拦**：`checkFreeTrialForModel()` 改为异步且余额感知——豁免用户（管理员/永久会员/免计费平台）与有 `purchasedCredits` 余额的用户放行任意模型，最终扣费仍由 `reserveCredits()` 原子完成；无余额用户仍仅放行 `freeTrialModelId` 每日免费模型；余额读取失败按无余额处理，不崩溃。5 处命令层调用点（文生图/图生图/合成图/style 命令 + 向导选模型）同步改为 `await`。
+- **旧版（积分制）用户数据迁移层**：`UserManager.normalizeStore` 加载时对每个用户幂等执行 `normalizeBalanceShape`——`purchasedCredits`/`totalGrantedCredits` 等积分字段同名无损继承；缺失的 `trialImagesUsed`/`trialDate` 补全；旧 `dailyResetDate === 当天` 且 `dailyFreeCreditsUsed > 0` 时当天免费额度视为已用完（保守，不重复赠送）；`trialDate` 继承旧 `dailyResetDate`。顶层格式非 schemaVersion 2 时日志告警（原文件仍有 .backup 备份），不再静默重置。
+- **`getTrialRemaining` NaN 防御**：`trialImagesUsed` 缺失/非数值按 0 处理，消除部分写入记录导致试用判断静默失效的分支。
+
+### 测试
+
+- 新增 `tests/services/billing-compat.test.ts`（11 例：余额感知 5 例 + 迁移 6 例，含幂等性与平铺格式告警）。`pnpm test` 481 全绿，`typecheck` / `build` 通过。
+
+### 验收注意
+
+- 本地 lark 默认在 `freePlatforms` 中会绕过全部计费检查，验收计费场景需临时把 lark 移出 `freePlatforms`。
+
 ## 1.3.5 - 2026-07-30
 
 向导契约感知参数过滤：引导过程中就按所选模型的契约收窄可选参数。方案见 `plans/aka-ai-image-generator-wizard-contract-params.md`。

@@ -235,11 +235,13 @@ export class OpenAIProvider extends BaseImageProvider {
     const fields = options?.contractFields ?? {}
 
     const imageDataList: Array<{ data: string; mimeType: string }> = []
+    let firstDownloadError: string | undefined
     for (const url of imageUrls) {
       try {
         const result = await downloadImageAsBase64(this.ctx, url, this.apiTimeoutSeconds, this.logger)
         imageDataList.push(result)
       } catch (error) {
+        firstDownloadError ??= error instanceof Error ? error.message : String(error)
         this.logger.error(
           'provider=%s event=download_failed url=%s error=%s',
           this.name,
@@ -249,9 +251,12 @@ export class OpenAIProvider extends BaseImageProvider {
       }
     }
     if (imageDataList.length === 0) {
-      throw new BadRequestError('所有输入图片下载失败，无法进行图像编辑', {
-        providerName: this.name,
-      })
+      throw new BadRequestError(
+        `所有输入图片下载失败，无法进行图像编辑${firstDownloadError ? `｜${firstDownloadError}` : ''}`,
+        {
+          providerName: this.name,
+        },
+      )
     }
 
     const supportsMultiN = !!contract.openai?.supportsN

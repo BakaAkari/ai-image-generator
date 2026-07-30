@@ -167,8 +167,15 @@ export function normalizeProviderError(
     })
     | undefined
 
-  const message = err?.message ?? '未知错误'
   const statusCode = err?.response?.status ?? err?.status
+  const upstreamMessage = extractUpstreamErrorMessage(err?.response?.data)
+  const baseMessage = err?.message ?? '未知错误'
+  // 供应商返回的原始错误信息（如 new-api 的 error.message）并入 message，
+  // 使上层日志与用户提示能直接看到真实原因，而不是干巴巴的 statusText
+  const message =
+    upstreamMessage && upstreamMessage !== baseMessage
+      ? `${baseMessage}｜${upstreamMessage}`
+      : baseMessage
 
   const baseOptions: ProviderErrorOptions = {
     providerName,
@@ -209,6 +216,33 @@ export function normalizeProviderError(
   }
   
   return new ProviderError('UNKNOWN', message, baseOptions)
+}
+
+/**
+ * 从供应商 HTTP 错误响应体中提取人类可读的原始错误信息。
+ * 兼容 OpenAI / new-api 的 {"error":{"message":...}}、扁平 message/msg 字段与纯文本响应。
+ * 输出已脱敏并截断，可直接拼入用户可见的错误文案。
+ */
+export function extractUpstreamErrorMessage(data: unknown, maxLength = 200): string | undefined {
+  let text: string | undefined
+  if (typeof data === 'string') {
+    text = data
+  } else if (data && typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    const nested = obj.error
+    if (nested && typeof nested === 'object') {
+      const nestedMessage = (nested as Record<string, unknown>).message
+      if (typeof nestedMessage === 'string') text = nestedMessage
+    } else if (typeof nested === 'string') {
+      text = nested
+    }
+    if (!text && typeof obj.message === 'string') text = obj.message
+    if (!text && typeof obj.msg === 'string') text = obj.msg
+  }
+  if (!text) return undefined
+  text = sanitizeDiagnosticString(text).replace(/\s+/g, ' ').trim()
+  if (!text) return undefined
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`
 }
 
 function buildErrorContext(error: unknown): Record<string, unknown> {

@@ -81,7 +81,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
-        const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+        const freeTrialAccess = await service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
@@ -138,7 +138,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
-        const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+        const freeTrialAccess = await service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
@@ -198,7 +198,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
-        const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+        const freeTrialAccess = await service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 
@@ -505,7 +505,7 @@ function registerStyleCommand(
       const access = service.checkModelAccess(session.userId || 'unknown', modifiers)
       if (!access.allowed) return access.message || ['模型受限', '', '- 要求｜管理员或模型白名单'].join('\n')
       if (!service.isFreePlatform(session.platform)) {
-        const freeTrialAccess = service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
+        const freeTrialAccess = await service.checkFreeTrialForModel(session.userId || 'unknown', modifiers.modelMapping!, session.platform)
         if (!freeTrialAccess.allowed) return freeTrialAccess.message
       }
 

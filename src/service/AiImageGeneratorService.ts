@@ -615,16 +615,32 @@ export class AiImageGeneratorService extends Service {
     }
   }
 
-  /** 检查模型是否允许该用户使用每日免费额度。豁免用户（管理员/永久会员/免计费平台）不受限制。 */
-  checkFreeTrialForModel(
+  /**
+   * 检查模型是否允许该用户使用。豁免用户（管理员/永久会员/免计费平台）不受限制。
+   * 有购买余额的用户放行任意模型（最终扣费由 reserveCredits 原子完成）；
+   * 无余额用户仅放行每日免费模型（freeTrialModelId）。
+   */
+  async checkFreeTrialForModel(
     userId: string,
     mapping: ModelMappingConfig,
     platform?: string,
-  ): ModelAccessCheckResult {
+  ): Promise<ModelAccessCheckResult> {
     const isExempt = this.userManager.isAdmin(userId, this.pluginConfig)
       || this.userManager.isPermanentMember(userId, this.pluginConfig)
       || (platform != null && Array.isArray(this.pluginConfig.freePlatforms) && this.pluginConfig.freePlatforms.includes(platform))
     if (isExempt) return { allowed: true }
+
+    // 有购买余额 → 放行任意模型；余额读取失败/无用户记录视为无余额，走原拦截逻辑
+    try {
+      const userData = await this.userManager.getExistingUserData(userId)
+      const purchasedCredits = Number(userData?.balance?.purchasedCredits ?? 0)
+      if (Number.isFinite(purchasedCredits) && purchasedCredits > 0) {
+        return { allowed: true }
+      }
+    } catch (error) {
+      this.pluginLogger.warn('读取用户购买余额失败，按无余额处理', error)
+    }
+
     const freeModelId = this.pluginConfig.freeTrialModelId
     if (!freeModelId) {
       return {
