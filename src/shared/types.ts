@@ -86,7 +86,7 @@ export interface ImageRequestContext {
   /** 模型映射后缀；用于同一 modelId 存在多条映射时精确定位独立倍率。 */
   modelSuffix?: string
   routeId?: string
-  /** 精确契约 id（yunwu.openai.gpt-image-2.generate 等）；provider 层由此决定发送形态。 */
+  /** 精确契约 id（newapi.openai.gpt-image-2.generate 等）；provider 层由此决定发送形态。 */
   contractId?: string
   /** 本次调用的操作，决定契约选择（text-to-image / image-edit / …）。 */
   operation?: 'text-to-image' | 'image-edit' | 'image-to-image' | 'compose-image'

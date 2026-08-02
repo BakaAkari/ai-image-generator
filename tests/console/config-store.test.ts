@@ -8,7 +8,7 @@ import type { Config } from '../../src/shared/config.js'
 
 function baseConfig(): Config {
   return {
-    activeSupplier: 'yunwu',
+    activeSupplier: 'newapi',
     catalogRefreshHours: 6,
     pricingMarkupPercent: 30,
     yunwuCreditToRmb: 0.5,

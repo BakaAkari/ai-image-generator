@@ -80,7 +80,7 @@ async function reachResolutionStep(ctx: ReturnType<typeof setup>) {
 
 describe('向导依赖式参数流(gpt-image-2)', () => {
   test('1K → 比例收窄为 1:1/3:2/2:3,不含 16:9/9:16', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     const page = String(await ctx.mw(makeSession('1'), ctx.next))
     expect(page).toContain('1:1')
@@ -92,7 +92,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('2K → 比例收窄为 1:1/16:9', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     const page = String(await ctx.mw(makeSession('2'), ctx.next))
     expect(page).toContain('1:1')
@@ -102,7 +102,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('「跳过」分辨率 → 默认 1K,再「跳过」参数 → 确认页为 1K + 1:1 合法组合', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('跳过'), ctx.next)
     const ok = String(await ctx.mw(makeSession('跳过'), ctx.next))
@@ -112,7 +112,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('参数页「上一步」→ 回分辨率页;重选 4K 后收窄正确(幂等)', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('1'), ctx.next) // 先选 1K
 
@@ -126,7 +126,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('分辨率页「上一步」→ 回模型列表', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     const back = String(await ctx.mw(makeSession('上一步'), ctx.next))
     expect(back).toContain('[OPENAI]')
@@ -134,7 +134,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('确认页「上一步」→ 回分辨率页(分辨率需重选)', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('2'), ctx.next) // 2K
     const confirm = String(await ctx.mw(makeSession('2,1'), ctx.next)) // 16:9 + 1 张
@@ -146,7 +146,7 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   })
 
   test('完整链路:4K + 9:16 确认后触发生成(resolution 以显式参数传递)', async () => {
-    const ctx = setup('yunwu.openai.gpt-image-2.generate')
+    const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('3'), ctx.next) // 4K
     await ctx.mw(makeSession('2,1'), ctx.next) // 9:16 + 1 张

@@ -3,9 +3,9 @@ import { describe, expect, test, vi } from 'vitest'
 import { OpenAIProvider } from '../../src/providers/openai.js'
 import { getContractById } from '../../src/contracts/registry.js'
 
-const GEN = getContractById('yunwu.openai.gpt-image-2.generate')!
-const EDIT = getContractById('yunwu.openai.gpt-image-2.edit')!
-const GEN_C = getContractById('yunwu.openai.gpt-image-2-c.generate')!
+const GEN = getContractById('newapi.openai.gpt-image-2.generate')!
+const EDIT = getContractById('newapi.openai.gpt-image-2.edit')!
+const GEN_C = getContractById('newapi.openai.gpt-image-2-c.generate')!
 
 function makeCtx(handler?: (url: string, body: unknown) => unknown) {
   const post = vi.fn(async (url: string, body: unknown) => {

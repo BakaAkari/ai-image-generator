@@ -1,5 +1,5 @@
 /**
- * MjProvider —— Midjourney Imagine (yunwu.mj.imagine 契约)。
+ * MjProvider —— Midjourney Imagine (newapi.mj.imagine 契约)。
  *
  * 严格按云雾 Apifox 契约（5427167/232421938）发送：
  *   Body: { botType, prompt, base64Array?, notifyHook?, state? }
@@ -64,8 +64,8 @@ export interface MjProviderOptions extends BaseProviderOptions {
 }
 
 const KNOWN_IMAGINE_CONTRACT_IDS = new Set([
-  'yunwu.mj.imagine',
-  'yunwu.mj.imagine.reference',
+  'newapi.mj.imagine',
+  'newapi.mj.imagine.reference',
 ])
 
 export class MjProvider extends BaseImageProvider {

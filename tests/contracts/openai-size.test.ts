@@ -8,7 +8,7 @@ import {
   resolveOpenAiSize,
 } from '../../src/contracts/openai-size.js'
 
-const GPT_IMAGE_2_GENERATE = getContractById('yunwu.openai.gpt-image-2.generate')!
+const GPT_IMAGE_2_GENERATE = getContractById('newapi.openai.gpt-image-2.generate')!
 const cap = GPT_IMAGE_2_GENERATE.openai!.size!
 
 describe('resolveOpenAiSize (GPT Image 2)', () => {

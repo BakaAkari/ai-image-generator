@@ -28,15 +28,15 @@ import type {
  * （产品层面在协议层保留至 4）。响应形态 data[].url / data[].b64_json / usage，
  * Apifox 中的 chat completions schema 已确认为文档误填。
  */
-const YUNWU_OPENAI_GPT_IMAGE_2_GENERATE: ImageContract = {
-  id: 'yunwu.openai.gpt-image-2.generate',
-  supplier: 'yunwu',
+const NEWAPI_OPENAI_GPT_IMAGE_2_GENERATE: ImageContract = {
+  id: 'newapi.openai.gpt-image-2.generate',
+  supplier: 'newapi',
   protocol: 'openai',
   operation: 'text-to-image',
   endpoint: '/v1/images/generations',
   method: 'POST',
   modelIds: ['gpt-image-2'],
-  label: 'yunwu GPT Image 2 generate',
+  label: 'newapi GPT Image 2 generate',
   openai: {
     contentType: 'application/json',
     size: {
@@ -67,12 +67,12 @@ const YUNWU_OPENAI_GPT_IMAGE_2_GENERATE: ImageContract = {
 /**
  * 云雾 gpt-image-2-c 目录描述“暂不支持 n 参数”，用独立契约表达 n=1 限制。
  */
-const YUNWU_OPENAI_GPT_IMAGE_2_C_GENERATE: ImageContract = {
-  ...YUNWU_OPENAI_GPT_IMAGE_2_GENERATE,
-  id: 'yunwu.openai.gpt-image-2-c.generate',
+const NEWAPI_OPENAI_GPT_IMAGE_2_C_GENERATE: ImageContract = {
+  ...NEWAPI_OPENAI_GPT_IMAGE_2_GENERATE,
+  id: 'newapi.openai.gpt-image-2-c.generate',
   modelIds: ['gpt-image-2-c'],
   openai: {
-    ...YUNWU_OPENAI_GPT_IMAGE_2_GENERATE.openai!,
+    ...NEWAPI_OPENAI_GPT_IMAGE_2_GENERATE.openai!,
     supportsN: false,
     maxN: 1,
   },
@@ -84,15 +84,15 @@ const YUNWU_OPENAI_GPT_IMAGE_2_C_GENERATE: ImageContract = {
  * Apifox JSON schema 把大量字段列为 required 属于文档内部矛盾，实施以页面 parameters 为准。
  * 固定 size 与生成一致；n 服务端上限 10，产品层最多 4。
  */
-const YUNWU_OPENAI_GPT_IMAGE_2_EDIT: ImageContract = {
-  id: 'yunwu.openai.gpt-image-2.edit',
-  supplier: 'yunwu',
+const NEWAPI_OPENAI_GPT_IMAGE_2_EDIT: ImageContract = {
+  id: 'newapi.openai.gpt-image-2.edit',
+  supplier: 'newapi',
   protocol: 'openai',
   operation: 'image-edit',
   endpoint: '/v1/images/edits',
   method: 'POST',
   modelIds: ['gpt-image-2', 'gpt-image-2-c'],
-  label: 'yunwu GPT Image 2 edit',
+  label: 'newapi GPT Image 2 edit',
   openai: {
     contentType: 'multipart/form-data',
     size: {
@@ -124,15 +124,15 @@ const YUNWU_OPENAI_GPT_IMAGE_2_EDIT: ImageContract = {
  * 云雾 GPT Image 1 —— Apifox 5427167/290549047 页面 schema 仅列 256x256/512x512/1024x1024。
  * 但页面 example 却发送 model 字段与 1024x1536 尺寸，属于文档内部矛盾；保守取页面 schema。
  */
-const YUNWU_OPENAI_GPT_IMAGE_1_GENERATE: ImageContract = {
-  id: 'yunwu.openai.gpt-image-1.generate',
-  supplier: 'yunwu',
+const NEWAPI_OPENAI_GPT_IMAGE_1_GENERATE: ImageContract = {
+  id: 'newapi.openai.gpt-image-1.generate',
+  supplier: 'newapi',
   protocol: 'openai',
   operation: 'text-to-image',
   endpoint: '/v1/images/generations',
   method: 'POST',
   modelIds: ['gpt-image-1', 'gpt-image-1-all'],
-  label: 'yunwu GPT Image 1 generate',
+  label: 'newapi GPT Image 1 generate',
   openai: {
     contentType: 'application/json',
     size: {
@@ -202,15 +202,15 @@ const OFFICIAL_OPENAI_EDIT: ImageContract = {
  * 云雾 Gemini 2.5 Flash Image 生成 —— Apifox 5427167/358030171。
  * 结构化示例中 imageConfig 仅含 aspectRatio；imageSize 属云雾未声明字段。
  */
-const YUNWU_GEMINI_2_5_GENERATE: ImageContract = {
-  id: 'yunwu.gemini.2-5.generate',
-  supplier: 'yunwu',
+const NEWAPI_GEMINI_2_5_GENERATE: ImageContract = {
+  id: 'newapi.gemini.2-5.generate',
+  supplier: 'newapi',
   protocol: 'gemini',
   operation: 'text-to-image',
   endpoint: '/v1beta/models/{modelId}:generateContent',
   method: 'POST',
   modelIds: ['gemini-2.5-flash-image'],
-  label: 'yunwu Gemini 2.5 generate',
+  label: 'newapi Gemini 2.5 generate',
   gemini: {
     imageConfig: {
       enabled: true,
@@ -226,15 +226,15 @@ const YUNWU_GEMINI_2_5_GENERATE: ImageContract = {
  * 云雾 Gemini 3 Pro Image 生成 —— Apifox 5427167/379838953。
  * 结构化示例 imageConfig 含 aspectRatio + 大写 imageSize (1K/2K/4K)。
  */
-const YUNWU_GEMINI_3_PRO_GENERATE: ImageContract = {
-  id: 'yunwu.gemini.3-pro.generate',
-  supplier: 'yunwu',
+const NEWAPI_GEMINI_3_PRO_GENERATE: ImageContract = {
+  id: 'newapi.gemini.3-pro.generate',
+  supplier: 'newapi',
   protocol: 'gemini',
   operation: 'text-to-image',
   endpoint: '/v1beta/models/{modelId}:generateContent',
   method: 'POST',
   modelIds: ['gemini-3-pro-image', 'gemini-3-pro-image-preview'],
-  label: 'yunwu Gemini 3 Pro generate',
+  label: 'newapi Gemini 3 Pro generate',
   gemini: {
     imageConfig: {
       enabled: true,
@@ -250,15 +250,15 @@ const YUNWU_GEMINI_3_PRO_GENERATE: ImageContract = {
  * 云雾 Gemini 3 Pro 图片编辑 —— Apifox 5427167/305488471。
  * 编辑示例仅发送 responseModalities，未发送 imageConfig；能力独立于生成契约。
  */
-const YUNWU_GEMINI_3_PRO_EDIT: ImageContract = {
-  id: 'yunwu.gemini.3-pro.edit',
-  supplier: 'yunwu',
+const NEWAPI_GEMINI_3_PRO_EDIT: ImageContract = {
+  id: 'newapi.gemini.3-pro.edit',
+  supplier: 'newapi',
   protocol: 'gemini',
   operation: 'image-edit',
   endpoint: '/v1beta/models/{modelId}:generateContent',
   method: 'POST',
   modelIds: ['gemini-3-pro-image', 'gemini-3-pro-image-preview'],
-  label: 'yunwu Gemini 3 Pro edit',
+  label: 'newapi Gemini 3 Pro edit',
   gemini: {
     imageConfig: { enabled: false },
     supportsYunwuResponseFormatUrl: true,
@@ -267,11 +267,11 @@ const YUNWU_GEMINI_3_PRO_EDIT: ImageContract = {
 }
 
 /** Gemini 2.5 云雾同样能编辑（沿用编辑契约）。 */
-const YUNWU_GEMINI_2_5_EDIT: ImageContract = {
-  ...YUNWU_GEMINI_3_PRO_EDIT,
-  id: 'yunwu.gemini.2-5.edit',
+const NEWAPI_GEMINI_2_5_EDIT: ImageContract = {
+  ...NEWAPI_GEMINI_3_PRO_EDIT,
+  id: 'newapi.gemini.2-5.edit',
   modelIds: ['gemini-2.5-flash-image'],
-  label: 'yunwu Gemini 2.5 edit',
+  label: 'newapi Gemini 2.5 edit',
 }
 
 /**
@@ -319,15 +319,15 @@ const OFFICIAL_GEMINI_EDIT: ImageContract = {
  * 官方 Body：botType + prompt，可选 base64Array / notifyHook / state。
  * 参考图先按 Imagine 内嵌 base64Array 处理，避免额外强制先调 upload。
  */
-const YUNWU_MJ_IMAGINE: ImageContract = {
-  id: 'yunwu.mj.imagine',
-  supplier: 'yunwu',
+const NEWAPI_MJ_IMAGINE: ImageContract = {
+  id: 'newapi.mj.imagine',
+  supplier: 'newapi',
   protocol: 'mj',
   operation: 'text-to-image',
   endpoint: '/mj/submit/imagine',
   method: 'POST',
   modelIds: '*',
-  label: 'yunwu MJ imagine',
+  label: 'newapi MJ imagine',
   mj: {
     supportsAspectRatio: true,
     aspectRatios: ['1:1', '4:3', '3:2', '16:9', '9:16', '2:3'],
@@ -343,31 +343,31 @@ const YUNWU_MJ_IMAGINE: ImageContract = {
  * MJ 图生图（垫图）复用 Imagine + base64Array，实现层视作 text-to-image 分支处理；
  * 单独契约 id 便于 route 选择与日志。
  */
-const YUNWU_MJ_IMAGINE_WITH_REFERENCE: ImageContract = {
-  ...YUNWU_MJ_IMAGINE,
-  id: 'yunwu.mj.imagine.reference',
+const NEWAPI_MJ_IMAGINE_WITH_REFERENCE: ImageContract = {
+  ...NEWAPI_MJ_IMAGINE,
+  id: 'newapi.mj.imagine.reference',
   operation: 'image-to-image',
-  label: 'yunwu MJ imagine (reference)',
+  label: 'newapi MJ imagine (reference)',
   mj: {
-    ...YUNWU_MJ_IMAGINE.mj!,
+    ...NEWAPI_MJ_IMAGINE.mj!,
   },
 }
 
 const ALL_CONTRACTS: ImageContract[] = [
-  YUNWU_OPENAI_GPT_IMAGE_2_GENERATE,
-  YUNWU_OPENAI_GPT_IMAGE_2_C_GENERATE,
-  YUNWU_OPENAI_GPT_IMAGE_2_EDIT,
-  YUNWU_OPENAI_GPT_IMAGE_1_GENERATE,
+  NEWAPI_OPENAI_GPT_IMAGE_2_GENERATE,
+  NEWAPI_OPENAI_GPT_IMAGE_2_C_GENERATE,
+  NEWAPI_OPENAI_GPT_IMAGE_2_EDIT,
+  NEWAPI_OPENAI_GPT_IMAGE_1_GENERATE,
   OFFICIAL_OPENAI_GENERATE,
   OFFICIAL_OPENAI_EDIT,
-  YUNWU_GEMINI_2_5_GENERATE,
-  YUNWU_GEMINI_2_5_EDIT,
-  YUNWU_GEMINI_3_PRO_GENERATE,
-  YUNWU_GEMINI_3_PRO_EDIT,
+  NEWAPI_GEMINI_2_5_GENERATE,
+  NEWAPI_GEMINI_2_5_EDIT,
+  NEWAPI_GEMINI_3_PRO_GENERATE,
+  NEWAPI_GEMINI_3_PRO_EDIT,
   OFFICIAL_GEMINI_GENERATE,
   OFFICIAL_GEMINI_EDIT,
-  YUNWU_MJ_IMAGINE,
-  YUNWU_MJ_IMAGINE_WITH_REFERENCE,
+  NEWAPI_MJ_IMAGINE,
+  NEWAPI_MJ_IMAGINE_WITH_REFERENCE,
 ]
 
 // ---------------------------------------------------------------------------
@@ -393,7 +393,7 @@ export function resolveContract(input: ContractResolveInput): ContractResolveRes
   }
   // MJ Imagine 图生图 = 文生图 + base64Array，避免额外契约选择歧义
   if (input.protocol === 'mj' && target === 'image-edit') {
-    const mjReference = candidates.find((c) => c.id === 'yunwu.mj.imagine.reference')
+    const mjReference = candidates.find((c) => c.id === 'newapi.mj.imagine.reference')
     if (mjReference) return { ok: true, contract: mjReference }
   }
   // 精确 modelIds 优先，然后 '*'

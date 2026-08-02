@@ -28,7 +28,7 @@ const OPENAI_IMAGE_ENDPOINTS = new Set([
 const GEMINI_IMAGE_ENDPOINTS = new Set(['gemini'])
 
 /**
- * 已实现契约的 MJ/Kling endpoint —— 目前仅 MJ Imagine（yunwu.mj.imagine 契约）。
+ * 已实现契约的 MJ/Kling endpoint —— 目前仅 MJ Imagine（newapi.mj.imagine 契约）。
  * 其他 MJ Action/Blend/Describe/Kling 未接入契约层，本轮显式 fail-closed。
  */
 const MJ_KLING_IMAGE_ENDPOINTS = new Set([

@@ -81,7 +81,7 @@ async function reachParamSelect(handler: ReturnType<typeof setup>['handler']) {
 
 describe('向导契约感知参数过滤', () => {
   test('gpt-image-1：参数页只显示 1K 与 1:1（契约唯一合法组合）', async () => {
-    const { handler } = setup('yunwu.openai.gpt-image-1.generate')
+    const { handler } = setup('newapi.openai.gpt-image-1.generate')
     const r = await reachParamSelect(handler)
     const text = String(r)
     expect(text).toContain('参数设置')
@@ -94,7 +94,7 @@ describe('向导契约感知参数过滤', () => {
   })
 
   test('gpt-image-2：依赖流——先选分辨率再收窄比例；4K 比例页仅 16:9/9:16', async () => {
-    const { handler } = setup('yunwu.openai.gpt-image-2.generate')
+    const { handler } = setup('newapi.openai.gpt-image-2.generate')
     const next = vi.fn()
     const mw = handler.getMiddleware()
 
@@ -126,7 +126,7 @@ describe('向导契约感知参数过滤', () => {
   })
 
   test('gpt-image-2-c：依赖流 + supportsN=false → 比例页无「生成张数」；连续「跳过」直达确认', async () => {
-    const { handler } = setup('yunwu.openai.gpt-image-2-c.generate')
+    const { handler } = setup('newapi.openai.gpt-image-2-c.generate')
     const next = vi.fn()
     const mw = handler.getMiddleware()
 

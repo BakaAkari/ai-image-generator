@@ -22,7 +22,7 @@ export type ContractProtocol = 'openai' | 'gemini' | 'mj'
 
 /** 供应商（凭证入口）。契约层用此区分方言，不做鉴权。 */
 export type ContractSupplier =
-  | 'yunwu' // 云雾（OpenAI-compatible + Gemini 兼容 + MJ 兼容）
+  | 'newapi' // new-api 兼容站（OpenAI-compatible + Gemini 兼容 + MJ 兼容）
   | 'openai-official' // OpenAI 官方
   | 'gemini-official' // Google Gemini 官方
 
@@ -117,7 +117,7 @@ export interface GeminiOpCapability {
 
 /** 图像生成契约。 */
 export interface ImageContract {
-  /** 全局唯一契约 ID，形如 `yunwu.openai.gpt-image-2.generate` / `yunwu.mj.imagine`。 */
+  /** 全局唯一契约 ID，形如 `newapi.openai.gpt-image-2.generate` / `newapi.mj.imagine`。 */
   id: string
   supplier: ContractSupplier
   protocol: ContractProtocol

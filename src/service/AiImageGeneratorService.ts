@@ -934,11 +934,11 @@ function buildQueryTerms(query: string): string[] {
 function mapSupplierToContract(
   activeSupplier: string | undefined,
   supplier: ImageProvider,
-): 'yunwu' | 'openai-official' | 'gemini-official' | undefined {
-  if (activeSupplier === 'yunwu' || activeSupplier === 'gptgod') return 'yunwu'
+): 'newapi' | 'openai-official' | 'gemini-official' | undefined {
+  if (activeSupplier === 'newapi' || activeSupplier === 'yunwu' || activeSupplier === 'gptgod') return 'newapi'
   if (activeSupplier === 'openai-official') return 'openai-official'
   if (activeSupplier === 'gemini-official') return 'gemini-official'
-  if (supplier === 'openai-compatible') return 'yunwu'
+  if (supplier === 'openai-compatible') return 'newapi'
   if (supplier === 'gpt-official') return 'openai-official'
   if (supplier === 'gemini-official') return 'gemini-official'
   return undefined

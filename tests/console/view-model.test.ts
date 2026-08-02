@@ -3,7 +3,7 @@ import { buildConsoleState, resolveMappingGroupRatio } from '../../src/console/v
 import type { Config } from '../../src/shared/config.js'
 
 const config = {
-  activeSupplier: 'yunwu',
+  activeSupplier: 'newapi',
   creditsPerCny: 10,
   pricingMarkupPercent: 30,
   modelMappings: [
@@ -14,7 +14,7 @@ const config = {
 } as unknown as Config
 
 const catalog = {
-  supplier: 'yunwu' as const,
+  supplier: 'newapi' as const,
   fetchedAt: 1000,
   models: [
     { id: 'per-call', modes: ['text-to-image'], routes: [{ id: 'openai:text-to-image', protocol: 'openai', capability: 'text-to-image' }], pricing: { type: 'per-call', pricePerCall: 0.01 }, source: 'remote-pricing' },

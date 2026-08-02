@@ -3,12 +3,12 @@ import { describe, expect, test } from 'vitest'
 import { getContractById } from '../../src/contracts/registry.js'
 import { resolveContractParams } from '../../src/contracts/param-resolver.js'
 
-const OPENAI_GEN = getContractById('yunwu.openai.gpt-image-2.generate')!
-const OPENAI_C = getContractById('yunwu.openai.gpt-image-2-c.generate')!
-const GEMINI_2_5 = getContractById('yunwu.gemini.2-5.generate')!
-const GEMINI_3_PRO = getContractById('yunwu.gemini.3-pro.generate')!
-const GEMINI_3_PRO_EDIT = getContractById('yunwu.gemini.3-pro.edit')!
-const MJ_IMAGINE = getContractById('yunwu.mj.imagine')!
+const OPENAI_GEN = getContractById('newapi.openai.gpt-image-2.generate')!
+const OPENAI_C = getContractById('newapi.openai.gpt-image-2-c.generate')!
+const GEMINI_2_5 = getContractById('newapi.gemini.2-5.generate')!
+const GEMINI_3_PRO = getContractById('newapi.gemini.3-pro.generate')!
+const GEMINI_3_PRO_EDIT = getContractById('newapi.gemini.3-pro.edit')!
+const MJ_IMAGINE = getContractById('newapi.mj.imagine')!
 
 describe('resolveContractParams (OpenAI)', () => {
   test('resolution 1k + aspectRatio 16:9 → size 2048x1152', () => {

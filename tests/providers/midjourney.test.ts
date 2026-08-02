@@ -3,8 +3,8 @@ import { describe, expect, test, vi } from 'vitest'
 import { MjProvider } from '../../src/providers/midjourney.js'
 import { getContractById } from '../../src/contracts/registry.js'
 
-const MJ_IMAGINE = getContractById('yunwu.mj.imagine')!
-const MJ_REFERENCE = getContractById('yunwu.mj.imagine.reference')!
+const MJ_IMAGINE = getContractById('newapi.mj.imagine')!
+const MJ_REFERENCE = getContractById('newapi.mj.imagine.reference')!
 
 function makeCtx(opts: {
   submitResponse?: unknown
@@ -210,7 +210,7 @@ describe('MjProvider fail-closed for unknown contracts', () => {
   test('unknown contract id → throws', async () => {
     const { ctx } = makeCtx()
     const provider = makeProvider(ctx)
-    const fakeContract: any = { ...MJ_IMAGINE, id: 'yunwu.mj.action' }
+    const fakeContract: any = { ...MJ_IMAGINE, id: 'newapi.mj.action' }
     await expect(
       provider.generateImages('cat', '', 1, {
         contract: fakeContract,

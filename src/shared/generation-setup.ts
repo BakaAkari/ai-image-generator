@@ -30,7 +30,7 @@ export interface BuildProtocolRequestContextInput {
   supplier?: ImageProvider
   modelMapping?: ModelMappingConfig
   routeId?: string
-  /** 已定位的契约 id（yunwu.openai.gpt-image-2.generate 等）。命中时走 contract-driven 分支。 */
+  /** 已定位的契约 id（newapi.openai.gpt-image-2.generate 等）。命中时走 contract-driven 分支。 */
   contractId?: string
   /** 当前操作类型，缺省 text-to-image。 */
   operation?: ContractOperation

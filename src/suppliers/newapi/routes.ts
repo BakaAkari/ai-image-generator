@@ -30,7 +30,7 @@ const ENDPOINT_ROUTE_MAP: RouteSpec[] = [
   // 显式产出两条 capability route，避免在运行时对整个 Gemini 协议做宽泛回退。
   { endpoint: 'gemini', protocol: 'gemini', capability: 'text-to-image' },
   { endpoint: 'gemini', protocol: 'gemini', capability: 'image-to-image' },
-  // Midjourney Imagine —— 本轮唯一已实现契约（yunwu.mj.imagine）
+  // Midjourney Imagine —— 本轮唯一已实现契约（newapi.mj.imagine）
   { endpoint: 'mj想象模式', protocol: 'mj', capability: 'text-to-image' },
   // 其他 MJ Action/Blend/Describe/Kling/upload/图像识别 目前无契约支持，
   // fail-closed：在此不生成路由，模型会被 catalog 归入 unsupported。

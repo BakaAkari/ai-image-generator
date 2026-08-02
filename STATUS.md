@@ -5,13 +5,13 @@
 
 ## 已完成
 - [x] TASK-000: 设计文档 `plans/aka-ai-image-generator-newapi-adapter.md` + 基线（b817267）
+- [x] TASK-001: suppliers/newapi 适配器（75a6f6c，525 测试）
+- [x] TASK-002: catalog 层切换 + 删除 yunwu 适配器（1ef46a4，507 测试）
 
 ## 进行中
-- [ ] TASK-001: suppliers/newapi 适配器（client 端点配置化 + usage 参数 + registry）
+- [ ] TASK-003: 契约层改名（ContractSupplier、契约 id、param-resolver 引用）
 
 ## 待开始
-- [ ] TASK-002: catalog 层分发 + 类型
-- [ ] TASK-003: 契约层改名
 - [ ] TASK-004: 配置 schema + migration + index.ts
 - [ ] TASK-005: service/providers 引用清理
 - [ ] TASK-006: 前端

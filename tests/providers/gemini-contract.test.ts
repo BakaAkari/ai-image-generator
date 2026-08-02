@@ -3,9 +3,9 @@ import { describe, expect, test, vi } from 'vitest'
 import { GeminiProvider } from '../../src/providers/gemini.js'
 import { getContractById } from '../../src/contracts/registry.js'
 
-const YUNWU_2_5 = getContractById('yunwu.gemini.2-5.generate')!
-const YUNWU_3_PRO = getContractById('yunwu.gemini.3-pro.generate')!
-const YUNWU_3_PRO_EDIT = getContractById('yunwu.gemini.3-pro.edit')!
+const NEWAPI_2_5 = getContractById('newapi.gemini.2-5.generate')!
+const NEWAPI_3_PRO = getContractById('newapi.gemini.3-pro.generate')!
+const NEWAPI_3_PRO_EDIT = getContractById('newapi.gemini.3-pro.edit')!
 const OFFICIAL = getContractById('gemini.official.generate')!
 
 function makeCtx(handler?: (url: string, body: unknown) => unknown) {
@@ -44,7 +44,7 @@ describe('GeminiProvider yunwu 2.5 contract', () => {
     const { ctx } = makeCtx((_, body) => { capturedBody = body; return { candidates: [{ content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } }] } })
     const provider = makeProvider(ctx, 'gemini-2.5-flash-image')
     await provider.generateImages('cat', '', 1, {
-      contract: YUNWU_2_5,
+      contract: NEWAPI_2_5,
       operation: 'text-to-image',
       contractFields: { aspectRatio: '16:9' },
       numImages: 1,
@@ -60,7 +60,7 @@ describe('GeminiProvider yunwu 3 Pro contract', () => {
     const { ctx } = makeCtx((_, body) => { capturedBody = body; return { candidates: [{ content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } }] } })
     const provider = makeProvider(ctx)
     await provider.generateImages('cat', '', 1, {
-      contract: YUNWU_3_PRO,
+      contract: NEWAPI_3_PRO,
       operation: 'text-to-image',
       contractFields: { imageSize: '2K', aspectRatio: '9:16' },
       numImages: 1,
@@ -77,7 +77,7 @@ describe('GeminiProvider yunwu 3 Pro edit contract', () => {
     ctx.http.get = vi.fn(async () => pngMagic.buffer)
     const provider = makeProvider(ctx)
     await provider.generateImages('edit', ['https://ref/1.png'], 1, {
-      contract: YUNWU_3_PRO_EDIT,
+      contract: NEWAPI_3_PRO_EDIT,
       operation: 'image-edit',
       contractFields: {},
       numImages: 1,
@@ -91,7 +91,7 @@ describe('GeminiProvider yunwu 3 Pro edit contract', () => {
     const provider = makeProvider(ctx)
     await expect(
       provider.generateImages('edit', ['https://ref/bad.png'], 1, {
-        contract: YUNWU_3_PRO_EDIT,
+        contract: NEWAPI_3_PRO_EDIT,
         operation: 'image-edit',
         contractFields: {},
         numImages: 1,
@@ -134,7 +134,7 @@ describe('GeminiProvider rejects rejectedParams', () => {
     const provider = makeProvider(ctx)
     await expect(
       provider.generateImages('cat', '', 1, {
-        contract: YUNWU_3_PRO,
+        contract: NEWAPI_3_PRO,
         operation: 'text-to-image',
         contractFields: { imageSize: '1K' },
         rejectedParams: [{ key: 'imageSize', value: 'huge', reason: 'unsupported' }],
@@ -152,7 +152,7 @@ describe('GeminiProvider response parsing', () => {
     }))
     const provider = makeProvider(ctx)
     const result = await provider.generateImages('cat', '', 1, {
-      contract: YUNWU_3_PRO,
+      contract: NEWAPI_3_PRO,
       operation: 'text-to-image',
       contractFields: { imageSize: '1K' },
       numImages: 1,
@@ -166,7 +166,7 @@ describe('GeminiProvider response parsing', () => {
     }))
     const provider = makeProvider(ctx)
     const result = await provider.generateImages('cat', '', 1, {
-      contract: YUNWU_3_PRO,
+      contract: NEWAPI_3_PRO,
       operation: 'text-to-image',
       contractFields: { imageSize: '1K', responseFormat: 'url' },
       numImages: 1,

@@ -9,11 +9,11 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
       supplier: 'openai-compatible',
       routeId: 'openai:text-to-image',
       operation: 'text-to-image',
-      contractId: 'yunwu.openai.gpt-image-2.generate',
+      contractId: 'newapi.openai.gpt-image-2.generate',
       modelMapping: { suffix: 'g', modelId: 'gpt-image-2' },
       explicit: { resolution: '2k', aspectRatio: '16:9', numImages: 1 },
     })
-    expect(requestContext.contractId).toBe('yunwu.openai.gpt-image-2.generate')
+    expect(requestContext.contractId).toBe('newapi.openai.gpt-image-2.generate')
     expect(requestContext.operation).toBe('text-to-image')
     expect(requestContext.resolution).toBe('2k')
     expect(requestContext.aspectRatio).toBe('16:9')
@@ -23,7 +23,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('yunwu Gemini 2.5 rejects imageSize; only aspectRatio passes', () => {
     const { requestContext, rejectedParams } = buildProtocolRequestContext({
       protocol: 'gemini',
-      contractId: 'yunwu.gemini.2-5.generate',
+      contractId: 'newapi.gemini.2-5.generate',
       operation: 'text-to-image',
       modelMapping: { suffix: 'g', modelId: 'gemini-2.5-flash-image' },
       explicit: { imageSize: '1K', aspectRatio: '16:9' },
@@ -37,7 +37,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('MJ Imagine yields promptAppends but no OpenAI-style fields', () => {
     const { requestContext, promptAdditions } = buildProtocolRequestContext({
       protocol: 'mj',
-      contractId: 'yunwu.mj.imagine',
+      contractId: 'newapi.mj.imagine',
       operation: 'text-to-image',
       modelMapping: { suffix: 'mj', modelId: 'mj_imagine' },
       explicit: { aspectRatio: '16:9', stylize: 250 },
@@ -72,7 +72,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('contractFields propagate to requestContext (openai size)', () => {
     const { requestContext } = buildProtocolRequestContext({
       protocol: 'openai',
-      contractId: 'yunwu.openai.gpt-image-2.generate',
+      contractId: 'newapi.openai.gpt-image-2.generate',
       operation: 'text-to-image',
       modelMapping: { suffix: 'g', modelId: 'gpt-image-2' },
       explicit: { resolution: '2k', aspectRatio: '16:9' },
@@ -84,7 +84,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('contractFields propagate: gemini 3 Pro imageSize + aspectRatio', () => {
     const { requestContext } = buildProtocolRequestContext({
       protocol: 'gemini',
-      contractId: 'yunwu.gemini.3-pro.generate',
+      contractId: 'newapi.gemini.3-pro.generate',
       operation: 'text-to-image',
       modelMapping: { suffix: 'g3', modelId: 'gemini-3-pro-image' },
       explicit: { imageSize: '1K', aspectRatio: '16:9' },
@@ -96,7 +96,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('contractFields propagate: MJ botType', () => {
     const { requestContext } = buildProtocolRequestContext({
       protocol: 'mj',
-      contractId: 'yunwu.mj.imagine',
+      contractId: 'newapi.mj.imagine',
       operation: 'text-to-image',
       modelMapping: { suffix: 'mj', modelId: 'mj_imagine' },
       explicit: { aspectRatio: '16:9' },
@@ -107,7 +107,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
   test('OpenAI explicit -1k -4:3 → rejected size, fail-closed at buildProtocolRequestContext', () => {
     const { rejectedParams, requestContext } = buildProtocolRequestContext({
       protocol: 'openai',
-      contractId: 'yunwu.openai.gpt-image-2.generate',
+      contractId: 'newapi.openai.gpt-image-2.generate',
       operation: 'text-to-image',
       modelMapping: { suffix: 'g', modelId: 'gpt-image-2' },
       explicit: { resolution: '1k', aspectRatio: '4:3' },
