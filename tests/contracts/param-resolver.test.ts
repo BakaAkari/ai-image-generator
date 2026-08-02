@@ -66,57 +66,57 @@ describe('resolveContractParams (OpenAI defaults)', () => {
 })
 
 describe('resolveContractParams (Gemini)', () => {
-  test('yunwu 2.5: no imageSize emitted even when user provides', () => {
+  test('newapi 2.5: no imageSize emitted even when user provides', () => {
     const r = resolveContractParams(GEMINI_2_5, { imageSize: '1K', aspectRatio: '16:9' })
     expect(r.fields.imageSize).toBeUndefined()
     expect(r.fields.aspectRatio).toBe('16:9')
     expect(r.rejected.some(x => x.key === 'imageSize')).toBe(true)
   })
 
-  test('yunwu 3 Pro: 1K uppercase preserved even from lowercase input', () => {
+  test('newapi 3 Pro: 1K uppercase preserved even from lowercase input', () => {
     const r = resolveContractParams(GEMINI_3_PRO, { imageSize: '1k', aspectRatio: '9:16' })
     expect(r.fields.imageSize).toBe('1K')
     expect(r.fields.aspectRatio).toBe('9:16')
   })
 
-  test('yunwu 3 Pro edit contract does not emit imageConfig fields', () => {
+  test('newapi 3 Pro edit contract does not emit imageConfig fields', () => {
     const r = resolveContractParams(GEMINI_3_PRO_EDIT, { imageSize: '1k', aspectRatio: '16:9' })
     expect(r.fields.imageSize).toBeUndefined()
     expect(r.fields.aspectRatio).toBeUndefined()
     expect(r.rejected.length).toBeGreaterThanOrEqual(1)
   })
 
-  test('yunwu 2.5 无参数 → 补默认 aspectRatio 1:1，但不发 imageSize', () => {
+  test('newapi 2.5 无参数 → 补默认 aspectRatio 1:1，但不发 imageSize', () => {
     const r = resolveContractParams(GEMINI_2_5, {})
     expect(r.fields.aspectRatio).toBe('1:1')
     expect(r.fields.imageSize).toBeUndefined()
     expect(r.rejected).toEqual([])
   })
 
-  test('yunwu 2.5 显式 -1k → 明确不支持，返回 rejected', () => {
+  test('newapi 2.5 显式 -1k → 明确不支持，返回 rejected', () => {
     const r = resolveContractParams(GEMINI_2_5, { imageSize: '1k' })
     expect(r.rejected.some(x => x.key === 'imageSize')).toBe(true)
   })
 
-  test('yunwu 3 Pro 无参数 → 默认 aspectRatio 1:1 + imageSize 1K', () => {
+  test('newapi 3 Pro 无参数 → 默认 aspectRatio 1:1 + imageSize 1K', () => {
     const r = resolveContractParams(GEMINI_3_PRO, {})
     expect(r.fields.aspectRatio).toBe('1:1')
     expect(r.fields.imageSize).toBe('1K')
   })
 
-  test('yunwu 3 Pro 只写比例 → 补 imageSize 1K', () => {
+  test('newapi 3 Pro 只写比例 → 补 imageSize 1K', () => {
     const r = resolveContractParams(GEMINI_3_PRO, { aspectRatio: '16:9' })
     expect(r.fields.aspectRatio).toBe('16:9')
     expect(r.fields.imageSize).toBe('1K')
   })
 
-  test('yunwu 3 Pro 只写清晰度 → 补 aspectRatio 1:1', () => {
+  test('newapi 3 Pro 只写清晰度 → 补 aspectRatio 1:1', () => {
     const r = resolveContractParams(GEMINI_3_PRO, { imageSize: '2K' })
     expect(r.fields.imageSize).toBe('2K')
     expect(r.fields.aspectRatio).toBe('1:1')
   })
 
-  test('yunwu 3 Pro edit 用户未写尺寸 → 正常，不补 imageConfig 字段', () => {
+  test('newapi 3 Pro edit 用户未写尺寸 → 正常，不补 imageConfig 字段', () => {
     const r = resolveContractParams(GEMINI_3_PRO_EDIT, {})
     expect(r.fields.imageSize).toBeUndefined()
     expect(r.fields.aspectRatio).toBeUndefined()

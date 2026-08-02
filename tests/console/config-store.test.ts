@@ -11,7 +11,7 @@ function baseConfig(): Config {
     activeSupplier: 'newapi',
     catalogRefreshHours: 6,
     pricingMarkupPercent: 30,
-    yunwuCreditToRmb: 0.5,
+    supplierCreditToRmb: 0.5,
     trialImageLimit: 1,
     defaultCreditCostPerImage: 0.3,
     defaultNumImages: 1,
@@ -43,7 +43,7 @@ function baseConfig(): Config {
     yesimbotExposeStyleListTool: false,
     providerSettings: {
       openaiCompatibleApiKey: 'secret',
-      openaiCompatibleApiBase: 'https://yunwu.ai/v1',
+      openaiCompatibleApiBase: 'https://api.openai.com/v1',
       openaiCompatibleExtraHeaders: { 'X-Existing': 'keep-me' },
     },
   } as unknown as Config

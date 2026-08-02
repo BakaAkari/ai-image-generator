@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { getContractById, resolveContract } from '../../src/contracts/registry.js'
 
 describe('resolveContract', () => {
-  test('yunwu OpenAI text-to-image resolves to gpt-image-2 generate contract', () => {
+  test('newapi OpenAI text-to-image resolves to gpt-image-2 generate contract', () => {
     const result = resolveContract({
       modelId: 'gpt-image-2',
       supplier: 'newapi',
@@ -31,7 +31,7 @@ describe('resolveContract', () => {
     }
   })
 
-  test('yunwu OpenAI image-edit for gpt-image-2 resolves to edit contract with multipart', () => {
+  test('newapi OpenAI image-edit for gpt-image-2 resolves to edit contract with multipart', () => {
     const result = resolveContract({
       modelId: 'gpt-image-2',
       supplier: 'newapi',
@@ -45,7 +45,7 @@ describe('resolveContract', () => {
     }
   })
 
-  test('yunwu Gemini 2.5 generate contract does not declare imageSize', () => {
+  test('newapi Gemini 2.5 generate contract does not declare imageSize', () => {
     const result = resolveContract({
       modelId: 'gemini-2.5-flash-image',
       supplier: 'newapi',
@@ -59,7 +59,7 @@ describe('resolveContract', () => {
     }
   })
 
-  test('yunwu Gemini 3 Pro generate contract declares uppercase 1K/2K/4K', () => {
+  test('newapi Gemini 3 Pro generate contract declares uppercase 1K/2K/4K', () => {
     const result = resolveContract({
       modelId: 'gemini-3-pro-image-preview',
       supplier: 'newapi',
@@ -72,7 +72,7 @@ describe('resolveContract', () => {
     }
   })
 
-  test('yunwu Gemini 3 Pro edit contract does not send imageConfig', () => {
+  test('newapi Gemini 3 Pro edit contract does not send imageConfig', () => {
     const result = resolveContract({
       modelId: 'gemini-3-pro-image-preview',
       supplier: 'newapi',

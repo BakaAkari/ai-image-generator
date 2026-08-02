@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { buildProtocolRequestContext } from '../../src/shared/generation-setup.js'
 
 describe('buildProtocolRequestContext (contract-driven branch)', () => {
-  test('yunwu OpenAI GPT Image 2 generate: aspect+resolution → size in requestContext', () => {
+  test('newapi OpenAI GPT Image 2 generate: aspect+resolution → size in requestContext', () => {
     const { requestContext, rejectedParams } = buildProtocolRequestContext({
       protocol: 'openai',
       supplier: 'openai-compatible',
@@ -20,7 +20,7 @@ describe('buildProtocolRequestContext (contract-driven branch)', () => {
     expect(rejectedParams).toEqual([])
   })
 
-  test('yunwu Gemini 2.5 rejects imageSize; only aspectRatio passes', () => {
+  test('newapi Gemini 2.5 rejects imageSize; only aspectRatio passes', () => {
     const { requestContext, rejectedParams } = buildProtocolRequestContext({
       protocol: 'gemini',
       contractId: 'newapi.gemini.2-5.generate',

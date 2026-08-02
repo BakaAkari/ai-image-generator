@@ -26,7 +26,7 @@ function makeProvider(ctx: any, modelId = 'gpt-image-2') {
     ctx,
     apiKey: 'k',
     modelId,
-    apiBase: 'https://yunwu.ai',
+    apiBase: 'https://api.openai.com/v1',
     apiTimeout: 60,
     loggerName: 'test-openai',
   })
@@ -97,7 +97,7 @@ describe('OpenAIProvider create (contract-driven)', () => {
       ctx,
       apiKey: 'k',
       modelId: 'gpt-image-2-c',
-      apiBase: 'https://yunwu.ai',
+      apiBase: 'https://api.openai.com/v1',
       apiTimeout: 60,
       loggerName: 'test-openai-c',
     })

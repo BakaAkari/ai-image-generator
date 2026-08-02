@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { runProbe, redactText } from '../../scripts/probe-yunwu-catalog.mjs'
+import { runProbe, redactText } from '../../scripts/probe-newapi-catalog.mjs'
 
 const responses: Record<string, unknown> = {
   '/v1/models': { data: [{ id: 'm1', model_type: '图像', supported_endpoint_types: ['image-generation'], new_model_field: 1 }, { id: 'm2', supported_endpoint_types: ['mystery-endpoint'] }] },
@@ -13,7 +13,7 @@ function fetchImpl(url: string) {
   return Promise.resolve(new Response(JSON.stringify(responses[path]), { status: 200 }))
 }
 
-describe('yunwu catalog probe', () => {
+describe('newapi catalog probe', () => {
   const fakeSecret = `sk-${'a'.repeat(24)}`
   test('redacts API keys, bearer values and token names', () => {
     expect(redactText(`Bearer ${fakeSecret} token_name=secret`)).not.toContain(fakeSecret)
@@ -21,7 +21,7 @@ describe('yunwu catalog probe', () => {
   })
 
   test('is read-only and returns sanitized endpoint/count/schema report', async () => {
-    const report = await runProbe({ apiBase: 'https://yunwu.ai/v1', apiKey: fakeSecret, fetchImpl })
+    const report = await runProbe({ apiBase: 'https://api.example.com/v1', apiKey: fakeSecret, fetchImpl })
     expect(report.exitCode).toBe(0)
     expect(report.summary.models).toBe(2)
     expect(report.summary.pricing).toBe(1)
@@ -34,7 +34,7 @@ describe('yunwu catalog probe', () => {
 
   test('reports schema additions against a baseline', async () => {
     const report = await runProbe({
-      apiBase: 'https://yunwu.ai/v1', apiKey: 'test', fetchImpl,
+      apiBase: 'https://api.example.com/v1', apiKey: 'test', fetchImpl,
       baseline: { models: ['id', 'model_type', 'supported_endpoint_types'], pricing: ['model_name', 'quota_type', 'model_price'] },
     })
     expect(report.schemaDiff.models.added).toContain('new_model_field')
@@ -43,7 +43,7 @@ describe('yunwu catalog probe', () => {
 
   test('returns nonzero exit code on endpoint failure without leaking auth', async () => {
     const report = await runProbe({
-      apiBase: 'https://yunwu.ai/v1', apiKey: fakeSecret,
+      apiBase: 'https://api.example.com/v1', apiKey: fakeSecret,
       fetchImpl: async () => new Response(`Bearer ${fakeSecret}`, { status: 500 }),
     })
     expect(report.exitCode).toBe(2)

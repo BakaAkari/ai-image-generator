@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url'
 
-const KNOWN_GENERATION_ENDPOINTS = new Set(['image-generation', 'images/generations', 'openai-绘图', 'openai-编辑', 'openai编辑图片', 'dall-e-3', 'dall-e-2', 'openai', 'gemini'])
+const KNOWN_GENERATION_ENDPOINTS = new Set(['image-generation', 'images/generations', 'openai-绘图', 'openai-编辑', 'openai编辑图片', 'dall-e-3', 'dall-e-2', 'openai', 'gemini', 'MJ imagine'])
 const KNOWN_NON_GENERATION_ENDPOINTS = new Set(['数字人', '图像识别', 'mj图片上传', '图片模板'])
 
 export function redactText(value) {
@@ -49,7 +49,7 @@ export async function runProbe(options) {
 
   return {
     exitCode: errors.length ? 2 : 0,
-    supplier: 'yunwu',
+    supplier: 'newapi',
     apiBase,
     summary: { models: models.length, pricing: pricing.length, endpointTypes: endpointNames.length },
     unknownEndpoints,
@@ -73,10 +73,10 @@ function diffKeys(before, after) {
 }
 
 async function main() {
-  const apiBase = process.env.YUNWU_API_BASE || 'https://yunwu.ai/v1'
-  const apiKey = process.env.YUNWU_API_KEY || ''
+  const apiBase = process.env.NEWAPI_API_BASE || ''
+  const apiKey = process.env.NEWAPI_API_KEY || ''
   if (!apiKey) {
-    console.error(JSON.stringify({ exitCode: 1, error: 'YUNWU_API_KEY is required' }))
+    console.error(JSON.stringify({ exitCode: 1, error: 'NEWAPI_API_KEY is required' }))
     process.exitCode = 1
     return
   }

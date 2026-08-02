@@ -17,7 +17,7 @@ describe('ImageCatalogService scheduler wiring', () => {
     const service = new ImageCatalogService(ctx, logger, '/tmp/catalog-wiring-' + Date.now())
     service.start(() => ({
       supplier: 'newapi',
-      apiBase: 'https://yunwu.ai/v1',
+      apiBase: 'https://api.example.com/v1',
       apiKey: '',
       timeoutSec: 30,
       refreshHours: 6,
@@ -55,7 +55,7 @@ describe('ImageCatalogService scheduler wiring', () => {
     const service = new ImageCatalogService(ctx, logger, '/tmp/catalog-wiring-' + Date.now())
     service.start(() => ({
       supplier: 'newapi',
-      apiBase: 'https://yunwu.ai/v1',
+      apiBase: 'https://api.example.com/v1',
       apiKey: '',
       timeoutSec: 30,
       refreshHours: 6,

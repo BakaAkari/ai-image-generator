@@ -49,7 +49,7 @@
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
-    "probe:yunwu": "node scripts/probe-yunwu-catalog.mjs"
+    "probe:newapi": "node scripts/probe-newapi-catalog.mjs"
   },
   "publishConfig": {
     "access": "public"

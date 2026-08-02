@@ -27,7 +27,7 @@ function makeCtx(handler?: (url: string, body: unknown) => unknown) {
   return { ctx, post }
 }
 
-function makeProvider(ctx: any, modelId = 'gemini-3-pro-image-preview', apiBase = 'https://yunwu.ai') {
+function makeProvider(ctx: any, modelId = 'gemini-3-pro-image-preview', apiBase = 'https://api.example.com') {
   return new GeminiProvider({
     ctx,
     apiKey: 'k',
@@ -38,7 +38,7 @@ function makeProvider(ctx: any, modelId = 'gemini-3-pro-image-preview', apiBase 
   })
 }
 
-describe('GeminiProvider yunwu 2.5 contract', () => {
+describe('GeminiProvider newapi 2.5 contract', () => {
   test('does NOT emit imageSize even if provided', async () => {
     let capturedBody: any
     const { ctx } = makeCtx((_, body) => { capturedBody = body; return { candidates: [{ content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } }] } })
@@ -54,7 +54,7 @@ describe('GeminiProvider yunwu 2.5 contract', () => {
   })
 })
 
-describe('GeminiProvider yunwu 3 Pro contract', () => {
+describe('GeminiProvider newapi 3 Pro contract', () => {
   test('emits uppercase imageSize + aspectRatio', async () => {
     let capturedBody: any
     const { ctx } = makeCtx((_, body) => { capturedBody = body; return { candidates: [{ content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } }] } })
@@ -69,7 +69,7 @@ describe('GeminiProvider yunwu 3 Pro contract', () => {
   })
 })
 
-describe('GeminiProvider yunwu 3 Pro edit contract', () => {
+describe('GeminiProvider newapi 3 Pro edit contract', () => {
   test('does NOT emit imageConfig; only responseModalities', async () => {
     let capturedBody: any
     const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
@@ -160,7 +160,7 @@ describe('GeminiProvider response parsing', () => {
     expect(result[0]).toMatch(/^data:image\/jpeg;base64,BBBB$/)
   })
 
-  test('yunwu response_format=url at top-level data[]', async () => {
+  test('newapi response_format=url at top-level data[]', async () => {
     const { ctx } = makeCtx(() => ({
       data: [{ url: 'https://cdn/x.png' }],
     }))

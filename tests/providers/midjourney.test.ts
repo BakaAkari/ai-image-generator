@@ -36,7 +36,7 @@ function makeProvider(ctx: any, opts: { pollIntervalMs?: number; taskTimeoutMs?:
     ctx,
     apiKey: 'k',
     modelId: 'mj_imagine',
-    apiBase: 'https://yunwu.ai',
+    apiBase: '',
     apiTimeout: 60,
     loggerName: 'test',
     pollIntervalMs: opts.pollIntervalMs ?? 1,
