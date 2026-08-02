@@ -11,7 +11,7 @@
  * - 非 Imagine 的 MJ Action/Blend/Describe/Kling 目前无契约，服务层 fail-closed，
  *   本 Provider 只处理 imagine 契约；其他契约 id → 抛错。
  *
- * yunwu MJ 端点返回 Content-Type: text/plain，仍需手动 JSON.parse。
+ * new-api MJ 端点返回 Content-Type: text/plain，仍需手动 JSON.parse。
  */
 import type { Context } from 'koishi'
 
@@ -41,6 +41,7 @@ interface MjTaskResponse {
   properties?: { finalPrompt?: string }
 }
 
+/** apiBase 由 providerSettings.openaiCompatibleApiBase 传入；未配置时为空，请求失败以暴露配置缺失。 */
 export function createMjProvider(
   ctx: Context,
   config: Record<string, unknown>,
@@ -49,7 +50,7 @@ export function createMjProvider(
     ctx,
     apiKey: (config.apiKey as string) || '',
     modelId: (config.modelId as string) || '',
-    apiBase: (config.apiBase as string) || 'https://yunwu.ai',
+    apiBase: (config.apiBase as string) || '',
     apiTimeout: (config.apiTimeout as number) || 300,
     extraHeaders: (config.extraHeaders as Record<string, string>) || {},
     logLevel: config.logLevel as BaseProviderOptions['logLevel'],

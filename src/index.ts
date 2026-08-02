@@ -229,7 +229,7 @@ export async function apply(ctx: Context, config: Config) {
     const s = config.providerSettings
     if (active === 'yunwu' || active === 'gptgod' || active === 'newapi') {
       const apiKey = s?.openaiCompatibleApiKey || config.openaiCompatibleApiKey || ''
-      const defaultBase = active === 'gptgod' ? 'https://gptgod.cloud/v1' : 'https://yunwu.ai/v1'
+      const defaultBase = active === 'gptgod' ? 'https://gptgod.cloud/v1' : active === 'yunwu' ? 'https://yunwu.ai/v1' : ''
       const apiBase = s?.openaiCompatibleApiBase || config.openaiCompatibleApiBase || defaultBase
       if (!apiKey) return null
       return {

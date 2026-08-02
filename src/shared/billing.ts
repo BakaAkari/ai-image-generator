@@ -2,11 +2,19 @@ import type { Config } from './config.js'
 import type { ImageGenerationModifiers, ModelMappingConfig } from './types.js'
 
 /**
- * 供应商积分与人民币的约定汇率（1 供应商积分 = ¥0.5，yunwu 官方口径）。
+ * 供应商积分与人民币的约定汇率（1 供应商积分 = ¥0.5，默认值）。
  * 与 `catalog/billing-info.ts` 的 PLATFORM_CREDIT_TO_RMB 保持一致；此处内嵌是为了
  * 避免 shared/billing.ts 反向依赖 catalog 子模块，同时让运行时定价公式清晰自证。
+ * 可通过 config.supplierCreditToRmb 覆盖。
  */
 export const SUPPLIER_CREDIT_TO_RMB = 0.5
+
+/** 按配置返回供应商积分 → 人民币汇率；未配置或无效时用默认 0.5。 */
+export function resolveSupplierCreditToRmb(configValue?: number): number {
+  return typeof configValue === 'number' && Number.isFinite(configValue) && configValue > 0
+    ? configValue
+    : SUPPLIER_CREDIT_TO_RMB
+}
 
 /**
  * 后生成定价：将 usage.totalTokens × tokenRatio 转换为供应商积分。
@@ -20,11 +28,11 @@ export function tokensToSupplierCredits(totalTokens: number, tokenRatio = 1): nu
 
 /**
  * 后生成定价：从供应商积分计算最终平台积分成本。
- * 公式：supplierCredits × 0.5 × creditsPerCny × (1 + pricingMarkupPercent/100)
+ * 公式：supplierCredits × supplierCreditToRmb × creditsPerCny × (1 + pricingMarkupPercent/100)
  */
 export function computePostGenerationCost(
   supplierCredits: number,
-  config: { creditsPerCny?: number; pricingMarkupPercent?: number },
+  config: { creditsPerCny?: number; pricingMarkupPercent?: number; supplierCreditToRmb?: number },
 ): number {
   const safeSupplierCredits = typeof supplierCredits === 'number' && Number.isFinite(supplierCredits) && supplierCredits > 0 ? supplierCredits : 0
   const creditsPerCny = Number(config.creditsPerCny)
@@ -32,7 +40,8 @@ export function computePostGenerationCost(
   const markupPercent = config.pricingMarkupPercent
   const validMarkup = typeof markupPercent === 'number' && Number.isFinite(markupPercent) && markupPercent >= 0 ? markupPercent : 0
   const markupMultiplier = 1 + validMarkup / 100
-  return roundCredits(safeSupplierCredits * SUPPLIER_CREDIT_TO_RMB * validCreditsPerCny * markupMultiplier)
+  const exchangeRate = resolveSupplierCreditToRmb(config.supplierCreditToRmb)
+  return roundCredits(safeSupplierCredits * exchangeRate * validCreditsPerCny * markupMultiplier)
 }
 
 /**
@@ -59,7 +68,7 @@ export interface CatalogModelForPricing {
  */
 export function estimatePreGenerationCost(
   modelId: string,
-  config: { creditsPerCny?: number; pricingMarkupPercent?: number },
+  config: { creditsPerCny?: number; pricingMarkupPercent?: number; supplierCreditToRmb?: number },
   catalogModels: CatalogModelForPricing[],
   groupRatio = 1,
 ): GenerationCost {

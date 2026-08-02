@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { calculateGenerationCost, computePostGenerationCost, tokensToSupplierCredits } from '../../src/shared/billing.js'
+import { calculateGenerationCost, computePostGenerationCost, resolveSupplierCreditToRmb, tokensToSupplierCredits } from '../../src/shared/billing.js'
 import type { Config } from '../../src/shared/config.js'
 
 const config = {
@@ -65,5 +65,28 @@ describe('post-generation pricing', () => {
   test('computePostGenerationCost returns 0 for invalid inputs', () => {
     expect(computePostGenerationCost(0, { creditsPerCny: 10, pricingMarkupPercent: 30 })).toBe(0)
     expect(computePostGenerationCost(-1, { creditsPerCny: 10, pricingMarkupPercent: 30 })).toBe(0)
+  })
+
+  test('computePostGenerationCost honors custom supplierCreditToRmb', () => {
+    // 1 supplier credit × 0.8 × 10 × 1.3 = 10.4
+    const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 30, supplierCreditToRmb: 0.8 })
+    expect(cost).toBe(10.4)
+  })
+})
+
+describe('resolveSupplierCreditToRmb', () => {
+  test('returns default 0.5 when undefined', () => {
+    expect(resolveSupplierCreditToRmb(undefined)).toBe(0.5)
+  })
+
+  test('returns config value when valid', () => {
+    expect(resolveSupplierCreditToRmb(0.8)).toBe(0.8)
+  })
+
+  test('falls back to default for non-positive or invalid values', () => {
+    expect(resolveSupplierCreditToRmb(0)).toBe(0.5)
+    expect(resolveSupplierCreditToRmb(-1)).toBe(0.5)
+    expect(resolveSupplierCreditToRmb(Number.NaN)).toBe(0.5)
+    expect(resolveSupplierCreditToRmb(Number.POSITIVE_INFINITY)).toBe(0.5)
   })
 })

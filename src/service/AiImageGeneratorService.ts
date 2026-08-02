@@ -84,7 +84,8 @@ interface SessionConversationLike {
 }
 
 const DEFAULT_GEMINI_API_BASE = 'https://generativelanguage.googleapis.com'
-const DEFAULT_OPENAI_API_BASE = 'https://yunwu.ai'
+/** 兜底 base；生产由 providerSettings.openaiCompatibleApiBase 覆盖。禁止硬编码特定中转站。 */
+const DEFAULT_OPENAI_API_BASE = 'https://api.openai.com'
 const DEFAULT_CONTEXT_HISTORY_SIZE = 20
 
 export class AiImageGeneratorService extends Service {
