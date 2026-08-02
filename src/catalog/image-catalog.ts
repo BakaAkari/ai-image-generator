@@ -10,16 +10,28 @@ import type { Context, Logger } from 'koishi'
 import path from 'node:path'
 
 import type { BillingInfo } from './billing-info.js'
-import { normalizeYunwuBilling } from './billing-info.js'
+import { normalizeNewApiBilling } from './billing-info.js'
 import type { ActiveSupplier, CatalogSnapshot, ImageModelInfo } from './types.js'
-import { createKeyScopeFingerprint, YunwuClient } from '../suppliers/yunwu/client.js'
-import { normalizeYunwuSnapshot } from '../suppliers/yunwu/normalizer.js'
-import type { YunwuRawSnapshot } from '../suppliers/yunwu/raw-types.js'
+import { createKeyScopeFingerprint, NewApiClient, NewApiClientConfig } from '../suppliers/newapi/client.js'
+import { normalizeNewApiSnapshot } from '../suppliers/newapi/normalizer.js'
+import type { NewApiRawSnapshot } from '../suppliers/newapi/raw-types.js'
+import { SupplierRegistry } from '../suppliers/registry.js'
+import type { SupplierEndpointsConfig } from '../suppliers/newapi/client.js'
 import { CatalogFileRepository } from './catalog-repository.js'
 import { CatalogScheduler } from './catalog-scheduler.js'
 
-export function canPublishYunwuSnapshot(snapshot: Pick<YunwuRawSnapshot, 'endpoints'>): boolean {
+export function canPublishNewApiSnapshot(snapshot: Pick<NewApiRawSnapshot, 'endpoints'>): boolean {
   return snapshot.endpoints.models.success === true
+}
+
+interface CatalogConfig {
+  supplier: ActiveSupplier
+  apiBase: string
+  apiKey: string
+  timeoutSec: number
+  refreshHours: number
+  extraHeaders?: Record<string, string>
+  endpoints?: SupplierEndpointsConfig
 }
 
 export class ImageCatalogService {
@@ -28,7 +40,7 @@ export class ImageCatalogService {
   private readonly repository: CatalogFileRepository<{ snapshot: CatalogSnapshot; billing: BillingInfo | null }>
   private scheduler: CatalogScheduler | null = null
   private refreshing: Promise<CatalogSnapshot | null> | null = null
-  private getConfig: (() => { supplier: ActiveSupplier; apiBase: string; apiKey: string; timeoutSec: number; refreshHours: number; extraHeaders?: Record<string, string> }) | null = null
+  private getConfig: (() => CatalogConfig) | null = null
 
   constructor(
     private ctx: Context,
@@ -47,7 +59,7 @@ export class ImageCatalogService {
   }
 
   /** 启动定时刷新；立即恢复当前 scope 缓存并触发后台刷新。 */
-  start(getConfig: () => { supplier: ActiveSupplier; apiBase: string; apiKey: string; timeoutSec: number; refreshHours: number; extraHeaders?: Record<string, string> }) {
+  start(getConfig: () => CatalogConfig) {
     this.getConfig = getConfig
     this.scheduler = new CatalogScheduler(async () => {
       const cfg = getConfig()
@@ -69,35 +81,45 @@ export class ImageCatalogService {
   }
 
   /** 手动/定时刷新；并发调用合并为同一 Promise */
-  refresh(cfg: { supplier: ActiveSupplier; apiBase: string; apiKey: string; timeoutSec: number; extraHeaders?: Record<string, string> }): Promise<CatalogSnapshot | null> {
+  refresh(cfg: Omit<CatalogConfig, 'refreshHours'>): Promise<CatalogSnapshot | null> {
     if (this.refreshing) return this.refreshing
     this.refreshing = this.doRefresh(cfg).finally(() => { this.refreshing = null })
     return this.refreshing
   }
 
-  private async doRefresh(cfg: { supplier: ActiveSupplier; apiBase: string; apiKey: string; timeoutSec: number; extraHeaders?: Record<string, string> }): Promise<CatalogSnapshot | null> {
-    if (cfg.supplier !== 'yunwu') {
-      const message = `supplier ${cfg.supplier} is not adapted; only yunwu is maintained`
+  private async doRefresh(cfg: Omit<CatalogConfig, 'refreshHours'>): Promise<CatalogSnapshot | null> {
+    if (cfg.supplier !== 'newapi') {
+      const message = `supplier ${cfg.supplier} is not adapted; only newapi is maintained`
       this.logger.warn(message)
       if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
       return this.snapshot
     }
-    const client = new YunwuClient({
+    const registry = new SupplierRegistry()
+    registry.register('newapi', (c) => new NewApiClient(c))
+    const clientConfig: NewApiClientConfig = {
       apiBase: cfg.apiBase,
       apiKey: cfg.apiKey,
       timeoutSec: cfg.timeoutSec,
       extraHeaders: cfg.extraHeaders,
-    })
+      endpoints: cfg.endpoints,
+    }
+    const client = registry.create(cfg.supplier, clientConfig)
+    if (!client) {
+      const message = `supplier ${cfg.supplier} adapter not registered`
+      this.logger.warn(message)
+      if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
+      return this.snapshot
+    }
     try {
-      const raw = await client.fetchSnapshot()
-      if (!canPublishYunwuSnapshot(raw)) {
-        const message = raw.endpoints.models.error || 'yunwu models endpoint failed'
+      const raw = await client.fetchSnapshot() as NewApiRawSnapshot
+      if (!canPublishNewApiSnapshot(raw)) {
+        const message = raw.endpoints.models.error || 'newapi models endpoint failed'
         this.logger.warn('model catalog refresh rejected: %s（沿用旧缓存）', message)
         if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
         return this.snapshot
       }
-      const normalized = normalizeYunwuSnapshot(raw)
-      this.billing = normalizeYunwuBilling(raw)
+      const normalized = normalizeNewApiSnapshot(raw)
+      this.billing = normalizeNewApiBilling(raw)
       const groupRatio = raw.endpoints.pricing.success ? (raw.endpoints.pricing.data as any)?.group_ratio : undefined
       const models: ImageModelInfo[] = normalized.models.map(model => ({
         id: model.id,
@@ -117,7 +139,7 @@ export class ImageCatalogService {
           unsupportedReasons: model.unsupportedReasons ?? ['no recognized image generation endpoint'],
         }))
       this.snapshot = {
-        supplier: 'yunwu',
+        supplier: 'newapi',
         models,
         unsupportedModels,
         fetchedAt: normalized.fetchedAt,
@@ -125,7 +147,7 @@ export class ImageCatalogService {
         error: normalized.error,
       }
       await this.persist(cfg)
-      this.logger.info('model catalog refreshed: supplier=yunwu models=%d unsupported=%d billing=%s',
+      this.logger.info('model catalog refreshed: supplier=newapi models=%d unsupported=%d billing=%s',
         models.length, unsupportedModels.length,
         this.billing.supplierCredits != null ? `${this.billing.supplierCredits.toFixed(2)}供应商积分` : 'n/a')
       return this.snapshot
@@ -137,7 +159,7 @@ export class ImageCatalogService {
     }
   }
 
-  private async persist(cfg: { supplier: ActiveSupplier; apiBase: string; apiKey: string }) {
+  private async persist(cfg: Pick<CatalogConfig, 'supplier' | 'apiBase' | 'apiKey'>) {
     const keyScopeFingerprint = createKeyScopeFingerprint({ supplier: cfg.supplier, apiBase: cfg.apiBase, apiKey: cfg.apiKey })
     try {
       await this.repository.save({

@@ -29,7 +29,7 @@ export interface RegisterCatalogCommandsParams {
 
 function formatPrice(m: ImageModelInfo): string {
   const p = m.pricing
-  // yunwu /api/pricing 的 model_price 语义是“供应商积分/次”（上游计费单位，
+  // new-api /api/pricing 的 model_price 语义是“供应商积分/次”（上游计费单位，
   // 1 供应商积分 = ¥0.5）；这里只做展示，不参与运行时用户计价。
   if (p.type === 'per-call' && p.pricePerCall != null) return `${p.pricePerCall.toFixed(2)} 供应商积分/次`
   if (p.type === 'per-token' && p.tokenRatio != null) return `token×${p.tokenRatio}`
@@ -60,7 +60,7 @@ export function registerCatalogCommands(params: RegisterCatalogCommandsParams) {
       }
 
       const lines: string[] = []
-      const supplierName = { yunwu: '云雾', gptgod: 'GPTGod', 'openai-official': 'OpenAI 官方', 'gemini-official': 'Gemini 官方' }[snapshot.supplier]
+      const supplierName = { newapi: 'NewAPI 兼容', 'openai-official': 'OpenAI 官方', 'gemini-official': 'Gemini 官方' }[snapshot.supplier]
       lines.push(`📋 图像模型目录（供应商：${supplierName}，共 ${snapshot.models.length} 个）`)
       const withPricing = snapshot.models.filter(m => m.pricing.type !== 'unknown')
       const unknown = snapshot.models.length - withPricing.length

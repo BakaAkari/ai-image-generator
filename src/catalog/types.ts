@@ -1,16 +1,16 @@
 /**
  * 动态模型目录 — 类型定义
  *
- * 供应商（Supplier）：互斥单选的凭证入口（yunwu / gptgod / openai-official / gemini-official）
+ * 供应商（Supplier）：互斥单选的凭证入口（newapi / openai-official / gemini-official）
  * 目录（Catalog）：从激活供应商拉取的图像模型清单 + 计价信息
  */
 
-export type ActiveSupplier = 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
+export type ActiveSupplier = 'newapi' | 'openai-official' | 'gemini-official'
 
 export interface ImageModelPricing {
   /** per-call = 按次固定供应商积分；per-token = 按 token 倍率 */
   type: 'per-call' | 'per-token' | 'unknown'
-  /** per-call 单价（供应商积分/次；1 供应商积分 = ¥0.5） */
+  /** per-call 单价（供应商积分/次；new-api 语义下 1 供应商积分 = ¥0.5） */
   pricePerCall?: number
   /** per-token 倍率（相对平台基础价） */
   tokenRatio?: number

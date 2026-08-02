@@ -1,9 +1,9 @@
-import type { YunwuRawSnapshot } from '../suppliers/yunwu/raw-types.js'
+import type { NewApiRawSnapshot } from '../suppliers/newapi/raw-types.js'
 
 /**
- * yunwu 账单快照。
+ * new-api 账单快照。
  *
- * 术语澄清（0.9.1）：`total_usage / 500000` 语义是**供应商积分**（上游 yunwu 的
+ * 术语澄清（0.9.1）：`total_usage / 500000` 语义是**供应商积分**（上游 new-api 系
  * 计费单位，官方口径 1 供应商积分 = ¥0.5）。历史字段 `totalUsageUsd` /
  * `platformCredits` 都是同一数值的旧命名，本轮起改暴露 `supplierCredits` 作为
  * 语义正确的入口；`platformCredits` / `totalUsageUsd` 保留同值别名一版，兼容
@@ -13,7 +13,7 @@ import type { YunwuRawSnapshot } from '../suppliers/yunwu/raw-types.js'
  */
 export interface BillingInfo {
   /**
-   * 累计消耗的供应商积分（yunwu 上游 `total_usage / 500000`）。0.9.1 新增的语义正确入口。
+   * 累计消耗的供应商积分（new-api 上游 `total_usage / 500000`）。0.9.1 新增的语义正确入口。
    * 声明为可选是为了让旧测试 fixture / 缓存 JSON 不带此键时仍能反序列化；解析器 always
    * 会填充此字段。运行时读者请用 `supplierCredits ?? platformCredits ?? totalUsageUsd`。
    */
@@ -40,7 +40,7 @@ export const SUPPLIER_CREDIT_TO_RMB = 0.5
 /** @deprecated 使用 SUPPLIER_CREDIT_TO_RMB。 */
 export const PLATFORM_CREDIT_TO_RMB = SUPPLIER_CREDIT_TO_RMB
 
-export function normalizeYunwuBilling(snapshot: YunwuRawSnapshot): BillingInfo {
+export function normalizeNewApiBilling(snapshot: NewApiRawSnapshot): BillingInfo {
   const usage = snapshot.endpoints.billing.success ? snapshot.endpoints.billing.data : undefined
   const status = snapshot.endpoints.status.success ? snapshot.endpoints.status.data : undefined
   const rawTotal = typeof usage?.total_usage === 'number' ? usage.total_usage : null

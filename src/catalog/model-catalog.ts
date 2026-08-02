@@ -6,7 +6,7 @@
  */
 
 /** 激活的供应商 */
-export type ActiveSupplier = 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
+export type ActiveSupplier = 'newapi' | 'openai-official' | 'gemini-official'
 
 /** 图像生成能力 */
 export type ModelCapability =

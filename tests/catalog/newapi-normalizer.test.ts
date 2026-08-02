@@ -1,21 +1,21 @@
 import { describe, test, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { YunwuCatalogNormalizer, normalizeYunwuSnapshot } from '../../src/suppliers/yunwu/normalizer.js'
-import type { YunwuRawSnapshot } from '../../src/suppliers/yunwu/raw-types.js'
+import { NewApiCatalogNormalizer, normalizeNewApiSnapshot } from '../../src/suppliers/newapi/normalizer.js'
+import type { NewApiRawSnapshot } from '../../src/suppliers/newapi/raw-types.js'
 
-function loadSnapshot(): YunwuRawSnapshot {
-  const path = resolve(process.cwd(), 'tests/fixtures/yunwu/snapshot.json')
-  return JSON.parse(readFileSync(path, 'utf-8')) as YunwuRawSnapshot
+function loadSnapshot(): NewApiRawSnapshot {
+  const path = resolve(process.cwd(), 'tests/fixtures/newapi/snapshot.json')
+  return JSON.parse(readFileSync(path, 'utf-8')) as NewApiRawSnapshot
 }
 
-describe('YunwuCatalogNormalizer', () => {
-  const normalizer = new YunwuCatalogNormalizer()
+describe('NewApiCatalogNormalizer', () => {
+  const normalizer = new NewApiCatalogNormalizer()
   const snapshot = loadSnapshot()
   const catalog = normalizer.normalize(snapshot)
 
   test('normalizes supplier and metadata', () => {
-    expect(catalog.supplier).toBe('yunwu')
+    expect(catalog.supplier).toBe('newapi')
     expect(catalog.schemaVersion).toBe(1)
     expect(catalog.parserVersion).toBe('1.0.0')
     expect(catalog.keyScopeFingerprint).toMatch(/^[a-f0-9]{16}$/)
@@ -109,10 +109,10 @@ describe('YunwuCatalogNormalizer', () => {
   })
 })
 
-describe('normalizeYunwuSnapshot', () => {
+describe('normalizeNewApiSnapshot', () => {
   test('exposed function produces same shape as class', () => {
     const snapshot = loadSnapshot()
-    const catalog = normalizeYunwuSnapshot(snapshot)
+    const catalog = normalizeNewApiSnapshot(snapshot)
     expect(catalog.models.length).toBeGreaterThan(0)
     expect(catalog.allModels.length).toBeGreaterThan(catalog.models.length)
   })

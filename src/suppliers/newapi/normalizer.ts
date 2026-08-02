@@ -95,7 +95,7 @@ export class NewApiCatalogNormalizer implements CatalogNormalizer<NewApiRawSnaps
       : 'partial snapshot failure'
 
     return {
-      supplier: 'yunwu',
+      supplier: 'newapi',
       schemaVersion: 1,
       parserVersion: NEWAPI_PARSER_VERSION,
       keyScopeFingerprint: raw.keyScopeFingerprint,

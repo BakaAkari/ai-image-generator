@@ -225,15 +225,15 @@ export async function apply(ctx: Context, config: Config) {
   }
 
   const resolveCredentials = (config: Config) => {
-    const supplier: ActiveSupplier = config.activeSupplier ?? 'yunwu'
+    const active = config.activeSupplier ?? 'newapi'
     const s = config.providerSettings
-    if (supplier === 'yunwu' || supplier === 'gptgod') {
+    if (active === 'yunwu' || active === 'gptgod' || active === 'newapi') {
       const apiKey = s?.openaiCompatibleApiKey || config.openaiCompatibleApiKey || ''
-      const defaultBase = supplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'
+      const defaultBase = active === 'gptgod' ? 'https://gptgod.cloud/v1' : 'https://yunwu.ai/v1'
       const apiBase = s?.openaiCompatibleApiBase || config.openaiCompatibleApiBase || defaultBase
       if (!apiKey) return null
       return {
-        supplier,
+        supplier: 'newapi' as ActiveSupplier,
         apiBase,
         apiKey,
         timeoutSec: config.apiTimeout ?? 60,
@@ -241,11 +241,11 @@ export async function apply(ctx: Context, config: Config) {
         extraHeaders: s?.openaiCompatibleExtraHeaders || config.openaiCompatibleExtraHeaders,
       }
     }
-    if (supplier === 'openai-official') {
+    if (active === 'openai-official') {
       const apiKey = s?.gptOfficialApiKey || config.gptOfficialApiKey || ''
       if (!apiKey) return null
       return {
-        supplier,
+        supplier: 'openai-official' as ActiveSupplier,
         apiBase: 'https://api.openai.com',
         apiKey,
         timeoutSec: config.apiTimeout ?? 60,
@@ -297,7 +297,7 @@ export async function apply(ctx: Context, config: Config) {
     if (!cred) {
       logger.debug('model catalog: no credentials for active supplier, skip refresh')
       return {
-        supplier: currentConfig.activeSupplier ?? 'yunwu',
+        supplier: 'newapi' as ActiveSupplier,
         apiBase: '',
         apiKey: '',
         timeoutSec: 60,

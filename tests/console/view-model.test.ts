@@ -59,10 +59,10 @@ describe('buildConsoleState', () => {
     expect(state.catalog!.unsupportedModels[0]).toMatchObject({ id: 'recognize-only', selectable: false })
   })
 
-  test('only yunwu is marked maintained', () => {
+  test('only newapi is marked maintained', () => {
     const state = buildConsoleState(config, catalog as any, null)
-    expect(state.suppliers.find(s => s.id === 'yunwu')?.status).toBe('maintained')
-    expect(state.suppliers.filter(s => s.id !== 'yunwu').every(s => s.status === 'unsupported')).toBe(true)
+    expect(state.suppliers.find(s => s.id === 'newapi')?.status).toBe('maintained')
+    expect(state.suppliers.filter(s => s.id !== 'newapi').every(s => s.status === 'unsupported')).toBe(true)
   })
 
   test('model row carries its mapping groupRatio', () => {

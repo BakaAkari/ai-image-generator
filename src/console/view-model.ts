@@ -79,8 +79,7 @@ export function buildConsoleState(
   return {
     config,
     suppliers: [
-      { id: 'yunwu', label: '云雾 yunwu.ai', status: 'maintained' },
-      { id: 'gptgod', label: 'GPTGod（暂未适配）', status: 'unsupported' },
+      { id: 'newapi', label: 'NewAPI 兼容（云雾 / GPTGod 等）', status: 'maintained' },
       { id: 'openai-official', label: 'OpenAI 官方（暂未适配）', status: 'unsupported' },
       { id: 'gemini-official', label: 'Gemini 官方（暂未适配）', status: 'unsupported' },
     ],

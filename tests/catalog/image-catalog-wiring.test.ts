@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { ImageCatalogService, canPublishYunwuSnapshot } from '../../src/catalog/image-catalog.js'
+import { ImageCatalogService, canPublishNewApiSnapshot } from '../../src/catalog/image-catalog.js'
 
 const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } as any
 
@@ -16,7 +16,7 @@ describe('ImageCatalogService scheduler wiring', () => {
     const ctx = context()
     const service = new ImageCatalogService(ctx, logger, '/tmp/catalog-wiring-' + Date.now())
     service.start(() => ({
-      supplier: 'yunwu',
+      supplier: 'newapi',
       apiBase: 'https://yunwu.ai/v1',
       apiKey: '',
       timeoutSec: 30,
@@ -34,7 +34,7 @@ describe('ImageCatalogService scheduler wiring', () => {
   })
   test('catalog contract exposes unsupported models separately', () => {
     const snapshot = {
-      supplier: 'yunwu',
+      supplier: 'newapi',
       models: [],
       unsupportedModels: [{ id: 'recognize-only', unsupportedReasons: ['no recognized image generation endpoint'] }],
       fetchedAt: 0,
@@ -43,11 +43,11 @@ describe('ImageCatalogService scheduler wiring', () => {
   })
 
   test('does not publish a snapshot when the authoritative models endpoint failed', () => {
-    expect(canPublishYunwuSnapshot({ endpoints: { models: { success: false } } } as any)).toBe(false)
+    expect(canPublishNewApiSnapshot({ endpoints: { models: { success: false } } } as any)).toBe(false)
   })
 
   test('can publish when models succeeded even if pricing failed', () => {
-    expect(canPublishYunwuSnapshot({ endpoints: { models: { success: true }, pricing: { success: false } } } as any)).toBe(true)
+    expect(canPublishNewApiSnapshot({ endpoints: { models: { success: true }, pricing: { success: false } } } as any)).toBe(true)
   })
 
 })

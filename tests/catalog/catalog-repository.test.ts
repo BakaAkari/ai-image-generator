@@ -11,7 +11,7 @@ function envelope(scope: string, fetchedAt = 1000): CatalogCacheEnvelope {
     keyScopeFingerprint: scope,
     savedAt: fetchedAt,
     catalog: {
-      supplier: 'yunwu',
+      supplier: 'newapi',
       schemaVersion: 1,
       parserVersion: '1.0.0',
       keyScopeFingerprint: scope,
@@ -41,10 +41,10 @@ describe('CatalogFileRepository', () => {
       parserVersion: 'legacy-bridge',
       keyScopeFingerprint: 'scope-a',
       savedAt: 1_000,
-      catalog: { supplier: 'yunwu', models: [], fetchedAt: 1_000 },
+      catalog: { supplier: 'newapi', models: [], fetchedAt: 1_000 },
     })
 
-    expect((await repo.load('scope-a'))?.envelope.catalog.supplier).toBe('yunwu')
+    expect((await repo.load('scope-a'))?.envelope.catalog.supplier).toBe('newapi')
     expect(await repo.load('scope-b')).toBeNull()
   })
 
