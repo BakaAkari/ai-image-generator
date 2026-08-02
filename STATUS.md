@@ -2,6 +2,7 @@
 
 ## 当前 Epic
 - E1: new-api 通用适配器重构（yunwu → newapi），解决 openlux 兼容（MJ endpoint 命名 + billing usage 参数）
+- E2: 动态倍率定价（预扣上界 + 实际路由结算），消除固定 mapping.groupRatio 依赖
 
 ## 已完成
 - [x] TASK-000: 设计文档 `plans/aka-ai-image-generator-newapi-adapter.md` + 基线（b817267）
@@ -13,6 +14,7 @@
 - [x] TASK-006: 前端 newapi 支持（27fe53d）
 - [x] TASK-007: 测试全量更新 + probe 脚本重命名（292084c）
 - [x] TASK-008: 构建 + 部署 + 实机验证（f13b8e3）
+- [x] TASK-009: 动态倍率定价（E2）——预扣上界 + 实际路由结算
 
 ## 进行中
 - 无（Epic 完成）
@@ -22,6 +24,7 @@
 - mj_imagine 进入可用列表（endpointAliases 配置 "MJ imagine" → mj:text-to-image）
 - billing usage 无参返回 200（total_usage 2.7078 → 0.0000054156 供应商积分；日志显示 0.00 为小数位截断）
 - 部署方式：构建后覆盖 `koishi-app/node_modules/koishi-plugin-aka-ai-image-generator/{lib,dist}`（npm 硬副本，非 file: 链接）；原副本备份于 /tmp/aka-ai-image-generator-npm-backup-1.3.8
+- **动态倍率验证（TASK-009）**：真实生成捕获 `x-routing-group: Doubao-1`；预扣上界 0.0735 供应商积分（enable_groups 最大倍率 0.7353）≥ 结算 0.0074（Doubao-1 实际倍率 0.0735）✅ 预扣防滥用 + 结算精确成立
 
 ## 阻塞
 - 无
@@ -31,6 +34,7 @@
 - MJ 契约完整：newapi.mj.imagine（/mj/submit/imagine POST，aspectRatios/stylize/botTypes 齐全）+ reference
 - 远程定价正常：mj_imagine per-call 0.3、gpt-image-2 per-token 2.5×、gemini per-call 0.1655（source: remote-pricing）
 - 516 测试全绿，工作区干净
+- 528 测试全绿（TASK-009 新增 12 个动态倍率用例）
 
 ## 待办（用户控制）
 - [ ] 版本 bump + 发布（用户授权后）

@@ -198,16 +198,22 @@ export class MjProvider extends BaseImageProvider {
       )
     }
 
-    const raw = await this.callApi<unknown>(() =>
+    const raw = await this.callApi<{ data: unknown; headers?: { get: (name: string) => string | null } }>(() =>
       (this.ctx.http as unknown as {
-        post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<unknown>
-      }).post(endpoint, body, {
+        (url: string, config: Record<string, unknown>): Promise<{ data: unknown; headers?: { get: (name: string) => string | null } }>
+      })(endpoint, {
+        method: 'POST',
+        data: body,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
         timeout: 60_000,
       })
     )
 
-    const response: MjSubmitResponse = typeof raw === 'string' ? safeJsonParse(raw) : (raw as MjSubmitResponse)
+    // 捕获 new-api 路由分组（x-routing-group），供后生成结算按实际分组倍率计价
+    const routingGroup = raw?.headers?.get?.('x-routing-group')?.trim()
+    this.lastRoutingGroup = routingGroup && routingGroup.length > 0 ? routingGroup : null
+
+    const response: MjSubmitResponse = typeof raw?.data === 'string' ? safeJsonParse(raw.data) : (raw?.data as MjSubmitResponse)
     if (!response?.result) {
       throw new BadRequestError(`MJ 提交失败：${response?.description || '无 task_id'}`, {
         providerName: this.name,

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 改进
+
+- **动态倍率定价（E2）**：计费不再依赖用户手配的固定 `mapping.groupRatio`（默认 1），改为从 `/api/pricing` 的 `group_ratio` 表动态取倍率。
+  - **预扣用上界**：`computeUpperBoundSupplierCredits` 取该模型 `enable_groups` 中最大的 group_ratio（`model_price × max(enable_groups 倍率)`），保证预扣 ≥ 任何实际路由成本 → 余额不足直接拒绝（防滥用，且随资费调整自动更新，非硬编码）。
+  - **结算用实际路由**：provider 捕获响应头 `x-routing-group`（openai/mj submit），`computeActualSupplierCredits` 按实际分组倍率结算，多退少补；分组不在表中回退 `default` → mapping 固定值 → 1。
+  - 新增 `src/catalog/pricing-snapshot.ts`：`/api/pricing` 实时拉取 + 60s 进程内缓存（TTL 可配），供后续结算/预扣复用最新倍率。
+  - `settlement-audit` 日志新增 `routingGroup` 与 `groupRatio` 字段，可追溯每次生成的实际路由分组与倍率。
+  - 实机验证：真实生成捕获 `x-routing-group: Doubao-1`；预扣 0.0735 ≥ 结算 0.0074 供应商积分，动态倍率闭环成立。
+
 ### 重构
 
 - **new-api 通用适配器（yunwu → newapi）**：把云雾专属适配层泛化为 new-api 系中转站通用适配器，换站（任何 new-api 兼容站）只改 `openaiCompatibleApiBase` + `openaiCompatibleApiKey`，不再依赖代码。方案见 `plans/aka-ai-image-generator-newapi-adapter.md`。

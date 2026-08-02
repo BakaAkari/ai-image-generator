@@ -38,6 +38,9 @@ export abstract class BaseImageProvider implements ImageProvider {
   /** 最近一次生成调用返回的 usage.total_tokens（后生成定价用）。null 表示未获取到或调用尚未完成。 */
   lastTotalTokens: number | null = null
 
+  /** 最近一次生成调用响应头里的 x-routing-group（new-api 路由分组，后生成结算用）。 */
+  lastRoutingGroup: string | null = null
+
   protected readonly ctx: Context
   protected readonly logger: Logger
   protected readonly apiKey: string

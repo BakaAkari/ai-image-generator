@@ -13,17 +13,22 @@ function makeCtx(opts: {
 } = {}) {
   const fetchResponses = opts.fetchResponses ?? [{ status: 'SUCCESS', imageUrl: 'https://cdn/x.png' }]
   let fetchIndex = 0
-  const post = vi.fn(async (_url: string, body: unknown) => {
+  const post = vi.fn(async (_url: string, config: { data?: unknown }) => {
+    const body = config?.data
     if (opts.onSubmit) opts.onSubmit(body)
-    return opts.submitResponse ?? { code: 1, result: 'task-1', description: 'submit success' }
+    return { data: opts.submitResponse ?? { code: 1, result: 'task-1', description: 'submit success' }, headers: { get: () => null } }
   })
   const get = vi.fn(async () => {
     const response = fetchResponses[Math.min(fetchIndex, fetchResponses.length - 1)]
     fetchIndex++
     return response
   })
+  const http = Object.assign(
+    vi.fn(async (url: string, config: { data?: unknown }) => post(url, config)),
+    { post, get },
+  ) as unknown as { post: typeof post; get: typeof get; (url: string, config: { data?: unknown }): Promise<unknown> }
   const ctx = {
-    http: { post, get },
+    http,
     logger: () => ({
       info: () => {}, warn: () => {}, error: () => {}, debug: () => {},
     }),

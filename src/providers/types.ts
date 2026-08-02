@@ -54,6 +54,9 @@ export interface ImageProvider {
   /** 最近一次生成调用返回的 usage.total_tokens（后生成定价用）。null 表示未获取到或调用尚未完成。 */
   lastTotalTokens: number | null
 
+  /** 最近一次生成调用响应头里的 x-routing-group（new-api 路由分组，后生成结算用）。 */
+  lastRoutingGroup: string | null
+
   /**
    * 生成图像
    *

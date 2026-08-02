@@ -22,7 +22,7 @@ import {
   getPromptTimeoutText,
 } from '../shared/prompt-timeout.js'
 import type { GenerationCost } from '../shared/billing.js'
-import { computePostGenerationCost, computeSupplierCreditsFromCatalog, estimatePreGenerationCost } from '../shared/billing.js'
+import { computeActualSupplierCredits, computePostGenerationCost, computeUpperBoundSupplierCredits } from '../shared/billing.js'
 import type { CatalogModelForPricing } from '../shared/billing.js'
 import type {
   GenerationDisplayInfo,
@@ -66,7 +66,7 @@ export interface ExecuteComposeImageOptions {
 
 /** 计价所需的目录快照访问器（不含完整 ImageCatalogService 依赖）。 */
 interface CatalogAccessor {
-  current: { models: CatalogModelForPricing[] } | null
+  current: { models: CatalogModelForPricing[]; groupRatio?: Record<string, number> } | null
   billingInfo: { supplierCredits?: number | null } | null
 }
 
@@ -460,12 +460,14 @@ export function createImageGenerationHandlers(
       const modelIdForPricing = options.requestContext?.modelId ?? options.displayInfo?.modelId ?? ''
       const requestedSuffix = options.requestContext?.modelSuffix
       const mapping = config.modelMappings?.find(m => requestedSuffix ? m.suffix === requestedSuffix : m.modelId === modelIdForPricing)
-      const groupRatio = typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0
+      // 动态倍率：优先用目录 group_ratio 表取 enable_groups 上界，缺表/缺模型时回退 mapping 固定倍率（默认 1）
+      const groupRatioMap = catalog.current?.groupRatio
+      const fallbackRatio = typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0
         ? mapping.groupRatio : 1
       const estimatedCost = freePlatform
         ? undefined
         : (modelIdForPricing
-          ? estimatePreGenerationCost(modelIdForPricing, config, catalogModels, groupRatio)
+          ? estimatePreGenerationCostWithDynamicUpper(modelIdForPricing, config, catalogModels, groupRatioMap, fallbackRatio)
           : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext))
 
       // 1. 积分预检（免计费平台完全跳过预授权）
@@ -600,18 +602,25 @@ export function createImageGenerationHandlers(
           // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
           const settleSuffix = options.requestContext?.modelSuffix
           const settleMapping = config.modelMappings?.find(m => settleSuffix ? m.suffix === settleSuffix : m.modelId === modelId)
-          const groupRatio = typeof settleMapping?.groupRatio === 'number' && Number.isFinite(settleMapping.groupRatio) && settleMapping.groupRatio > 0
+          // 动态倍率结算：优先用响应头实际路由分组（x-routing-group）对应的 group_ratio；
+          // 缺失时回退 mapping 固定倍率（默认 1）。groupRatioMap 来自目录快照（含 default 键）。
+          const routingGroup = service.lastProviderRoutingGroup
+          const groupRatioMap = catalog.current?.groupRatio
+          const fallbackRatio = typeof settleMapping?.groupRatio === 'number' && Number.isFinite(settleMapping.groupRatio) && settleMapping.groupRatio > 0
             ? settleMapping.groupRatio : 1
-          const supplierCredits = computeSupplierCreditsFromCatalog(modelId, totalTokens, catalogModels, groupRatio)
+          const actualRatio = resolveActualRoutingRatio(routingGroup, groupRatioMap, fallbackRatio)
+          const supplierCredits = computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio)
           const actualCost = computePostGenerationCost(supplierCredits, config)
 
-          // audit trail：完整记录定价计算过程，事后可追溯
+          // audit trail：完整记录定价计算过程，事后可追溯（含路由分组与倍率）
           const postCredits = catalog.billingInfo?.supplierCredits ?? null
           logger.info(
-            'settlement-audit model=%s pricingType=%s totalTokens=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
+            'settlement-audit model=%s pricingType=%s totalTokens=%s routingGroup=%s groupRatio=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
             modelId,
             catalogModels.find(m => m.id === modelId)?.pricing?.type ?? 'unknown',
             totalTokens,
+            routingGroup ?? '-',
+            actualRatio,
             supplierCredits,
             config.creditsPerCny,
             config.pricingMarkupPercent,
@@ -854,4 +863,44 @@ export function createImageGenerationHandlers(
     executeImageToImage,
     executeComposeImage,
   }
+}
+
+/**
+ * 动态倍率预估价（包装 computeUpperBoundSupplierCredits 为 GenerationCost）。
+ * 与旧 estimatePreGenerationCost 签名等价，但倍率来自 group_ratio 表上界而非静态 mapping。
+ */
+function estimatePreGenerationCostWithDynamicUpper(
+  modelId: string,
+  config: Config,
+  catalogModels: CatalogModelForPricing[],
+  groupRatioMap: Record<string, number> | undefined,
+  fallbackRatio: number,
+): GenerationCost {
+  const supplierCredits = computeUpperBoundSupplierCredits(modelId, catalogModels, groupRatioMap, fallbackRatio)
+  const totalCredits = computePostGenerationCost(supplierCredits, config)
+  return {
+    totalCredits,
+    creditCostPerImage: totalCredits,
+    numImages: 1,
+    modelId,
+    costSource: 'post-generation',
+  }
+}
+
+/**
+ * 解析实际路由分组倍率：x-routing-group 响应头命中 groupRatioMap 返回其倍率；
+ * 未命中回退 'default'；再退 fallbackRatio（mapping 固定值，默认 1）。
+ */
+function resolveActualRoutingRatio(
+  routingGroup: string | null | undefined,
+  groupRatioMap: Record<string, number> | undefined,
+  fallbackRatio: number,
+): number {
+  if (routingGroup && groupRatioMap) {
+    const direct = groupRatioMap[routingGroup]
+    if (typeof direct === 'number' && Number.isFinite(direct) && direct >= 0) return direct
+    const def = groupRatioMap['default']
+    if (typeof def === 'number' && Number.isFinite(def) && def >= 0) return def
+  }
+  return Number.isFinite(fallbackRatio) && fallbackRatio > 0 ? fallbackRatio : 1
 }

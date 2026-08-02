@@ -59,6 +59,8 @@ export interface CatalogModelForPricing {
     officialPriceInput?: number
     officialPriceOutput?: number
     completionRatio?: number
+    /** 该模型开放的分组（new-api 系），用于动态倍率上界。 */
+    enableGroups?: string[]
   }
 }
 
@@ -145,6 +147,100 @@ export function computeSupplierCreditsFromCatalog(
 
   // fallback
   return (totalTokens ?? 0) / 500000 * safeRatio
+}
+
+/**
+ * 按「分组倍率表」计算预扣上界（动态倍率定价）。
+ *
+ * 公式：model_price(或 per-token 估算) × max(enable_groups 的 group_ratio) × n 等效单价
+ * 返回的是**单张**供应商积分。groupRatioMap 为 /api/pricing 的 group_ratio 全表。
+ *
+ * - 模型无 enable_groups / 表中无匹配分组时：回退 caller 传入的 fallbackRatio；
+ * - 模型无定价时：回退目录最高 per-call 价 × fallbackRatio（与原 estimate 一致）。
+ */
+export function computeUpperBoundSupplierCredits(
+  modelId: string,
+  catalogModels: CatalogModelForPricing[],
+  groupRatioMap: Record<string, number> | undefined,
+  fallbackRatio = 1,
+): number {
+  const model = catalogModels.find(m => m.id === modelId)
+  const pricing = model?.pricing
+  const safeFallback = Number.isFinite(fallbackRatio) && fallbackRatio > 0 ? fallbackRatio : 1
+
+  const upperRatio = resolveUpperBoundRatio(pricing?.enableGroups, groupRatioMap, safeFallback)
+
+  if (!model || !pricing || pricing.type === 'unknown') {
+    const knownPrices = catalogModels
+      .map(m => (m.pricing?.type === 'per-call' ? m.pricing.pricePerCall : 0) ?? 0)
+      .filter((p): p is number => p > 0)
+    return (knownPrices.length > 0 ? Math.max(...knownPrices) : DEFAULT_TOKEN_ESTIMATE / 500000) * upperRatio
+  }
+
+  if (pricing.type === 'per-call' && typeof pricing.pricePerCall === 'number' && pricing.pricePerCall > 0) {
+    return pricing.pricePerCall * upperRatio
+  }
+
+  if (pricing.type === 'per-token') {
+    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
+      ? pricing.officialPriceOutput
+      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
+    return DEFAULT_TOKEN_ESTIMATE / 1_000_000 * outputPrice * upperRatio
+  }
+
+  return (DEFAULT_TOKEN_ESTIMATE / 500000) * upperRatio
+}
+
+/**
+ * 按「实际路由分组」计算结算供应商积分（动态倍率定价，单张）。
+ *
+ * 公式：model_price(或 per-token 估算) × group_ratio[实际分组]。
+ * routingGroup 来自生成响应头 x-routing-group；ratio 解析失败回退 default→1。
+ */
+export function computeActualSupplierCredits(
+  modelId: string,
+  totalTokens: number | null,
+  catalogModels: CatalogModelForPricing[],
+  actualRatio: number,
+): number {
+  const safeRatio = Number.isFinite(actualRatio) && actualRatio > 0 ? actualRatio : 1
+  const model = catalogModels.find(m => m.id === modelId)
+  const pricing = model?.pricing
+
+  if (!model || !pricing || pricing.type === 'unknown') {
+    return (totalTokens ?? 0) / 500000 * safeRatio
+  }
+
+  if (pricing.type === 'per-call' && typeof pricing.pricePerCall === 'number' && pricing.pricePerCall > 0) {
+    return pricing.pricePerCall * safeRatio
+  }
+
+  if (pricing.type === 'per-token') {
+    const tokens = typeof totalTokens === 'number' && Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
+    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
+      ? pricing.officialPriceOutput
+      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
+    return tokens / 1_000_000 * outputPrice * safeRatio
+  }
+
+  return (totalTokens ?? 0) / 500000 * safeRatio
+}
+
+/** 取 enable_groups 在 groupRatioMap 中的最大倍率；无则回退 fallbackRatio。 */
+export function resolveUpperBoundRatio(
+  enableGroups: string[] | undefined,
+  groupRatioMap: Record<string, number> | undefined,
+  fallbackRatio = 1,
+): number {
+  if (Array.isArray(enableGroups) && enableGroups.length > 0 && groupRatioMap) {
+    let max = -1
+    for (const group of enableGroups) {
+      const ratio = groupRatioMap[group]
+      if (typeof ratio === 'number' && Number.isFinite(ratio) && ratio >= 0 && ratio > max) max = ratio
+    }
+    if (max >= 0) return max
+  }
+  return Number.isFinite(fallbackRatio) && fallbackRatio > 0 ? fallbackRatio : 1
 }
 
 export interface GenerationCost {

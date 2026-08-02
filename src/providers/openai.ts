@@ -28,6 +28,12 @@ interface OpenAIImagesResponse {
   usage?: { total_tokens?: number }
 }
 
+/** ctx.http 可调用形式返回的完整响应（含 headers，用于捕获 x-routing-group）。 */
+interface OpenAIImageHttpResponse {
+  data: OpenAIImagesResponse
+  headers: { get: (name: string) => string | null }
+}
+
 /**
  * OpenAIProvider（契约驱动版）。
  *
@@ -142,6 +148,15 @@ export class OpenAIProvider extends BaseImageProvider {
     return resolved.size
   }
 
+  /**
+   * 捕获 new-api 响应头 x-routing-group（本次实际路由分组，后生成结算用）。
+   * 大小写不敏感（Headers.get 本身不区分大小写）；取不到时保持 null。
+   */
+  private captureRoutingGroup(headers: { get: (name: string) => string | null } | null | undefined): void {
+    const value = headers?.get('x-routing-group')?.trim()
+    this.lastRoutingGroup = value && value.length > 0 ? value : null
+  }
+
   private getApiBase(): string {
     return normalizeV1Base(this.apiBase ?? DEFAULT_API_BASE)
   }
@@ -193,16 +208,19 @@ export class OpenAIProvider extends BaseImageProvider {
         )
       }
 
-      const response = await this.callApi<OpenAIImagesResponse>(() =>
+      const response = await this.callApi<OpenAIImageHttpResponse>(() =>
         (this.ctx.http as unknown as {
-          post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-        }).post(endpoint, body, {
+          (url: string, config: Record<string, unknown>): Promise<OpenAIImageHttpResponse>
+        })(endpoint, {
+          method: 'POST',
+          data: body,
           headers: this.buildHeaders(),
           timeout: this.getTimeoutMs(),
         })
       )
 
-      const parsed = parseOpenAIImagesResponse(response)
+      this.captureRoutingGroup(response?.headers)
+      const parsed = parseOpenAIImagesResponse(response?.data)
       this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
       if (parsed.images.length === 0) {
         this.logger.warn('provider=%s event=create_empty_response iteration=%d', this.name, i + 1)
@@ -285,16 +303,19 @@ export class OpenAIProvider extends BaseImageProvider {
         )
       }
 
-      const response = await this.callApi<OpenAIImagesResponse>(() =>
+      const response = await this.callApi<OpenAIImageHttpResponse>(() =>
         (this.ctx.http as unknown as {
-          post: (url: string, body: unknown, opts: Record<string, unknown>) => Promise<OpenAIImagesResponse>
-        }).post(endpoint, formData, {
+          (url: string, config: Record<string, unknown>): Promise<OpenAIImageHttpResponse>
+        })(endpoint, {
+          method: 'POST',
+          data: formData,
           headers: { Authorization: `Bearer ${this.apiKey}` },
           timeout: this.getTimeoutMs(),
         })
       )
 
-      const parsed = parseOpenAIImagesResponse(response)
+      this.captureRoutingGroup(response?.headers)
+      const parsed = parseOpenAIImagesResponse(response?.data)
       this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
       if (parsed.images.length === 0) {
         this.logger.warn('provider=%s event=edit_empty_response iteration=%d', this.name, i + 1)

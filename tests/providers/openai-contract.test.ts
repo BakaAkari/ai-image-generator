@@ -8,12 +8,20 @@ const EDIT = getContractById('newapi.openai.gpt-image-2.edit')!
 const GEN_C = getContractById('newapi.openai.gpt-image-2-c.generate')!
 
 function makeCtx(handler?: (url: string, body: unknown) => unknown) {
-  const post = vi.fn(async (url: string, body: unknown) => {
-    if (handler) return handler(url, body)
-    return { data: [{ b64_json: 'AAAA' }] }
+  const post = vi.fn(async (url: string, config: { data?: unknown }) => {
+    const body = config?.data
+    let result: unknown
+    if (handler) result = handler(url, body)
+    else result = { data: [{ b64_json: 'AAAA' }] }
+    return { data: result, headers: { get: () => null } }
   })
+  const get = vi.fn()
+  const http = Object.assign(
+    vi.fn(async (url: string, config: { data?: unknown }) => post(url, config)),
+    { post, get },
+  ) as unknown as { post: typeof post; get: typeof get; (url: string, config: { data?: unknown }): Promise<unknown> }
   const ctx = {
-    http: { post, get: vi.fn() },
+    http,
     logger: () => ({
       info: () => {}, warn: () => {}, error: () => {}, debug: () => {},
     }),

@@ -199,8 +199,9 @@ export class AiImageGeneratorService extends Service {
     }
 
     const providerInstance = this.providerRegistry.createProvider(provider, this.ctx, factoryConfig)
-    // 重置前一次用量追踪
+    // 重置前一次用量/路由追踪
     this.lastProviderUsage = null
+    this.lastProviderRoutingGroup = null
     const result = await providerInstance.generateImages(
       prompt,
       imageUrls,
@@ -211,6 +212,8 @@ export class AiImageGeneratorService extends Service {
 
     // 后生成定价：捕获 provider 返回的 usage.total_tokens
     this.lastProviderUsage = providerInstance.lastTotalTokens
+    // 后生成结算：捕获 new-api 实际路由分组（x-routing-group 响应头）
+    this.lastProviderRoutingGroup = providerInstance.lastRoutingGroup
 
     this.pluginLogger.info('requestProviderImages 完成', {
       supplier,
@@ -462,6 +465,9 @@ export class AiImageGeneratorService extends Service {
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
   /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
   lastProviderUsage: number | null = null
+
+  /** 最近一次 provider 生成调用响应头的 x-routing-group（new-api 实际路由分组，后生成结算用）。 */
+  lastProviderRoutingGroup: string | null = null
 
   public catalogRouteLookup: CatalogRouteLookup | undefined
 
