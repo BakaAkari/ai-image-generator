@@ -26,6 +26,12 @@
 ## 阻塞
 - 无
 
+## 手测就绪检查（2026-08-02，全部通过）
+- 现有 4 个模型映射在 openlux 目录全部可用：gpt-image-2 / mj_imagine / gemini-3.1-flash-image-preview / qwen-image-max-2025-12-30
+- MJ 契约完整：newapi.mj.imagine（/mj/submit/imagine POST，aspectRatios/stylize/botTypes 齐全）+ reference
+- 远程定价正常：mj_imagine per-call 0.3、gpt-image-2 per-token 2.5×、gemini per-call 0.1655（source: remote-pricing）
+- 516 测试全绿，工作区干净
+
 ## 待办（用户控制）
 - [ ] 版本 bump + 发布（用户授权后）
 - [ ] 手测：文生图/图生图/MJ/定价展示/余额面板
