@@ -58,12 +58,24 @@ describe('normalizeStyleGroups (dirty input defence)', () => {
 
 describe('aka-tools panel Prompt 预设 card contract', () => {
   test('Prompt presets are placed directly after model mappings and before pricing settings', () => {
-    const modelMappings = PAGE_VUE.indexOf('<!-- ══ ② 模型 ══ -->')
-    const promptPresets = PAGE_VUE.indexOf('<!-- ══ ③ Prompt 预设 ══ -->')
-    const pricingSettings = PAGE_VUE.indexOf('<!-- ══ ④ 定价 ══ -->')
-    expect(modelMappings).toBeGreaterThan(-1)
-    expect(promptPresets).toBeGreaterThan(modelMappings)
-    expect(pricingSettings).toBeGreaterThan(promptPresets)
+    // 分页式布局：tab 声明顺序与模板分区顺序均为 模型目录 → 模型映射 → 预设 → 定价
+    const catalogTab = PAGE_VUE.indexOf(`{ key: 'catalog'`)
+    const mappingsTab = PAGE_VUE.indexOf(`{ key: 'mappings'`)
+    const presetsTab = PAGE_VUE.indexOf(`{ key: 'presets'`)
+    const pricingTab = PAGE_VUE.indexOf(`{ key: 'pricing'`)
+    expect(catalogTab).toBeGreaterThan(-1)
+    expect(mappingsTab).toBeGreaterThan(catalogTab)
+    expect(presetsTab).toBeGreaterThan(mappingsTab)
+    expect(pricingTab).toBeGreaterThan(presetsTab)
+
+    const catalogSection = PAGE_VUE.indexOf(`v-show="activeTab === 'catalog'"`)
+    const mappingsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'mappings'"`)
+    const presetsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'presets'"`)
+    const pricingSection = PAGE_VUE.indexOf(`v-show="activeTab === 'pricing'"`)
+    expect(catalogSection).toBeGreaterThan(-1)
+    expect(mappingsSection).toBeGreaterThan(catalogSection)
+    expect(presetsSection).toBeGreaterThan(mappingsSection)
+    expect(pricingSection).toBeGreaterThan(presetsSection)
   })
 
   test('legacy JSON textarea and mislabelled copy are removed', () => {

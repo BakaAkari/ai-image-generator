@@ -21,34 +21,88 @@
     </div>
     </Teleport>
 
-    <div v-if="!state" class="loading">正在加载…</div>
-    <div v-else class="page-scroll">
-      <div class="page-wrapper">
-
-        <!-- ══ 状态总览 ══ -->
-        <div class="stat-row">
-          <div class="stat-card">
-            <div class="stat-value">{{ state.catalog?.models?.length ?? 0 }}</div>
-            <div class="stat-label">目录模型</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ catalogAge }}</div>
-            <div class="stat-label">目录更新</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ supplierCreditsDisplay }}</div>
-            <div class="stat-label">供应商积分</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ billingLimit }}</div>
-            <div class="stat-label">Key 限额</div>
-          </div>
+    <div class="image-page">
+      <!-- header: tabs + actions（与视频页同款页头） -->
+      <div class="page-header">
+        <el-radio-group v-model="activeTab" class="page-tabs">
+          <el-radio-button v-for="tab in tabs" :key="tab.key" :value="tab.key">{{ tab.label }}</el-radio-button>
+        </el-radio-group>
+        <div class="header-actions">
+          <el-button size="small" plain @click="loadState" :loading="loading">刷新</el-button>
+          <el-button size="small" type="primary" :loading="saving" @click="saveAll">保存全部</el-button>
         </div>
+      </div>
 
-        <!-- ══ ① 凭证 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="① 供应商与凭证" name="credentials">
-            <k-card class="section" shadow="never">
+      <div v-if="!state" class="loading">正在加载…</div>
+      <div v-else class="page-body">
+        <!-- 总览 -->
+        <section v-show="activeTab === 'overview'" class="tab-panel">
+          <div class="stat-row">
+            <div class="stat-card">
+              <div class="stat-value">{{ state.catalog?.models?.length ?? 0 }}</div>
+              <div class="stat-label">目录模型</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ catalogAge }}</div>
+              <div class="stat-label">目录更新</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ supplierCreditsDisplay }}</div>
+              <div class="stat-label">供应商积分</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ billingLimit }}</div>
+              <div class="stat-label">Key 限额</div>
+            </div>
+          </div>
+
+          <!-- 用量统计 -->
+          <div class="stat-row">
+            <div class="stat-card"><div class="stat-value">{{ overviewTotals?.users ?? '—' }}</div><div class="stat-label">总用户</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overviewTotals?.totalRequests ?? '—' }}</div><div class="stat-label">累计请求</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overviewTotals?.totalImages ?? '—' }}</div><div class="stat-label">累计生成</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overviewTotals?.totalFailed ?? '—' }}</div><div class="stat-label">累计失败</div></div>
+            <div class="stat-card"><div class="stat-value">{{ successRateDisplay }}</div><div class="stat-label">成功率</div></div>
+            <div class="stat-card"><div class="stat-value">{{ formatCredits(overviewTotals?.totalConsumedCredits) }}</div><div class="stat-label">累计消耗积分</div></div>
+            <div class="stat-card"><div class="stat-value">{{ formatCredits(overviewTotals?.purchasedBalance) }}</div><div class="stat-label">购买余额总计</div></div>
+            <div class="stat-card"><div class="stat-value">{{ overviewTotals?.trialImagesUsed ?? '—' }}</div><div class="stat-label">试用已用（张）</div></div>
+          </div>
+
+          <k-card title="模型用量" class="section" shadow="never">
+            <el-table :data="overviewStats?.modelRows ?? []" size="small" class="dark-table" max-height="360">
+              <el-table-column prop="modelId" label="模型" min-width="220" />
+              <el-table-column prop="images" label="生成张数" width="120" sortable :sort-orders="['descending', 'ascending']" />
+              <el-table-column prop="percent" label="占比" width="120" />
+            </el-table>
+            <div v-if="overviewStats && !overviewStats.modelRows.length" class="hint">暂无数据，生成图片后将自动统计。</div>
+          </k-card>
+
+          <k-card title="用户用量排行（Top 20）" class="section" shadow="never">
+            <el-table :data="overviewStats?.userRows ?? []" size="small" class="dark-table" max-height="440">
+              <el-table-column prop="userId" label="userId" min-width="140" />
+              <el-table-column prop="userName" label="userName" min-width="140" />
+              <el-table-column prop="images" label="生成" width="80" sortable :sort-orders="['descending', 'ascending']" />
+              <el-table-column prop="requests" label="请求" width="80" />
+              <el-table-column prop="failed" label="失败" width="80" />
+              <el-table-column label="消耗积分" width="110">
+                <template #default="{ row }">{{ formatCredits(row.consumedCredits) }}</template>
+              </el-table-column>
+              <el-table-column label="购买余额" width="110">
+                <template #default="{ row }">{{ formatCredits(row.purchasedBalance) }}</template>
+              </el-table-column>
+              <el-table-column prop="trialImagesUsed" label="试用已用" width="90" />
+              <el-table-column label="最近使用" width="150">
+                <template #default="{ row }">{{ timeLabel(row.lastUsedAt) }}</template>
+              </el-table-column>
+            </el-table>
+            <div v-if="overviewStats && !overviewStats.userRows.length" class="hint">暂无用户数据。</div>
+          </k-card>
+        </section>
+
+        <!-- 供应商与凭证 -->
+        <section v-show="activeTab === 'credentials'" class="tab-panel">
+          <div class="panel-limit">
+            <k-card title="供应商与凭证" class="section" shadow="never">
               <div class="supplier-picker">
                 <div
                   v-for="s in supplierOptions" :key="s.value"
@@ -92,130 +146,190 @@
 
               </el-form>
             </k-card>
-          </el-collapse-item>
-        </el-collapse>
+          </div>
+        </section>
 
-        <!-- ══ ② 模型 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="② 模型" name="models">
-            <!-- 模型目录 -->
-            <k-card class="section" shadow="never">
-              <template #header>
-                <div class="card-header">
-                  <span>模型目录（{{ filteredCatalog.length }} / {{ state.catalog?.models?.length ?? 0 }}）</span>
-                  <div class="header-actions">
-                    <el-input v-model="catalogFilter" placeholder="搜索模型" clearable style="width: 200px" />
-                    <el-button :loading="refreshing" @click="refreshCatalog">刷新目录</el-button>
-                  </div>
+        <!-- 模型目录 -->
+        <section v-show="activeTab === 'catalog'" class="tab-panel">
+          <k-card class="section" shadow="never">
+            <template #header>
+              <div class="card-header">
+                <span>模型目录（{{ filteredCatalog.length }} / {{ state.catalog?.models?.length ?? 0 }}）</span>
+                <div class="header-actions">
+                  <el-input v-model="catalogFilter" placeholder="搜索模型" clearable style="width: 200px" />
+                  <el-button :loading="refreshing" @click="refreshCatalog">刷新目录</el-button>
                 </div>
-              </template>
-              <el-table :data="filteredCatalog" max-height="360" size="small" class="dark-table">
-                <el-table-column prop="id" label="模型" min-width="200" sortable />
-                <el-table-column label="提供商" width="80">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="row.routes?.[0]?.protocol === 'openai' ? '' : row.routes?.[0]?.protocol === 'gemini' ? 'success' : 'warning'">
-                      {{ row.routes?.[0]?.protocol?.toUpperCase() || '—' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="预估成本" width="190">
-                  <template #default="{ row }">
-                    <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)', whiteSpace: 'nowrap' }">{{ row.yunwuCost?.label ?? '—' }}</span>
-                    <div class="hint" style="margin: 0.2rem 0 0; font-size: 0.7rem; white-space: nowrap;">仅参考，运行时以目录价格为准</div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="模式" width="140">
-                  <template #default="{ row }">
-                    <el-tag v-for="m in row.modes" :key="m" size="small" class="mode-tag">{{ modeLabel(m) }}</el-tag>
-                  </template>
-                </el-table-column>
-              </el-table>
-              <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
-              <el-collapse v-if="state.catalog?.unsupportedModels?.length" class="unsupported-block">
-                <el-collapse-item :title="`不可执行模型（${state.catalog.unsupportedModels.length}）`">
-                  <el-table :data="state.catalog.unsupportedModels" size="small" class="dark-table">
-                    <el-table-column prop="id" label="模型" min-width="240" />
-                    <el-table-column label="状态" width="100"><template #default><el-tag type="danger" size="small">不可选择</el-tag></template></el-table-column>
-                    <el-table-column label="原因" min-width="260"><template #default="{ row }">{{ row.unsupportedReasons?.join('；') || '未识别生成路由' }}</template></el-table-column>
-                  </el-table>
+              </div>
+            </template>
+            <el-table :data="filteredCatalog" max-height="480" size="small" class="dark-table">
+              <el-table-column prop="id" label="模型" min-width="200" sortable />
+              <el-table-column label="提供商" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.routes?.[0]?.protocol === 'openai' ? '' : row.routes?.[0]?.protocol === 'gemini' ? 'success' : 'warning'">
+                    {{ row.routes?.[0]?.protocol?.toUpperCase() || '—' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="预估成本" width="190">
+                <template #default="{ row }">
+                  <span :style="{ fontWeight: 600, color: row.yunwuCost?.type === 'per-call' ? 'var(--el-color-success)' : 'var(--fg2)', whiteSpace: 'nowrap' }">{{ row.yunwuCost?.label ?? '—' }}</span>
+                  <div class="hint" style="margin: 0.2rem 0 0; font-size: 0.7rem; white-space: nowrap;">仅参考，运行时以目录价格为准</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="模式" width="140">
+                <template #default="{ row }">
+                  <el-tag v-for="m in row.modes" :key="m" size="small" class="mode-tag">{{ modeLabel(m) }}</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-if="state.catalog?.error" class="error-line">上次刷新失败：{{ state.catalog.error }}（当前为缓存数据）</div>
+            <el-collapse v-if="state.catalog?.unsupportedModels?.length" class="unsupported-block">
+              <el-collapse-item :title="`不可执行模型（${state.catalog.unsupportedModels.length}）`">
+                <el-table :data="state.catalog.unsupportedModels" size="small" class="dark-table">
+                  <el-table-column prop="id" label="模型" min-width="240" />
+                  <el-table-column label="状态" width="100"><template #default><el-tag type="danger" size="small">不可选择</el-tag></template></el-table-column>
+                  <el-table-column label="原因" min-width="260"><template #default="{ row }">{{ row.unsupportedReasons?.join('；') || '未识别生成路由' }}</template></el-table-column>
+                </el-table>
+              </el-collapse-item>
+            </el-collapse>
+          </k-card>
+        </section>
+
+        <!-- 模型映射 -->
+        <section v-show="activeTab === 'mappings'" class="tab-panel">
+          <k-card title="模型映射" class="section" shadow="never">
+            <template #header>
+              <div class="card-header">
+                <span>模型映射（第一条为默认模型）</span>
+                <el-button size="small" @click="addMapping">添加映射</el-button>
+              </div>
+            </template>
+            <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认自动定价，基于目录价格估算。</div>
+            <el-table :data="cfg.modelMappings" size="small" style="width: 100%">
+              <el-table-column label="排序" width="60">
+                <template #default="{ $index }">
+                  <el-button link size="small" :disabled="$index === 0" @click="moveMapping($index, -1)">↑</el-button>
+                  <el-button link size="small" :disabled="$index === cfg.modelMappings.length - 1" @click="moveMapping($index, 1)">↓</el-button>
+                </template>
+              </el-table-column>
+              <el-table-column label="命令后缀" width="110">
+                <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
+              </el-table-column>
+              <el-table-column label="模型" min-width="180">
+                <template #default="{ row }">
+                  <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
+                    <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="受限" width="55">
+                <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
+              </el-table-column>
+              <el-table-column label="倍率" width="100">
+                <template #default="{ row }">
+                  <el-input-number v-model="row.groupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 90px" />
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="70">
+                <template #default="{ row }">
+                  <el-tag :type="mappingValid(row) ? 'success' : 'danger'" size="small">{{ mappingValid(row) ? '可用' : '失效' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="" width="50">
+                <template #default="{ $index }">
+                  <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </k-card>
+        </section>
+
+        <!-- Prompt 预设 -->
+        <section v-show="activeTab === 'presets'" class="tab-panel">
+          <k-card class="section" shadow="never">
+            <template #header>
+              <div class="card-header">
+                <span>Prompt 预设</span>
+                <div class="header-actions">
+                  <el-button size="small" @click="addStylePreset(null)">添加未分组预设</el-button>
+                  <el-button size="small" type="primary" @click="addStyleGroup">添加分组</el-button>
+                </div>
+              </div>
+            </template>
+            <div class="hint">分组仅用于后台分类管理；聊天中仍直接使用预设的命令名调用，不生成父级命令、不改变运行逻辑。</div>
+
+            <!-- 未分组：固定第一块，绑定 cfg.styles -->
+            <div class="preset-section">
+              <div class="preset-section-header">
+                <span class="preset-section-title">未分组</span>
+                <el-button size="small" @click="addStylePreset(null)">添加预设</el-button>
+              </div>
+              <div v-if="!cfg.styles.length" class="hint">尚无未分组预设。</div>
+              <el-collapse v-else>
+                <el-collapse-item
+                  v-for="(style, i) in cfg.styles"
+                  :key="`ungrouped::${i}::${style.commandName || 'unnamed'}`"
+                  :title="style.commandName || `预设 ${i + 1}`"
+                >
+                  <el-form label-width="110px">
+                    <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
+                    <el-form-item label="生成模式">
+                      <el-radio-group v-model="style.mode">
+                        <el-radio-button value="text-to-image">文生图</el-radio-button>
+                        <el-radio-button value="image-to-image">图生图</el-radio-button>
+                        <el-radio-button value="compose-image">合成图</el-radio-button>
+                      </el-radio-group>
+                    </el-form-item>
+                    <el-form-item label="模型后缀">
+                      <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
+                        <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
+                    <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
+                    <el-form-item label="移动到">
+                      <el-select
+                        :model-value="''"
+                        placeholder="选择目标分组"
+                        :disabled="!moveTargets(null).length"
+                        style="width: 220px"
+                        @change="movePreset(null, i, $event)"
+                      >
+                        <el-option v-for="t in moveTargets(null)" :key="`ungrouped-mv-${t.value}`" :value="t.value" :label="t.label" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(null, i)">删除此预设</el-button></el-form-item>
+                  </el-form>
                 </el-collapse-item>
               </el-collapse>
-            </k-card>
-            <!-- 模型映射 -->
-            <k-card title="模型映射" class="section" shadow="never">
-              <template #header>
-                <div class="card-header">
-                  <span>模型映射（第一条为默认模型）</span>
-                  <el-button size="small" @click="addMapping">添加映射</el-button>
-                </div>
-              </template>
-              <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认自动定价，基于目录价格估算。</div>
-              <el-table :data="cfg.modelMappings" size="small" style="width: 100%">
-                <el-table-column label="排序" width="60">
-                  <template #default="{ $index }">
-                    <el-button link size="small" :disabled="$index === 0" @click="moveMapping($index, -1)">↑</el-button>
-                    <el-button link size="small" :disabled="$index === cfg.modelMappings.length - 1" @click="moveMapping($index, 1)">↓</el-button>
-                  </template>
-                </el-table-column>
-                <el-table-column label="命令后缀" width="110">
-                  <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
-                </el-table-column>
-                <el-table-column label="模型" min-width="180">
-                  <template #default="{ row }">
-                    <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
-                      <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="受限" width="55">
-                  <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
-                </el-table-column>
-                <el-table-column label="倍率" width="100">
-                  <template #default="{ row }">
-                    <el-input-number v-model="row.groupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 90px" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态" width="70">
-                  <template #default="{ row }">
-                    <el-tag :type="mappingValid(row) ? 'success' : 'danger'" size="small">{{ mappingValid(row) ? '可用' : '失效' }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="" width="50">
-                  <template #default="{ $index }">
-                    <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </k-card>
-          </el-collapse-item>
-        </el-collapse>
+            </div>
 
-        <!-- ══ ③ Prompt 预设 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="③ Prompt 预设" name="presets">
-            <k-card class="section" shadow="never">
-              <template #header>
-                <div class="card-header">
-                  <span>Prompt 预设</span>
+            <!-- 分组 -->
+            <el-collapse class="prompt-groups-collapse">
+              <el-collapse-item
+                v-for="groupName in styleGroupNames"
+                :key="`group-${groupName}`"
+                :name="groupName"
+                :title="`${groupName}（${cfg.styleGroups[groupName].prompts.length}）`"
+                class="preset-section"
+              >
+                <div class="preset-section-header">
+                  <el-input
+                    :model-value="groupName"
+                    size="small"
+                    style="width: 220px"
+                    @change="renameStyleGroup(groupName, String($event))"
+                  />
                   <div class="header-actions">
-                    <el-button size="small" @click="addStylePreset(null)">添加未分组预设</el-button>
-                    <el-button size="small" type="primary" @click="addStyleGroup">添加分组</el-button>
+                    <el-button size="small" @click="addStylePreset(groupName)">添加预设</el-button>
+                    <el-button size="small" type="danger" @click="removeStyleGroup(groupName)">删除分组</el-button>
                   </div>
                 </div>
-              </template>
-              <div class="hint">分组仅用于后台分类管理；聊天中仍直接使用预设的命令名调用，不生成父级命令、不改变运行逻辑。</div>
-
-              <!-- 未分组：固定第一块，绑定 cfg.styles -->
-              <div class="preset-section">
-                <div class="preset-section-header">
-                  <span class="preset-section-title">未分组</span>
-                  <el-button size="small" @click="addStylePreset(null)">添加预设</el-button>
-                </div>
-                <div v-if="!cfg.styles.length" class="hint">尚无未分组预设。</div>
+                <div v-if="!cfg.styleGroups[groupName].prompts.length" class="hint">该分组暂无预设。</div>
                 <el-collapse v-else>
                   <el-collapse-item
-                    v-for="(style, i) in cfg.styles"
-                    :key="`ungrouped::${i}::${style.commandName || 'unnamed'}`"
+                    v-for="(style, i) in cfg.styleGroups[groupName].prompts"
+                    :key="`${groupName}::${i}::${style.commandName || 'unnamed'}`"
                     :title="style.commandName || `预设 ${i + 1}`"
                   >
                     <el-form label-width="110px">
@@ -238,89 +352,26 @@
                         <el-select
                           :model-value="''"
                           placeholder="选择目标分组"
-                          :disabled="!moveTargets(null).length"
+                          :disabled="!moveTargets(groupName).length"
                           style="width: 220px"
-                          @change="movePreset(null, i, $event)"
+                          @change="movePreset(groupName, i, $event)"
                         >
-                          <el-option v-for="t in moveTargets(null)" :key="`ungrouped-mv-${t.value}`" :value="t.value" :label="t.label" />
+                          <el-option v-for="t in moveTargets(groupName)" :key="`${groupName}-mv-${t.value}`" :value="t.value" :label="t.label" />
                         </el-select>
                       </el-form-item>
-                      <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(null, i)">删除此预设</el-button></el-form-item>
+                      <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(groupName, i)">删除此预设</el-button></el-form-item>
                     </el-form>
                   </el-collapse-item>
                 </el-collapse>
-              </div>
+              </el-collapse-item>
+            </el-collapse>
+          </k-card>
+        </section>
 
-              <!-- 分组 -->
-              <el-collapse class="prompt-groups-collapse">
-                <el-collapse-item
-                  v-for="groupName in styleGroupNames"
-                  :key="`group-${groupName}`"
-                  :name="groupName"
-                  :title="`${groupName}（${cfg.styleGroups[groupName].prompts.length}）`"
-                  class="preset-section"
-                >
-                  <div class="preset-section-header">
-                    <el-input
-                      :model-value="groupName"
-                      size="small"
-                      style="width: 220px"
-                      @change="renameStyleGroup(groupName, String($event))"
-                    />
-                    <div class="header-actions">
-                      <el-button size="small" @click="addStylePreset(groupName)">添加预设</el-button>
-                      <el-button size="small" type="danger" @click="removeStyleGroup(groupName)">删除分组</el-button>
-                    </div>
-                  </div>
-                  <div v-if="!cfg.styleGroups[groupName].prompts.length" class="hint">该分组暂无预设。</div>
-                  <el-collapse v-else>
-                    <el-collapse-item
-                      v-for="(style, i) in cfg.styleGroups[groupName].prompts"
-                      :key="`${groupName}::${i}::${style.commandName || 'unnamed'}`"
-                      :title="style.commandName || `预设 ${i + 1}`"
-                    >
-                      <el-form label-width="110px">
-                        <el-form-item label="命令名"><el-input v-model="style.commandName" style="width: 200px" /></el-form-item>
-                        <el-form-item label="生成模式">
-                          <el-radio-group v-model="style.mode">
-                            <el-radio-button value="text-to-image">文生图</el-radio-button>
-                            <el-radio-button value="image-to-image">图生图</el-radio-button>
-                            <el-radio-button value="compose-image">合成图</el-radio-button>
-                          </el-radio-group>
-                        </el-form-item>
-                        <el-form-item label="模型后缀">
-                          <el-select v-model="style.modelSuffix" clearable placeholder="默认模型" style="width: 220px">
-                            <el-option v-for="m in cfg.modelMappings" :key="m.suffix" :value="m.suffix" :label="`${m.suffix}（${m.modelId}）`" />
-                          </el-select>
-                        </el-form-item>
-                        <el-form-item label="帮助说明"><el-input v-model="style.description" type="textarea" :rows="2" /></el-form-item>
-                        <el-form-item label="提示词"><el-input v-model="style.prompt" type="textarea" :rows="5" /></el-form-item>
-                        <el-form-item label="移动到">
-                          <el-select
-                            :model-value="''"
-                            placeholder="选择目标分组"
-                            :disabled="!moveTargets(groupName).length"
-                            style="width: 220px"
-                            @change="movePreset(groupName, i, $event)"
-                          >
-                            <el-option v-for="t in moveTargets(groupName)" :key="`${groupName}-mv-${t.value}`" :value="t.value" :label="t.label" />
-                          </el-select>
-                        </el-form-item>
-                        <el-form-item><el-button type="danger" size="small" @click="removeStylePreset(groupName, i)">删除此预设</el-button></el-form-item>
-                      </el-form>
-                    </el-collapse-item>
-                  </el-collapse>
-                </el-collapse-item>
-              </el-collapse>
-            </k-card>
-          </el-collapse-item>
-        </el-collapse>
-
-        <!-- ══ ③ 运营 ══ -->
-        <!-- ══ ④ 定价 ══ -->
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="④ 定价" name="pricing">
-            <k-card class="section" shadow="never">
+        <!-- 定价 -->
+        <section v-show="activeTab === 'pricing'" class="tab-panel">
+          <div class="panel-limit">
+            <k-card title="定价" class="section" shadow="never">
               <el-form label-width="260px">
                 <el-divider content-position="left">A · 平台积分</el-divider>
                 <el-form-item label="平台积分单位名称">
@@ -370,12 +421,13 @@
                 </el-collapse>
               </el-form>
             </k-card>
-          </el-collapse-item>
-        </el-collapse>
+          </div>
+        </section>
 
-        <el-collapse v-model="panelActive">
-          <el-collapse-item title="⑤ 运营" name="operations">
-            <k-card class="section" shadow="never">
+        <!-- 运营 -->
+        <section v-show="activeTab === 'operations'" class="tab-panel">
+          <div class="panel-limit">
+            <k-card title="运营" class="section" shadow="never">
               <el-form label-width="200px">
 
                 <el-divider content-position="left">免计费设置</el-divider>
@@ -428,76 +480,39 @@
 
               </el-form>
             </k-card>
-          </el-collapse-item>
-        </el-collapse>
 
-        <!-- ══ 生成默认值 ══ -->
-        <k-card title="生成默认值" class="section">
-          <el-form label-width="200px">
-            <el-form-item label="默认生成张数"><el-input-number v-model="cfg.defaultNumImages" :min="1" :max="4" /></el-form-item>
-            <el-form-item label="交互模式">
-              <el-select v-model="cfg.interactionMode" style="width: 220px">
-                <el-option value="auto" label="自动（群聊→高级，私聊→引导）" />
-                <el-option value="guided" label="始终引导模式（适合新手）" />
-                <el-option value="advanced" label="始终高级模式（适合熟练用户）" />
-              </el-select>
-              <div class="hint">高级模式跳过向导，使用默认值直接生成。引导模式分步选择模型与参数后生成。auto 按会话类型自动切换。</div>
-            </el-form-item>
-            <el-form-item label="按平台覆盖交互模式">
-              <div class="extra-headers">
-                <div v-for="(row, i) in interactionOverrideRows" :key="i" class="extra-header-row">
-                  <el-input v-model="row.platform" size="small" placeholder="平台 ID（如 lark、onebot、qq）" style="width: 220px" @input="syncInteractionOverrides" />
-                  <el-select v-model="row.mode" size="small" style="width: 140px" @change="syncInteractionOverrides">
-                    <el-option value="auto" label="自动" />
-                    <el-option value="guided" label="引导" />
-                    <el-option value="advanced" label="高级" />
+            <!-- 生成默认值 -->
+            <k-card title="生成默认值" class="section">
+              <el-form label-width="200px">
+                <el-form-item label="默认生成张数"><el-input-number v-model="cfg.defaultNumImages" :min="1" :max="4" /></el-form-item>
+                <el-form-item label="交互模式">
+                  <el-select v-model="cfg.interactionMode" style="width: 220px">
+                    <el-option value="auto" label="自动（群聊→高级，私聊→引导）" />
+                    <el-option value="guided" label="始终引导模式（适合新手）" />
+                    <el-option value="advanced" label="始终高级模式（适合熟练用户）" />
                   </el-select>
-                  <el-button link type="danger" size="small" @click="removeInteractionOverride(i)">删</el-button>
-                </div>
-                <el-button size="small" @click="addInteractionOverride">添加平台覆盖</el-button>
-                <div class="hint">未覆盖的平台使用上方全局设置；key 为 session.platform（如 lark、onebot、qq）。</div>
-              </div>
-            </el-form-item>
-          </el-form>
-          <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
-        </k-card>
-
-        <!-- ══ 模型排行（默认收起，位于页面底部） ══ -->
-        <el-collapse v-model="rankingPanelActive" @change="onRankingPanelChange">
-          <el-collapse-item title="模型排行" name="model-ranking">
-            <k-card class="section" shadow="never">
-              <div v-if="rankingLoading" class="hint">加载中…</div>
-              <div v-else-if="!rankingStats || (rankingStats.totalImages === 0 && rankingStats.totalRequests === 0)" class="hint">
-                暂无数据，生成图片后将自动统计。
-              </div>
-              <div v-else class="ranking-body">
-                <div class="ranking-summary">
-                  <div class="ranking-summary-item">
-                    <div class="ranking-summary-label">插件调用次数</div>
-                    <div class="ranking-summary-value">{{ rankingStats.totalRequests }}</div>
+                  <div class="hint">高级模式跳过向导，使用默认值直接生成。引导模式分步选择模型与参数后生成。auto 按会话类型自动切换。</div>
+                </el-form-item>
+                <el-form-item label="按平台覆盖交互模式">
+                  <div class="extra-headers">
+                    <div v-for="(row, i) in interactionOverrideRows" :key="i" class="extra-header-row">
+                      <el-input v-model="row.platform" size="small" placeholder="平台 ID（如 lark、onebot、qq）" style="width: 220px" @input="syncInteractionOverrides" />
+                      <el-select v-model="row.mode" size="small" style="width: 140px" @change="syncInteractionOverrides">
+                        <el-option value="auto" label="自动" />
+                        <el-option value="guided" label="引导" />
+                        <el-option value="advanced" label="高级" />
+                      </el-select>
+                      <el-button link type="danger" size="small" @click="removeInteractionOverride(i)">删</el-button>
+                    </div>
+                    <el-button size="small" @click="addInteractionOverride">添加平台覆盖</el-button>
+                    <div class="hint">未覆盖的平台使用上方全局设置；key 为 session.platform（如 lark、onebot、qq）。</div>
                   </div>
-                  <div class="ranking-summary-item">
-                    <div class="ranking-summary-label">总生成张数</div>
-                    <div class="ranking-summary-value">{{ rankingStats.totalImages }}</div>
-                  </div>
-                  <div class="ranking-summary-item">
-                    <div class="ranking-summary-label">使用最多模型</div>
-                    <div class="ranking-summary-value ranking-top-model">{{ rankingStats.topModel || '—' }}</div>
-                  </div>
-                </div>
-                <el-table v-if="rankingRows.length" :data="rankingRows" size="small" class="dark-table" max-height="360">
-                  <el-table-column prop="modelId" label="模型" min-width="220" />
-                  <el-table-column prop="count" label="生成张数" width="120" sortable :sort-orders="['descending', 'ascending']" />
-                  <el-table-column label="占比" width="120">
-                    <template #default="{ row }">{{ row.percent }}</template>
-                  </el-table-column>
-                </el-table>
-                <div v-else class="hint">尚未记录到具体模型的使用张数。</div>
-              </div>
+                </el-form-item>
+              </el-form>
+              <div class="hint">全局超时、目录刷新间隔和日志级别请在 Koishi 插件设置页管理。</div>
             </k-card>
-          </el-collapse-item>
-        </el-collapse>
-
+          </div>
+        </section>
       </div>
     </div>
 
@@ -520,19 +535,27 @@ function openVideoTools(): void {
   void router.push('/aka-tools-video')
 }
 
-const panelActive = ref(['models'])
-const rankingPanelActive = ref<string[]>([])
-const rankingStats = ref<{
-  totalRequests: number
-  totalImages: number
-  modelCounts: Record<string, number>
-  topModel: string | null
-} | null>(null)
-const rankingLoading = ref(false)
-let rankingLoaded = false
+const tabs = [
+  { key: 'overview', label: '总览' },
+  { key: 'credentials', label: '供应商' },
+  { key: 'catalog', label: '模型目录' },
+  { key: 'mappings', label: '模型映射' },
+  { key: 'presets', label: '预设' },
+  { key: 'pricing', label: '定价' },
+  { key: 'operations', label: '运营' },
+]
+const activeTab = ref('overview')
+
+const overviewStats = ref<any>(null)
+const overviewTotals = computed(() => overviewStats.value?.totals ?? null)
+const successRateDisplay = computed(() => {
+  const rate = overviewStats.value?.totals?.successRate
+  return typeof rate === 'number' ? `${(rate * 100).toFixed(1)}%` : '—'
+})
 
 const state = ref<any>(null)
 const cfg = ref<any>(null)
+const loading = ref(false)
 const saving = ref(false)
 const refreshing = ref(false)
 const catalogFilter = ref('')
@@ -547,16 +570,43 @@ const supplierOptions = computed(() => state.value?.suppliers?.map((item: any) =
   disabled: item.status !== 'maintained',
 })) ?? [])
 
-onMounted(async () => {
-  state.value = await send('image-generator/get-state')
-  cfg.value = normalizeConfig(state.value.config)
-  extraHeadersRows.value = objectToRows(cfg.value.providerSettings?.openaiCompatibleExtraHeaders)
-  interactionOverrideRows.value = Object.entries(cfg.value.interactionModeOverrides ?? {})
-    .map(([platform, mode]) => ({
-      platform,
-      mode: (mode === 'auto' || mode === 'guided' || mode === 'advanced') ? mode : 'auto',
-    }))
-})
+async function loadState() {
+  loading.value = true
+  try {
+    state.value = await send('image-generator/get-state')
+    cfg.value = normalizeConfig(state.value.config)
+    extraHeadersRows.value = objectToRows(cfg.value.providerSettings?.openaiCompatibleExtraHeaders)
+    interactionOverrideRows.value = Object.entries(cfg.value.interactionModeOverrides ?? {})
+      .map(([platform, mode]) => ({
+        platform,
+        mode: (mode === 'auto' || mode === 'guided' || mode === 'advanced') ? mode : 'auto',
+      }))
+    await loadOverview()
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadOverview() {
+  try {
+    overviewStats.value = await send('image-generator/get-overview-stats')
+  } catch (err) {
+    ElMessage.error(`加载用量统计失败：${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+function formatCredits(v?: number): string {
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '—'
+}
+function timeLabel(t?: string): string {
+  if (!t) return '—'
+  const d = new Date(t)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+onMounted(loadState)
 
 function syncExtraHeaders() {
   cfg.value.providerSettings.openaiCompatibleExtraHeaders = rowsToObject(extraHeadersRows.value)
@@ -577,7 +627,7 @@ function syncInteractionOverrides() {
     const platform = (row.platform ?? '').trim()
     if (!platform) continue
     if (row.mode !== 'auto' && row.mode !== 'guided' && row.mode !== 'advanced') continue
-    out[platform] = row.mode
+    out[row.platform.trim()] = row.mode
   }
   cfg.value.interactionModeOverrides = out
 }
@@ -725,44 +775,6 @@ function renameStyleGroup(oldName: string, rawName: string) {
   cfg.value.styleGroups = next
 }
 
-const rankingRows = computed(() => {
-  const stats = rankingStats.value
-  if (!stats) return [] as Array<{ modelId: string; count: number; percent: string }>
-  const total = stats.totalImages
-  const entries = Object.entries(stats.modelCounts || {})
-    .filter(([, count]) => Number(count) > 0)
-    .sort((a, b) => Number(b[1]) - Number(a[1]))
-  return entries.map(([modelId, count]) => ({
-    modelId,
-    count: Number(count),
-    percent: total > 0 ? `${(Number(count) * 100 / total).toFixed(1)}%` : '—',
-  }))
-})
-
-async function loadModelRanking() {
-  if (rankingLoaded) return
-  rankingLoading.value = true
-  try {
-    const res: any = await send('image-generator/get-model-ranking')
-    rankingStats.value = {
-      totalRequests: Number(res?.totalRequests || 0),
-      totalImages: Number(res?.totalImages || 0),
-      modelCounts: res?.modelCounts && typeof res.modelCounts === 'object' ? res.modelCounts : {},
-      topModel: res?.topModel ?? null,
-    }
-    rankingLoaded = true
-  } catch (err) {
-    ElMessage.error(`加载模型排行失败：${err instanceof Error ? err.message : String(err)}`)
-  } finally {
-    rankingLoading.value = false
-  }
-}
-
-function onRankingPanelChange(active: string | string[]) {
-  const names = Array.isArray(active) ? active : (active ? [active] : [])
-  if (names.includes('model-ranking')) loadModelRanking()
-}
-
 async function refreshCatalog() {
   refreshing.value = true
   try {
@@ -811,9 +823,58 @@ async function saveAll() {
 <style lang="scss" scoped>
 .loading { padding: 2rem; text-align: center; color: var(--fg3); }
 
-/* 页面滚动容器：k-layout 内容区撑满并自行滚动 */
-.page-scroll { height: 100%; overflow-y: auto; padding: 1rem; box-sizing: border-box; }
-.page-wrapper { max-width: 860px; margin: 0 auto; }
+/* 页面骨架：与视频页同款 —— 顶部分页 + 右侧为浮动工具条让位 + 1320px 收敛 */
+.image-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 1rem 4.5rem 1rem 1rem;
+  gap: 1rem;
+  overflow: hidden;
+}
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.25rem 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.page-tabs { flex-wrap: wrap; row-gap: 0.4rem; }
+.page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.tab-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.25rem 4px 1rem 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+/* 表单类 tab 限宽居中，表格类 tab 在 1320px 容器内全宽 */
+.panel-limit {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
 
 /* 顶层浮动工具按钮组：固定定位，不占用布局区域（全局样式，Teleport 目标在组件外） */
 .floating-tools { position: fixed; top: 3.5rem; right: 1rem; z-index: 2000;
@@ -833,13 +894,13 @@ async function saveAll() {
   --el-table-row-hover-bg-color: rgba(128, 128, 128, 0.12); background: transparent; }
 .dark-table :deep(.el-table__cell) { background: transparent !important; }
 .dark-table :deep(th.el-table__cell) { background: var(--card-bg) !important; }
-.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
 .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
 .stat-value { font-size: 1.4rem; font-weight: 600; }
 .stat-label { font-size: 0.8rem; color: var(--fg3); margin-top: 0.25rem; }
-.section { margin-bottom: 1rem; }
-.card-header { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 1rem; }
-.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+.section { }
+.card-header { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 1rem; flex-wrap: wrap; }
+.header-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .supplier-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
 .supplier-option { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s; }
 .supplier-option:hover { border-color: var(--primary); }
@@ -860,10 +921,4 @@ async function saveAll() {
 .preset-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
 .preset-section-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
 .preset-section-title { font-weight: 600; color: var(--fg1); }
-.ranking-body { display: flex; flex-direction: column; gap: 0.75rem; }
-.ranking-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-.ranking-summary-item { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; text-align: center; }
-.ranking-summary-label { font-size: 0.8rem; color: var(--fg3); margin-bottom: 0.25rem; }
-.ranking-summary-value { font-size: 1.1rem; font-weight: 600; color: var(--fg1); word-break: break-all; }
-.ranking-top-model { font-size: 0.95rem; }
 </style>

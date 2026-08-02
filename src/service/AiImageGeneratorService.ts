@@ -31,6 +31,7 @@ import type { ImageProvider as RuntimeImageProvider, ImageGenerationOptions as P
 type ImageGenerationOptionsWithContract = ProviderImageGenerationOptions
 import type { CreditLedgerEventV2, CreditSummary } from '../services/UserManager.js'
 import { UserManager } from '../services/UserManager.js'
+import { buildOverviewStats } from '../console/overview-stats.js'
 import { MissingModelMappingError, MissingCatalogRouteError } from './model-route-selection.js'
 import type { CatalogRouteLookup } from './model-route-selection.js'
 import { buildProtocolRequestContext, ContractRejectedParamsError } from '../shared/generation-setup.js'
@@ -433,6 +434,12 @@ export class AiImageGeneratorService extends Service {
 
   getModelUsageStats() {
     return this.userManager.getModelUsageStats()
+  }
+
+  /** 总览页用量统计：聚合全部用户的请求/生成/失败/积分与模型分布。 */
+  async getOverviewStats() {
+    const users = await this.userManager.getAllUsers()
+    return buildOverviewStats(Object.values(users))
   }
 
   releaseReservation(requestId: string, reason: string) {

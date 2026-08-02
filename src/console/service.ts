@@ -2,9 +2,11 @@
  * aka-tools 面板后端 —— console 数据服务
  *
  * 通过 ctx.console.addListener 暴露：
- *   image-generator/get-state        面板全量状态（配置 + 目录 + billing）
- *   image-generator/save-config      保存配置（JSON 持久化 + 原地更新运行态）
- *   image-generator/refresh-catalog  手动刷新模型目录
+ *   image-generator/get-state           面板全量状态（配置 + 目录 + billing）
+ *   image-generator/save-config         保存配置（JSON 持久化 + 原地更新运行态）
+ *   image-generator/refresh-catalog     手动刷新模型目录
+ *   image-generator/get-model-ranking   模型用量排行（旧总览折叠卡，保留兼容）
+ *   image-generator/get-overview-stats  总览页用量统计（全局合计 + 模型分布 + 用户排行）
  */
 import type { Context, Logger } from 'koishi'
 
@@ -13,6 +15,7 @@ import type { BillingInfo } from '../catalog/billing-info.js'
 import type { Config } from '../shared/config.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import { buildConsoleState } from './view-model.js'
+import { buildOverviewStats } from './overview-stats.js'
 
 type CatalogCredentials = {
   supplier: string
@@ -73,6 +76,12 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
     const service = deps.service
     if (!service) return { totalRequests: 0, totalImages: 0, modelCounts: {}, topModel: null }
     return await service.getModelUsageStats()
+  })
+
+  consoleService.addListener('image-generator/get-overview-stats', async () => {
+    const service = deps.service
+    if (!service) return buildOverviewStats([])
+    return await service.getOverviewStats()
   })
 
   consoleService.addListener('image-generator/refresh-catalog', async () => {
