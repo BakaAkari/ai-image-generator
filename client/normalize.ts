@@ -80,7 +80,7 @@ export function normalizeConfig(raw: any): any {
     geminiOfficialApiKey: source.providerSettings?.geminiOfficialApiKey ?? '',
     openaiCompatibleExtraHeaders: sanitizeHeaders(rawHeaders),
   }
-  c.activeSupplier ??= 'yunwu'
+  c.activeSupplier ??= 'newapi'
   // 按平台覆盖交互模式：防御脏数据（非对象 → {}）
   if (!c.interactionModeOverrides || typeof c.interactionModeOverrides !== 'object' || Array.isArray(c.interactionModeOverrides)) {
     c.interactionModeOverrides = {}

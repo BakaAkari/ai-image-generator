@@ -114,12 +114,12 @@
                 </div>
               </div>
               <el-form label-width="180px" class="cred-form">
-                <template v-if="cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
-                  <el-form-item :label="cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'">
+                <template v-if="cfg.activeSupplier === 'newapi' || cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
+                  <el-form-item :label="cfg.activeSupplier === 'newapi' ? 'NewAPI API Key' : (cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key')">
                     <el-input v-model="cfg.providerSettings.openaiCompatibleApiKey" type="password" show-password placeholder="sk-..." />
                   </el-form-item>
                   <el-form-item label="Base URL">
-                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1'" />
+                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'newapi' ? 'https://api.openlux.ai/v1' : (cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1')" />
                   </el-form-item>
                   <el-form-item label="额外请求头">
                     <div class="extra-headers">
@@ -401,7 +401,7 @@
                 </el-form-item>
                 <el-form-item label="供应商 → 人民币汇率">
                   <el-input :model-value="'1 供应商积分 = ¥0.50'" readonly style="width: 220px" />
-                  <div class="hint">yunwu 官方约定值，不作为可配置项；修改需要新版本发布。</div>
+                  <div class="hint">NewAPI 兼容站官方约定值（默认 0.5），不作为可配置项；修改需要新版本发布。</div>
                 </el-form-item>
                 <div class="hint" style="margin-left: 16px">
                   公式：用户扣费 = 供应商积分 × 0.5 × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
@@ -791,9 +791,9 @@ async function saveAll() {
   const supplier = cfg.value.activeSupplier
   const providerSettings = cfg.value.providerSettings || {}
   let missingField = ''
-  if (supplier === 'yunwu' || supplier === 'gptgod') {
+  if (supplier === 'newapi' || supplier === 'yunwu' || supplier === 'gptgod') {
     const key = (providerSettings.openaiCompatibleApiKey || '').trim()
-    if (!key) missingField = supplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key'
+    if (!key) missingField = supplier === 'newapi' ? 'NewAPI API Key' : (supplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key')
   } else if (supplier === 'openai-official') {
     const key = (providerSettings.gptOfficialApiKey || '').trim()
     if (!key) missingField = 'OpenAI 官方 API Key'
