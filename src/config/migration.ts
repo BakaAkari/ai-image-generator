@@ -18,6 +18,14 @@ export function migrateConfig(config: Config): MigrationResult {
   const clone = structuredClone(config)
   const mappings = (clone.modelMappings ?? []) as ModelMappingConfig[]
 
+  // activeSupplier: yunwu/gptgod → newapi（new-api 兼容站统一标识）
+  const rawActive = clone.activeSupplier as string | undefined
+  if (rawActive === 'yunwu' || rawActive === 'gptgod') {
+    clone.activeSupplier = 'newapi'
+    actions.push(`migrated activeSupplier ${rawActive} → newapi`)
+    changed = true
+  }
+
   for (const mapping of mappings) {
     if (mapping.supplier) { delete mapping.supplier; actions.push('removed legacy supplier from mapping'); changed = true }
     if (mapping.protocol) { delete mapping.protocol; actions.push('removed legacy protocol from mapping'); changed = true }

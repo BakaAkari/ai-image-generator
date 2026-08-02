@@ -66,7 +66,7 @@ export interface Config {
 
   // ── ①b 激活供应商（互斥单选）与动态模型目录 ────────────────────────────────
   /** 互斥单选：模型目录与默认凭证来源 */
-  activeSupplier?: 'yunwu' | 'gptgod' | 'openai-official' | 'gemini-official'
+  activeSupplier?: 'newapi' | 'openai-official' | 'gemini-official'
   /** 模型目录自动刷新间隔（小时） */
   catalogRefreshHours?: number
   /**
@@ -98,6 +98,18 @@ export interface Config {
   yunwuGroupRatio?: number
   /** @deprecated 1.1.0 起迁移到 modelMappings[n].groupRatio。保留旧字符串字段用于一次性迁移。 */
   yunwuGroup?: string
+  /** 供应商端点覆盖（可选；默认 new-api 标准路径） */
+  supplierEndpoints?: {
+    models?: string
+    pricing?: string
+    usage?: string
+    usageQuery?: Record<string, string>
+    subscription?: string
+  }
+  /** endpoint 名称 → 协议/能力 别名表（可选；按站补充，如 "MJ imagine"） */
+  endpointAliases?: Record<string, { protocol: 'openai' | 'gemini' | 'mj'; capability: 'text-to-image' | 'image-to-image' | 'image-edit' }>
+  /** 供应商积分 → 人民币汇率（默认 0.5） */
+  supplierCreditToRmb?: number
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
@@ -229,14 +241,30 @@ const SupplierSchema = Schema.object({
 // ①b 激活供应商（互斥单选）+ 动态模型目录
 const ActiveSupplierSchema = Schema.object({
   activeSupplier: Schema.union([
-    Schema.const('yunwu').description('云雾 yunwu.ai（使用上方"第三方"凭证）'),
-    Schema.const('gptgod').description('GPTGod（使用上方"第三方"凭证，改 Base 为 gptgod.cloud）'),
+    Schema.const('newapi').description('NewAPI 兼容站（云雾 / openlux / GPTGod 等，使用上方"第三方"凭证）'),
     Schema.const('openai-official').description('OpenAI 官方（使用上方 OpenAI 凭证）'),
     Schema.const('gemini-official').description('Gemini 官方（使用上方 Gemini 凭证）'),
   ])
-    .default('yunwu')
+    .default('newapi')
     .description('激活供应商（互斥）：模型目录从该供应商动态获取'),
 }).description('🛰️ 激活供应商 / 动态模型目录')
+
+const SupplierRuntimeSchema = Schema.object({
+  supplierEndpoints: Schema.object({
+    models: Schema.string(),
+    pricing: Schema.string(),
+    usage: Schema.string(),
+    usageQuery: Schema.dict(Schema.string()),
+    subscription: Schema.string(),
+  }).hidden(),
+  endpointAliases: Schema.dict(
+    Schema.object({
+      protocol: Schema.union([Schema.const('openai'), Schema.const('gemini'), Schema.const('mj')]),
+      capability: Schema.union([Schema.const('text-to-image'), Schema.const('image-to-image'), Schema.const('image-edit')]),
+    })
+  ).hidden(),
+  supplierCreditToRmb: Schema.number().default(0.5).hidden(),
+}).hidden()
 
 // ----------------------------------------------------------------------------
 // 顶层 Schema
@@ -260,6 +288,7 @@ const CONFIG_GROUPS = [
 
   // ①b 激活供应商 / 动态模型目录
   ActiveSupplierSchema,
+  SupplierRuntimeSchema,
 
   // ② 模型映射（先定义可用模型后缀，再供命令参数与 prompt 预设引用）
   Schema.object({

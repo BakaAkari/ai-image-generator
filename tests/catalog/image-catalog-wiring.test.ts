@@ -50,4 +50,24 @@ describe('ImageCatalogService scheduler wiring', () => {
     expect(canPublishNewApiSnapshot({ endpoints: { models: { success: true }, pricing: { success: false } } } as any)).toBe(true)
   })
 
+  test('endpoints config is accepted by refresh type', () => {
+    const ctx = context()
+    const service = new ImageCatalogService(ctx, logger, '/tmp/catalog-wiring-' + Date.now())
+    service.start(() => ({
+      supplier: 'newapi',
+      apiBase: 'https://yunwu.ai/v1',
+      apiKey: '',
+      timeoutSec: 30,
+      refreshHours: 6,
+      endpoints: {
+        models: '/v1/models',
+        pricing: '/api/pricing',
+        usage: '/v1/dashboard/billing/usage',
+        usageQuery: { start_date: '2024-01-01' },
+        subscription: '/v1/dashboard/billing/subscription',
+      },
+    }))
+    expect(() => service.updateRefreshHours(2)).not.toThrow()
+    service.stop()
+  })
 })

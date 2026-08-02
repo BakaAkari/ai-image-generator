@@ -42,6 +42,30 @@ describe('migrateConfig', () => {
     expect(result.actions).toContain('modelMappings empty; explicit configuration required')
     expect(result.migrated).toBe(false)
   })
+
+  test('migrates activeSupplier yunwu → newapi', () => {
+    const config = { activeSupplier: 'yunwu', modelMappings: [] } as unknown as Config
+    const result = migrateConfig(config)
+    expect(result.config.activeSupplier).toBe('newapi')
+    expect(result.migrated).toBe(true)
+    expect(result.actions).toContain('migrated activeSupplier yunwu → newapi')
+  })
+
+  test('migrates activeSupplier gptgod → newapi', () => {
+    const config = { activeSupplier: 'gptgod', modelMappings: [] } as unknown as Config
+    const result = migrateConfig(config)
+    expect(result.config.activeSupplier).toBe('newapi')
+    expect(result.migrated).toBe(true)
+    expect(result.actions).toContain('migrated activeSupplier gptgod → newapi')
+  })
+
+  test('leaves activeSupplier newapi unchanged', () => {
+    const config = { activeSupplier: 'newapi', modelMappings: [] } as unknown as Config
+    const result = migrateConfig(config)
+    expect(result.config.activeSupplier).toBe('newapi')
+    expect(result.migrated).toBe(false)
+    expect(result.actions).not.toContain('migrated activeSupplier newapi → newapi')
+  })
 })
 
 describe('sanitizeModelMapping', () => {

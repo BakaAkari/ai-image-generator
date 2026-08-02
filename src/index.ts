@@ -225,7 +225,7 @@ export async function apply(ctx: Context, config: Config) {
   }
 
   const resolveCredentials = (config: Config) => {
-    const active = config.activeSupplier ?? 'newapi'
+    const active = (config.activeSupplier ?? 'newapi') as string
     const s = config.providerSettings
     if (active === 'yunwu' || active === 'gptgod' || active === 'newapi') {
       const apiKey = s?.openaiCompatibleApiKey || config.openaiCompatibleApiKey || ''
@@ -239,6 +239,7 @@ export async function apply(ctx: Context, config: Config) {
         timeoutSec: config.apiTimeout ?? 60,
         refreshHours: config.catalogRefreshHours ?? 6,
         extraHeaders: s?.openaiCompatibleExtraHeaders || config.openaiCompatibleExtraHeaders,
+        endpoints: config.supplierEndpoints,
       }
     }
     if (active === 'openai-official') {

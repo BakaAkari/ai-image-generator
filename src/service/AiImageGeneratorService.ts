@@ -737,8 +737,8 @@ export class AiImageGeneratorService extends Service {
 
   /** activeSupplier → 运行时凭证入口（ImageProvider） */
   private resolveActiveSupplierRoute(protocol: ProviderType, mapping?: ModelMappingConfig): ImageProvider {
-    const active = this.pluginConfig.activeSupplier
-    if (active === 'gptgod' || active === 'yunwu') return 'openai-compatible'
+    const active = this.pluginConfig.activeSupplier as string | undefined
+    if (active === 'newapi' || active === 'gptgod' || active === 'yunwu') return 'openai-compatible'
     if (active === 'openai-official') return 'gpt-official'
     if (active === 'gemini-official') return 'gemini-official'
     // 未配置 activeSupplier（旧配置升级）：沿用 mapping 上的 legacy 字段，保证行为不变
