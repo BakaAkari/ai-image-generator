@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 重构
+
+- **new-api 通用适配器（yunwu → newapi）**：把云雾专属适配层泛化为 new-api 系中转站通用适配器，换站（任何 new-api 兼容站）只改 `openaiCompatibleApiBase` + `openaiCompatibleApiKey`，不再依赖代码。方案见 `plans/aka-ai-image-generator-newapi-adapter.md`。
+  - `src/suppliers/newapi/` 替代 `src/suppliers/yunwu/`：端点路径可配置（models/pricing/usage/subscription + usageQuery），endpoint 名称映射「默认表 + 配置覆盖」。
+  - 新增 `supplierEndpoints` / `endpointAliases` / `supplierCreditToRmb` 配置项（均带默认值，隐藏于设置页）。
+  - `activeSupplier` 旧值 `yunwu`/`gptgod` 自动迁移为 `newapi`（migration + schema 兼容旧值反序列化）。
+  - 契约层 `yunwu.*` → `newapi.*`（运行时生成，无持久化依赖）；`mapSupplierToContract` 保留旧值兼容输入。
+  - 移除站点硬编码：默认 apiBase 不再指向 yunwu.ai；汇率默认 0.5 可配置。
+  - probe 脚本 `probe-yunwu-catalog.mjs` → `probe-newapi-catalog.mjs`（`NEWAPI_API_BASE`/`NEWAPI_API_KEY`）。
+- **实机验证（openlux）**：模型目录 118 可用（此前 35），`mj_imagine` 通过 `endpointAliases: {"MJ imagine": {protocol:"mj", capability:"text-to-image"}}` 进入可用列表；billing usage 无参返回 200 已兼容。
+
 ### 改进
 
 - **设置页改为顶部分页式**：与视频生成页同款信息架构与页头（`el-radio-group` 分段 tabs + 刷新/保存全部按钮）。原 ①–⑤ 手风琴长页拆分为 7 个 tab：总览、供应商、模型目录、模型映射、预设、定价、运营（含生成默认值）。模型目录与模型映射相互独立（与视频页划分一致），添加映射后不再挤占目录空间；表单类 tab 限宽 900px 居中，表格类 tab 全宽。
