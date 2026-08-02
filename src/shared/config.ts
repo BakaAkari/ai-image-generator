@@ -65,8 +65,8 @@ export interface Config {
   setupGuide?: string
 
   // ── ①b 激活供应商（互斥单选）与动态模型目录 ────────────────────────────────
-  /** 互斥单选：模型目录与默认凭证来源 */
-  activeSupplier?: 'newapi' | 'openai-official' | 'gemini-official'
+  /** 互斥单选：模型目录与默认凭证来源。旧值 yunwu/gptgod 兼容反序列化，migration 迁移为 newapi。 */
+  activeSupplier?: 'newapi' | 'openai-official' | 'gemini-official' | 'yunwu' | 'gptgod'
   /** 模型目录自动刷新间隔（小时） */
   catalogRefreshHours?: number
   /**
@@ -244,6 +244,8 @@ const ActiveSupplierSchema = Schema.object({
     Schema.const('newapi').description('NewAPI 兼容站（云雾 / openlux / GPTGod 等，使用上方"第三方"凭证）'),
     Schema.const('openai-official').description('OpenAI 官方（使用上方 OpenAI 凭证）'),
     Schema.const('gemini-official').description('Gemini 官方（使用上方 Gemini 凭证）'),
+    Schema.const('yunwu').description('旧值（自动迁移到 newapi）'),
+    Schema.const('gptgod').description('旧值（自动迁移到 newapi）'),
   ])
     .default('newapi')
     .description('激活供应商（互斥）：模型目录从该供应商动态获取'),

@@ -6,6 +6,7 @@ import type { CatalogModel, CatalogSnapshot, CatalogNormalizer } from '../../cat
 import type { CatalogModelPricing } from '../../catalog/model-catalog.js'
 import type { NewApiModelItem, NewApiPricingItem, NewApiRawSnapshot } from './raw-types.js'
 import { resolveNewApiCapabilities } from './capability.js'
+import type { EndpointAliasMap } from './routes.js'
 import { resolveRoutesFromCapabilities, resolveNewApiRoutes } from './routes.js'
 
 export const NEWAPI_PARSER_VERSION = '1.0.0'
@@ -36,9 +37,9 @@ function normalizePricing(item: NewApiModelItem, pricing?: NewApiPricingItem): C
   return { type: 'unknown', source: 'remote-models' }
 }
 
-function normalizeModel(item: NewApiModelItem, pricing?: NewApiPricingItem): CatalogModel {
-  const { capabilities, reasons } = resolveNewApiCapabilities(item)
-  const routesFromEndpoints = resolveNewApiRoutes(item.supported_endpoint_types ?? [])
+function normalizeModel(item: NewApiModelItem, pricing?: NewApiPricingItem, aliases?: EndpointAliasMap): CatalogModel {
+  const { capabilities, reasons } = resolveNewApiCapabilities(item, aliases)
+  const routesFromEndpoints = resolveNewApiRoutes(item.supported_endpoint_types ?? [], aliases)
   const routesFromCapabilities = routesFromEndpoints.length > 0 ? [] : resolveRoutesFromCapabilities(capabilities)
   const routes = [...routesFromEndpoints, ...routesFromCapabilities]
   const hasBlockingReason = reasons.some(r =>
@@ -67,7 +68,7 @@ function normalizeModel(item: NewApiModelItem, pricing?: NewApiPricingItem): Cat
 }
 
 export class NewApiCatalogNormalizer implements CatalogNormalizer<NewApiRawSnapshot> {
-  normalize(raw: NewApiRawSnapshot): CatalogSnapshot {
+  normalize(raw: NewApiRawSnapshot, aliases?: EndpointAliasMap): CatalogSnapshot {
     const modelsPayload = raw.endpoints.models.success ? raw.endpoints.models.data : undefined
     const pricingPayload = raw.endpoints.pricing.success ? raw.endpoints.pricing.data : undefined
 
@@ -84,7 +85,7 @@ export class NewApiCatalogNormalizer implements CatalogNormalizer<NewApiRawSnaps
 
     for (const item of rawModels) {
       const pricing = pricingMap.get(item.id.toLowerCase())
-      allModels.push(normalizeModel(item, pricing))
+      allModels.push(normalizeModel(item, pricing, aliases))
     }
 
     allModels.sort((a, b) => a.id.localeCompare(b.id))
@@ -115,6 +116,6 @@ export class NewApiCatalogNormalizer implements CatalogNormalizer<NewApiRawSnaps
   }
 }
 
-export function normalizeNewApiSnapshot(raw: NewApiRawSnapshot): CatalogSnapshot {
-  return new NewApiCatalogNormalizer().normalize(raw)
+export function normalizeNewApiSnapshot(raw: NewApiRawSnapshot, aliases?: EndpointAliasMap): CatalogSnapshot {
+  return new NewApiCatalogNormalizer().normalize(raw, aliases)
 }

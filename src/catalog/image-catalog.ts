@@ -32,6 +32,8 @@ interface CatalogConfig {
   refreshHours: number
   extraHeaders?: Record<string, string>
   endpoints?: SupplierEndpointsConfig
+  /** endpoint 名称 → 协议/能力 别名表（按站补充，如 openlux 的 "MJ imagine"） */
+  endpointAliases?: Record<string, { protocol: 'openai' | 'gemini' | 'mj'; capability: 'text-to-image' | 'image-to-image' | 'image-edit' }>
 }
 
 export class ImageCatalogService {
@@ -118,7 +120,7 @@ export class ImageCatalogService {
         if (this.snapshot) this.snapshot = { ...this.snapshot, error: message }
         return this.snapshot
       }
-      const normalized = normalizeNewApiSnapshot(raw)
+      const normalized = normalizeNewApiSnapshot(raw, cfg.endpointAliases)
       this.billing = normalizeNewApiBilling(raw)
       const groupRatio = raw.endpoints.pricing.success ? (raw.endpoints.pricing.data as any)?.group_ratio : undefined
       const models: ImageModelInfo[] = normalized.models.map(model => ({

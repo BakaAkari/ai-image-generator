@@ -240,6 +240,7 @@ export async function apply(ctx: Context, config: Config) {
         refreshHours: config.catalogRefreshHours ?? 6,
         extraHeaders: s?.openaiCompatibleExtraHeaders || config.openaiCompatibleExtraHeaders,
         endpoints: config.supplierEndpoints,
+        endpointAliases: config.endpointAliases,
       }
     }
     if (active === 'openai-official') {

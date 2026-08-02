@@ -116,4 +116,35 @@ describe('normalizeNewApiSnapshot', () => {
     expect(catalog.models.length).toBeGreaterThan(0)
     expect(catalog.allModels.length).toBeGreaterThan(catalog.models.length)
   })
+
+  test('endpointAliases make an aliased MJ model executable', () => {
+    const snapshot = structuredClone(loadSnapshot())
+    // fixture 不含 mj_imagine，注入一个带 openlux 英文 endpoint 的模型
+    const models = snapshot.endpoints.models as unknown as { success: boolean; data: { data: unknown[] } }
+    const rows = models.data?.data ?? []
+    models.data = {
+      ...models.data,
+      data: [
+        ...rows,
+        {
+          id: 'mj_imagine',
+          model_type: '图像',
+          description: 'Midjourney imagine mode.',
+          supported_endpoint_types: ['MJ imagine'],
+          available: true,
+        },
+      ],
+    }
+    // 无别名：MJ imagine 英文 endpoint 不被识别 → unsupported
+    const withoutAlias = normalizeNewApiSnapshot(snapshot)
+    expect(withoutAlias.allModels.find(m => m.id === 'mj_imagine')?.executable).toBe(false)
+
+    // 带别名：'MJ imagine' → mj:text-to-image → executable
+    const withAlias = normalizeNewApiSnapshot(snapshot, {
+      'MJ imagine': { protocol: 'mj', capability: 'text-to-image' },
+    })
+    const row = withAlias.allModels.find(m => m.id === 'mj_imagine')
+    expect(row?.executable).toBe(true)
+    expect(row?.routes.some(r => r.id === 'mj:text-to-image')).toBe(true)
+  })
 })
