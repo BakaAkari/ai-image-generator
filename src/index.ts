@@ -283,6 +283,7 @@ export async function apply(ctx: Context, config: Config) {
       ctx,
       logger,
       catalog,
+      service,
       getConfig: () => currentConfig,
       refreshCatalog: async () => {
         const cred = resolveCredentials(currentConfig)

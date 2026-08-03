@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1] - 2026-08-03
+
+### 修复
+
+- **aka-tools 总览页用量统计断线**：`registerConsoleService` 漏传 `service`，导致 `get-overview-stats` / `get-model-ranking` listener 永远返回空数据（总用户/累计请求/生成/失败/积分/模型用量/用户排行全为 `—`）。已补传 `service`，页面现在展示真实统计（来自 users.v2.json 持久化数据）。
+- 验证：bundle 确认 service 注入，真实数据聚合正常，`tsc` clean，全量 `547 passed`。
+
 ## [2.3.0] - 2026-08-03
 
 ### 新增
