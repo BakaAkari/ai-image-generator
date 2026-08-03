@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.2] - 2026-08-03
+
+### 清理
+
+- **移除死代码 `src/catalog/pricing-snapshot.ts`**：`PricingSnapshotService`（60s 实时探测）从未被接线，与当前 6h 目录快照倍率策略混淆。已删除，避免误以为实时探测在运行。
+- **文档归档与更新**：
+  - yunwu 时代文档（2026-07 基线 / 重构状态 / no-hardcoding 设计 / Apifox 契约快照 / v1.2.7 契约调查方案 / midjourney-plan）移入 `docs/archive/2026-07-yunwu-era/`，附归档说明。
+  - README / ROADMAP / STATUS 更新到 2.3.x 现状（newapi 供应商、MJ Blend 已接入、动态倍率闭环、总览统计）。
+- 验证：`tsc` clean，全量 `547 passed`。
+
 ## [2.3.1] - 2026-08-03
 
 ### 修复
@@ -90,7 +100,7 @@
 
 ### 重构
 
-- **new-api 通用适配器（yunwu → newapi）**：把云雾专属适配层泛化为 new-api 系中转站通用适配器，换站（任何 new-api 兼容站）只改 `openaiCompatibleApiBase` + `openaiCompatibleApiKey`，不再依赖代码。方案见 `plans/aka-ai-image-generator-newapi-adapter.md`。
+- **new-api 通用适配器（yunwu → newapi）**：把云雾专属适配层泛化为 new-api 系中转站通用适配器，换站（任何 new-api 兼容站）只改 `openaiCompatibleApiBase` + `openaiCompatibleApiKey`，不再依赖代码。任务拆分见 `plans/newapi-adapter-tasks-archive.md`。
   - `src/suppliers/newapi/` 替代 `src/suppliers/yunwu/`：端点路径可配置（models/pricing/usage/subscription + usageQuery），endpoint 名称映射「默认表 + 配置覆盖」。
   - 新增 `supplierEndpoints` / `endpointAliases` / `supplierCreditToRmb` 配置项（均带默认值，隐藏于设置页）。
   - `activeSupplier` 旧值 `yunwu`/`gptgod` 自动迁移为 `newapi`（migration + schema 兼容旧值反序列化）。

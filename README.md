@@ -2,30 +2,30 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-aka-ai-image-generator?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-aka-ai-image-generator)
 
-自用 AI 图像生成插件 V2（image-only）。当前 `1.2.7` 版本以“供应商 + 协议 + 操作 + 模型”四元组精确契约为核心：yunwu 是唯一完整维护的目录 / 计价源，OpenAI 官方、Gemini 官方与 Midjourney（yunwu Imagine）已按 Apifox / 官方文档建契约；未接入契约的能力（MJ Action / Blend / Describe、Kling 多图 / 扩图、omni-image、图像识别）目录级 fail-closed。生成链路使用真实积分预授权 + 免计费平台绕过 + 每日免费 + 平台级交互模式路由，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接、模型排行折叠面板。
+自用 AI 图像生成插件 V2（image-only）。当前 `2.3.x` 版本以「供应商 + 协议 + 操作 + 模型」四元组精确契约为核心：new-api 兼容站（openlux）是唯一完整维护的目录 / 计价源；OpenAI、Gemini 与 Midjourney（Imagine + Blend）已按官方 / 供应商文档建契约；未接入契约的能力（MJ Action / Describe、Kling 多图 / 扩图、omni-image、图像识别）目录级 fail-closed。生成链路使用真实积分预授权（预扣上界 → 生成后按实际路由分组倍率结算多退少补）+ 免计费平台绕过 + 每日免费 + 平台级交互模式路由，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接、总览统计。
 
 > 范围：仅图像生成。aka-tools Console 页面已实现；视频生成不在当前运行时范围内。
 
 ## 当前版本状态
 
-- 当前包版本：`1.2.7`。
-- 当前稳定能力：yunwu 完整目录 / 计价 / route，OpenAI（yunwu + 官方）、Gemini（yunwu + 官方）、Midjourney（yunwu Imagine）契约精确到操作 / 模型；contract-driven 请求构建与参数补全；显式非法参数 fail-closed；auto / guided / advanced 三种交互模式 + `interactionModeOverrides` 平台覆盖；`freePlatforms` 免计费平台绕过积分与试用（保留限流）；单模型每日免费；模型级 `groupRatio` + `chargePolicy`；Prompt presets（styles / styleGroups）+ 动态命令热重载；ChatLuna 桥接（5 个基础工具 + 每 style 动态工具 + 上下文注入）；YesImBot 桥接（5 个 AI Agent 工具，通过 `yesimbot.tool` ToolService 注册）；模型排行折叠面板；`图像充值 @用户 人民币金额` 按 `creditsPerCny` 换算。
-- 已实现契约覆盖：yunwu OpenAI GPT Image 1 / 2 / 2-c create、GPT Image 2 edit（multipart-first）、yunwu Gemini 2.5 生成、Gemini 3 Pro 生成 / 编辑、Gemini 官方 create / edit、yunwu MJ Imagine（文生图 + 参考图两个 id）、OpenAI 官方 create / edit。
-- 目录级 fail-closed（未实现能力）：MJ Action / Blend / Describe / Modal / Upload、Kling 生图 / 多图生图 / 扩图、omni-image、图像识别。相关模型进入 `unsupported`，不会被路由到 provider。
+- 当前包版本：`2.3.1`。
+- 当前稳定能力：new-api（openlux）完整目录 / 计价 / route；OpenAI、Gemini、Midjourney（Imagine + Blend）契约精确到操作 / 模型；contract-driven 请求构建与参数补全；显式非法参数 fail-closed；auto / guided / advanced 三种交互模式 + `interactionModeOverrides` 平台覆盖；`freePlatforms` 免计费平台绕过积分与试用（保留限流）；单模型每日免费；**动态倍率定价**（目录 `group_ratio` 表：预扣按 enable_groups 上界、结算按 `x-routing-group` 实际分组）；Prompt presets（styles / styleGroups）+ 动态命令热重载；ChatLuna 桥接（5 个基础工具 + 每 style 动态工具 + 上下文注入）；YesImBot 桥接（5 个 AI Agent 工具）；aka-tools 总览 / 配置页（含用量统计）；`图像充值 @用户 人民币金额` 按 `creditsPerCny` 换算。
+- 已实现契约覆盖：newapi OpenAI image create / edit（openai 协议）、newapi Gemini generateContent（gemini 协议）、`newapi.mj.imagine`（文生图 + 参考图垫图）、`newapi.mj.blend`（合成图多图融合）、OpenAI 官方 create / edit、Gemini 官方 create / edit。
+- 目录级 fail-closed（未实现能力）：MJ Action / Describe / Modal / Upload、Kling 生图 / 多图生图 / 扩图、omni-image、图像识别。相关模型进入 `unsupported`，不会被路由到 provider。
 - 后续路线图：见 `ROADMAP.md`。
 
 ## 支持的供应商入口 / 模型路由
 
-- `openai-compatible`（yunwu 等第三方兼容站）：当前唯一完整维护的目录 / 计价源。目录从 `/v1/models` + `/api/pricing` 获取，协议 route 仅按 `supported_endpoint_types`；契约由 `src/contracts/registry.ts` 精确注册到具体 endpoint + operation。
-- `gpt-official`（OpenAI 官方 GPT）：目录不由 yunwu 维护，按已注册的 OpenAI 官方 create / edit 契约执行；未在契约中声明的字段不发送。
-- `gemini-official`（Google Gemini 官方）：按 Gemini 官方 create / edit 契约执行；不复用云雾 `response_format` 扩展；`imageSize` 使用大写 `1K/2K/4K`（当前对全模型保守 fail-closed 相同枚举）。
+- `newapi`（openlux 等 new-api 兼容站）：当前唯一完整维护的目录 / 计价源。目录从 `/v1/models` + `/api/pricing` 获取（`/api/pricing` 的 `group_ratio` 表作为动态倍率来源，默认 6h 快照刷新）；协议 route 按语义规则识别；契约由 `src/contracts/registry.ts` 精确注册到具体 endpoint + operation。
+- `gpt-official`（OpenAI 官方 GPT）：目录不由 new-api 维护，按已注册的 OpenAI 官方 create / edit 契约执行；未在契约中声明的字段不发送。
+- `gemini-official`（Google Gemini 官方）：按 Gemini 官方 create / edit 契约执行；`imageSize` 使用大写 `1K/2K/4K`。
 
 每条模型映射包含：
 
-- `suffix`：聊天命令和 preset 使用的模型后缀（例如 `mj` / `gpt42` / `gemini25`）。
+- `suffix`：聊天命令和 preset 使用的模型后缀（例如 `mj` / `gpt` / `gemini`）。
 - `modelId`：必须存在于当前 Key scope 的可执行目录。
 - `restricted`：是否需要管理员或模型白名单。
-- `groupRatio`：每映射独立倍率，默认 1；用于结算 `platformCredits × groupRatio`。
+- `groupRatio`：每映射独立倍率，默认 1；仅在目录 `group_ratio` 表缺失对应分组时作为兜底。
 
 系统没有具体默认模型。第一条有效映射是默认映射；空映射、缺少 endpoint route 或未匹配契约都会明确拒绝生成。
 
@@ -34,7 +34,7 @@
 ### Contract-driven 请求构建
 
 - Catalog route 决定协议（openai / gemini / mj），`service.catalogRouteLookup(modelId, operation)` 按 `text-to-image / image-edit / compose-image` 精确匹配 route；不再固定取 `routes[0]`。
-- 契约 id（如 `yunwu.openai.gpt-image-2.generate`、`yunwu.mj.imagine`、`gemini.official.edit`）通过 `ImageRequestContext.contractId` 透传到 provider；provider 只发送契约声明的字段。
+- 契约 id（如 `newapi.mj.imagine`、`newapi.mj.blend`、`gemini.official.edit`）通过 `ImageRequestContext.contractId` 透传到 provider；provider 只发送契约声明的字段。
 - 找不到契约立即 fail-closed，不会退化到旧 `PROTOCOL_PARAMS`。
 
 ### 参数补全 vs 拒绝
@@ -43,11 +43,12 @@
 - **控制后缀不会进入最终 prompt**：`src/utils/parser.ts::stripImageCommandControls` 按当前 `modelMappings` 索引 + 预设分辨率 / 比例 / `-add` / `-n` 集合从 `[prompt:text]` 中剥离控制 token；命令入口与向导内联路径都在计费预授权与 provider 调用前完成 strip。`文生图 一只猫 -mj -16:9` 只把“一只猫”交给 MJ Imagine，不会导致服务端返回 `parameter error`。
 - 显式无效或契约不支持的参数不静默丢弃：抛出 `ContractRejectedParamsError`，五入口（命令、style、wizard、ChatLuna、YesImBot）在计费预授权之前拦截并 fail-closed，用户看到明确原因。
 
-### 协议差异（简要摘要，完整字段以 `src/contracts/` 与 Apifox / 官方文档为准）
+### 协议差异（简要摘要，完整字段以 `src/contracts/` 与供应商文档为准）
 
-- **Midjourney（yunwu.mj.imagine）**：`POST /mj/submit/imagine`，Body 严格为 `{ botType: 'MID_JOURNEY', prompt, base64Array?, notifyHook?, state? }`；`--ar` / `--stylize` 由公共层作为 `promptAppends` 拼接到 prompt 尾部并去重，不再发送非契约的 `model` 或 `imageUrl`。参考图先下载为 data URL 塞入 `base64Array`；全部下载失败 → fail-closed，不退化为文生图。任务通过 `GET /mj/task/{taskId}/fetch` 轮询，识别 `SUCCESS/FAILURE` + `failReason/description`。
-- **OpenAI Images API（yunwu + 官方）**：`POST /v1/images/generations` JSON 创建、`POST /v1/images/edits` multipart-first 编辑（不再先发 JSON 再回退）；`size` 由 `src/contracts/openai-size.ts` 按 `resolution + aspectRatio + 模型` 精确计算，自定义尺寸校验 ≤3840、16 倍数、长短边比 ≤3:1、总像素 655 360..8 294 400；`-2k` / `-4k` 真正改变请求 `size`；`4:3` 无对应固定 size 时 fail-closed；`quality/format/background/moderation` 仅在契约声明枚举时才发送；`gpt-image-2-c` 明确不支持 `n`，走逐张调用。响应解析同时兼容 `data[].url / data[].b64_json / usage.total_tokens`。
-- **Gemini generateContent（yunwu 2.5 / 3 Pro / 编辑 + 官方）**：`POST /v1beta/models/{model}:generateContent`；云雾 2.5 生成不发 `imageSize`，云雾 3 Pro 生成发 `1K/2K/4K` 大写，云雾编辑不发 `imageConfig`（只发 `responseModalities`）；云雾扩展 `response_format=url` 仅在云雾契约允许时携带；官方 Gemini 移除未经验证的 `LOW/MEDIUM` 映射；图生图输入全部下载失败 → fail-closed。响应解析覆盖 `inlineData` / 顶层 `data[].url` / `b64_json` / `usageMetadata`。
+- **Midjourney Imagine（newapi.mj.imagine）**：`POST /mj/submit/imagine`，Body 严格为 `{ botType: 'MID_JOURNEY', prompt, base64Array?, notifyHook?, state? }`；`--ar` / `--stylize` 由公共层作为 `promptAppends` 拼接到 prompt 尾部并去重，不再发送非契约的 `model` 或 `imageUrl`。参考图先下载为 data URL 塞入 `base64Array`；全部下载失败 → fail-closed，不退化为文生图。任务通过 `GET /mj/task/{taskId}/fetch` 轮询，识别 `SUCCESS/FAILURE` + `failReason/description`。
+- **Midjourney Blend（newapi.mj.blend）**：`合成图 -mj` 走 `POST /mj/submit/blend`，Body 为 `{ botType, base64Array (2-5 张), dimensions }`；不携带 prompt，多图直接融合。`dimensions` 按比例自动映射（`1:1→SQUARE`、横图→`LANDSCAPE`、竖图→`PORTRAIT`）。与 Imagine 垫图（reference + prompt 生成）语义分离：`图生图 -mj` → Imagine 参考图、`合成图 -mj` → Blend。
+- **OpenAI Images API（newapi + 官方）**：`POST /v1/images/generations` JSON 创建、`POST /v1/images/edits` multipart-first 编辑（不再先发 JSON 再回退）；`size` 由 `src/contracts/openai-size.ts` 按 `resolution + aspectRatio + 模型` 精确计算，自定义尺寸校验 ≤3840、16 倍数、长短边比 ≤3:1、总像素 655 360..8 294 400；`-2k` / `-4k` 真正改变请求 `size`；`4:3` 无对应固定 size 时 fail-closed；`quality/format/background/moderation` 仅在契约声明枚举时才发送；不支持 `n` 的模型逐张调用。响应解析同时兼容 `data[].url / data[].b64_json / usage.total_tokens`。
+- **Gemini generateContent（newapi + 官方）**：`POST /v1beta/models/{model}:generateContent`；编辑不发 `imageConfig`（只发 `responseModalities`）；官方 Gemini 移除未经验证的 `LOW/MEDIUM` 映射；图生图输入全部下载失败 → fail-closed。响应解析覆盖 `inlineData` / 顶层 `data[].url` / `b64_json` / `usageMetadata`。
 
 ## 命令
 
@@ -96,14 +97,14 @@
 
 ## 计费与豁免
 
-- 生成前在用户余额中真实冻结预计积分；并发请求不能超卖同一余额。
-- 成功后按实际发送图片数结算，未使用部分释放；失败、超时或未返回图片时全额释放。
+- 生成前在用户余额中真实冻结预计积分（预扣上界 = 模型单价 × enable_groups 最大分组倍率）；并发请求不能超卖同一余额。
+- 成功后按实际发送图片数结算（结算倍率 = 实际路由分组 `x-routing-group` 对应的 `group_ratio`，缺失回退 default → mapping.groupRatio）；未使用部分释放；失败、超时或未返回图片时全额释放。
 - reserve / settle / release 幂等，满足 `reserved = settled + released`；活动 hold 持久化到 `credit-reservations.v1.json`。
-- 每映射独立 `groupRatio`；运行时根据目录中的计价类型和供应商积分计算成本，目录价格或公式不足时 fail-closed，不生成虚假估算。
+- 倍率来源为目录快照中的供应商 `group_ratio` 表（默认 6h 自动刷新，启动 / 手动 `图像模型 刷新` / 面板刷新均可触发）；`mapping.groupRatio` 仅在探测表缺失时兜底。
 - `图像充值 @用户 <金额>` 中的金额是**人民币金额**，按 `creditsPerCny`（1 元 = N 平台积分）折算为平台积分后入账；负数视为余额修正。
 - 「每日免费试用模型」下拉从 `modelMappings.modelId` 单选一个模型；只有目标 `modelId` 等于该单选项时才走每日免费通道，管理员 / 永久会员 / 免计费平台除外。
 - `freePlatforms`：命中平台绕过 `reserveCredits` / `settleReservation` / `checkFreeTrialForModel` / 每日免费额度写入，只保留限流与模型访问控制；生成完成只回复图片数量，不显示积分文案。
-- 管理员、永久会员和 `unlimitedPlatforms` 平台记录交付与统计但不扣费；首次统计初始化按当前 `dailyFreeCredits` 生成积分快照。
+- 管理员、永久会员和 `unlimitedPlatforms` 平台记录交付与统计但不扣费。
 
 ## Prompt 预设与快捷命令
 
@@ -142,20 +143,21 @@
 ## 验证建议（新增发布或配置变更后回归）
 
 1. 配置页各分组显示与折叠状态正确；保存前 API Key 校验生效。
-2. yunwu 目录刷新成功；受限模型进入 `unsupported`（MJ Action / Kling / omni-image / 图像识别）。
+2. openlux 目录刷新成功；受限模型进入 `unsupported`（MJ Action / Describe / Kling / omni-image / 图像识别）。
 3. `文生图 一只猫 -mj -16:9` 成功，`final prompt` 中不残留 `-mj`；Midjourney 任务返回 `SUCCESS`。
 4. `文生图 <描述> -<gpt 后缀> -2k` 走 OpenAI 契约，请求 `size` 实际为 2K 对应尺寸；`-4:3` 无对应固定 size 时 fail-closed。
-5. `图生图 <图片> 改成赛博朋克风格 -gemini25` 使用云雾 Gemini 编辑契约（不发 `imageConfig`）。
+5. `图生图 <图片> 改成赛博朋克风格 -gemini` 使用 Gemini 编辑契约（不发 `imageConfig`）。
 6. auto 模式下私聊仅输入 `文生图 一只猫`（无直接语法）进入向导；`文生图 一只猫 -16:9` 直接生成。
 7. `interactionModeOverrides` 中给某平台设 `advanced`，该平台无参数命令也直接生成。
 8. `freePlatforms` 命中平台不扣积分、不写入试用日次数；限流仍生效；生成完成提示不含积分文案。
-9. 模型级 `groupRatio=2` 时 2 张图按 `pricePerCall × 2 × 2` 结算。
-10. `图像充值 @用户 10 测试充值` 按 `creditsPerCny` 折算为平台积分入账；负数触发余额修正分支。
-11. `图像充值` 与生成结算写入 `credit-ledger.v2.jsonl`；文件中不出现 API key / 完整 prompt。
-12. 控制台底部展开「模型排行」显示正确的调用次数、生成张数与按模型占比。
-13. ChatLuna 启用后 `aigc_generate_image` 与动态 `aigc_style_{name}` 可调用并返回 creditSummary。
-14. YesImBot 启用后 `extension.list` 显示 `aka-ai-image-generator`，AI Agent 通过 ToolService 调用返回 `{ status: 'success', result: {...} }`。
-15. 日志级别切换 `simple` → `detail` 后打印脱敏请求诊断，不泄露 API key / 完整 prompt。
+9. 动态倍率：日志 `settlement-audit` 包含 routingGroup / groupRatio / supplierCredits / actualCost；预扣上界 ≥ 实扣成立。
+10. `合成图 -mj`（≥2 张图）走 `/mj/submit/blend`，返回融合结果；`dimensions` 按比例映射。
+11. `图像充值 @用户 10 测试充值` 按 `creditsPerCny` 折算为平台积分入账；负数触发余额修正分支。
+12. `图像充值` 与生成结算写入 `credit-ledger.v2.jsonl`；文件中不出现 API key / 完整 prompt。
+13. aka-tools 总览页显示真实用量统计（总用户 / 累计请求 / 生成 / 失败 / 积分 / 模型用量 / 用户排行）。
+14. ChatLuna 启用后 `aigc_generate_image` 与动态 `aigc_style_{name}` 可调用并返回 creditSummary。
+15. YesImBot 启用后 `extension.list` 显示 `aka-ai-image-generator`，AI Agent 通过 ToolService 调用返回 `{ status: 'success', result: {...} }`。
+16. 日志级别切换 `simple` → `detail` 后打印脱敏请求诊断，不泄露 API key / 完整 prompt。
 
 ## 开发
 
@@ -164,7 +166,7 @@ pnpm install
 pnpm run typecheck
 pnpm run test          # vitest 契约 / provider / shared / commands 全套件
 pnpm run build         # tsup + koishi-console build
-pnpm run probe:yunwu   # 只读脱敏 yunwu 目录探针
+pnpm run probe:newapi  # 只读脱敏 new-api 目录探针
 ```
 
 ## 发布
