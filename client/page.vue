@@ -114,12 +114,12 @@
                 </div>
               </div>
               <el-form label-width="180px" class="cred-form">
-                <template v-if="cfg.activeSupplier === 'newapi' || cfg.activeSupplier === 'yunwu' || cfg.activeSupplier === 'gptgod'">
-                  <el-form-item :label="cfg.activeSupplier === 'newapi' ? 'NewAPI API Key' : (cfg.activeSupplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key')">
+                <template v-if="cfg.activeSupplier === 'newapi'">
+                  <el-form-item label="NewAPI API Key">
                     <el-input v-model="cfg.providerSettings.openaiCompatibleApiKey" type="password" show-password placeholder="sk-..." />
                   </el-form-item>
                   <el-form-item label="Base URL">
-                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" :placeholder="cfg.activeSupplier === 'newapi' ? 'https://api.openlux.ai/v1' : (cfg.activeSupplier === 'yunwu' ? 'https://yunwu.ai/v1' : 'https://gptgod.cloud/v1')" />
+                    <el-input v-model="cfg.providerSettings.openaiCompatibleApiBase" placeholder="https://api.openlux.ai/v1" />
                   </el-form-item>
                   <el-form-item label="额外请求头">
                     <div class="extra-headers">
@@ -224,11 +224,6 @@
               </el-table-column>
               <el-table-column label="受限" width="55">
                 <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
-              </el-table-column>
-              <el-table-column label="倍率" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.groupRatio" :min="0.01" :step="0.1" :precision="2" controls-position="right" style="width: 90px" />
-                </template>
               </el-table-column>
               <el-table-column label="状态" width="70">
                 <template #default="{ row }">
@@ -673,7 +668,7 @@ function mappingValid(row: any) {
 }
 
 function addMapping() {
-  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false, groupRatio: 1 })
+  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false })
 }
 function moveMapping(i: number, dir: number) {
   const arr = cfg.value.modelMappings
@@ -791,9 +786,9 @@ async function saveAll() {
   const supplier = cfg.value.activeSupplier
   const providerSettings = cfg.value.providerSettings || {}
   let missingField = ''
-  if (supplier === 'newapi' || supplier === 'yunwu' || supplier === 'gptgod') {
+  if (supplier === 'newapi') {
     const key = (providerSettings.openaiCompatibleApiKey || '').trim()
-    if (!key) missingField = supplier === 'newapi' ? 'NewAPI API Key' : (supplier === 'yunwu' ? 'yunwu API Key' : 'GPTGod API Key')
+    if (!key) missingField = 'NewAPI API Key'
   } else if (supplier === 'openai-official') {
     const key = (providerSettings.gptOfficialApiKey || '').trim()
     if (!key) missingField = 'OpenAI 官方 API Key'

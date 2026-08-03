@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.0] - 2026-08-03
+
+### 清理（废弃 UI 与字段）
+
+- **移除模型映射「倍率」列**（aka-tools 面板）：`mapping.groupRatio` 不再展示可编辑入口。倍率已由 `/api/pricing` 动态 group_ratio 表 + `x-routing-group` 响应头自动结算，手动倍率仅作为三级回退最末端（基本永不命中）。schema 字段保留用于旧配置反序列化兼容。
+- **移除 yunwu/gptgod 供应商 UI 兼容分支**：aka-tools 面板凭证区只保留 `newapi`（NewAPI API Key / Base URL）。旧供应商仅剩反序列化兼容。
+- **migration 清理遗留字段**：`dailyFreeCredits`、`modelCostProbes`、`yunwuCreditToRmb` 在启动迁移时自动删除。
+- **运行态 settings.json 已清理**：3 个废弃字段（dailyFreeCredits/modelCostProbes/yunwuCreditToRmb）已移除，`supplierCreditToRmb: 0.5`、`creditsPerCny: 10`、`pricingMarkupPercent` 保留不变。
+
 ## [2.0.0] - 2026-08-02
 
 ### 修复（计费精确性）

@@ -43,6 +43,9 @@ export function migrateConfig(config: Config): MigrationResult {
 
   if ('costMarkup' in clone) { delete clone.costMarkup; actions.push('removed legacy costMarkup'); changed = true }
   if ('creditExchangeRate' in clone) { delete clone.creditExchangeRate; actions.push('removed legacy creditExchangeRate'); changed = true }
+  if ('dailyFreeCredits' in clone) { delete clone.dailyFreeCredits; actions.push('removed legacy dailyFreeCredits'); changed = true }
+  if ('modelCostProbes' in clone) { delete clone.modelCostProbes; actions.push('removed legacy modelCostProbes'); changed = true }
+  if ('yunwuCreditToRmb' in clone) { delete clone.yunwuCreditToRmb; actions.push('removed legacy yunwuCreditToRmb'); changed = true }
 
   if (mappings.length === 0) actions.push('modelMappings empty; explicit configuration required')
   if (clone.provider) { delete clone.provider; actions.push('removed legacy global provider field'); changed = true }
