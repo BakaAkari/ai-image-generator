@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.2] - 2026-08-03
+
+### 修复
+
+- **gpt-image 系列图生图/合成图能力误判**：new-api 站点对 gpt-image-2/gpt-image-1.5/gpt-image-1/gpt-image-2-c/gpt-image-1-mini 声明 `supported_endpoint_types` 为 `["OpenAI image edit", "image-generation"]`（英文端点名），但路由表只识别中文 `openai-编辑`/`openai编辑图片`，导致这些模型被误判为"仅支持文生图"，`图生图`/`合成图` 命令报 `MissingCatalogRouteError`。
+  - 路由表补齐英文端点名：`openai image edit` / `images/edit` / `images/edits` / `images-edits` / `image-edits` / `edit` → `image-edit`。
+  - capability 判定表同步补齐（保持 hasOpenai/hasEdit 一致）。
+  - 实测验证：openlux gpt-image-2 `/v1/images/edits` 单图（图生图）与多图（合成图）均返回 200；目录刷新后 5 个 gpt-image 模型获得 `image-edit` 路由。
+  - 合成图（compose-image）与图生图同契约（`normalizeOperation` 归一为 image-edit），走同一 `/v1/images/edits` 接口。
+
 ## [2.1.1] - 2026-08-03
 
 ### 修复

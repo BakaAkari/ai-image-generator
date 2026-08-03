@@ -17,6 +17,23 @@ describe('resolveNewApiRoutes', () => {
     ])
   })
 
+  test('english OpenAI image edit endpoint maps to openai image-edit (gpt-image family)', () => {
+    // gpt-image-2/gpt-image-1.5 在 new-api 站点声明 supported_endpoint_types 为
+    // ["OpenAI image edit", "image-generation"]；此前英文端点名不在路由表，图生图被误判不支持。
+    const routes = resolveNewApiRoutes(['OpenAI image edit', 'image-generation'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'openai:image-edit', protocol: 'openai', capability: 'image-edit', endpointName: 'OpenAI image edit' },
+      { id: 'openai:text-to-image', protocol: 'openai', capability: 'text-to-image', endpointName: 'image-generation' },
+    ])
+  })
+
+  test('generic edit endpoint maps to openai image-edit', () => {
+    const routes = resolveNewApiRoutes(['edit'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'openai:image-edit', protocol: 'openai', capability: 'image-edit', endpointName: 'edit' },
+    ])
+  })
+
   test('gemini endpoint maps to explicit text-to-image and image-to-image routes', () => {
     const routes = resolveNewApiRoutes(['gemini'])
     expect(routes).toEqual<GenerationRoute[]>([

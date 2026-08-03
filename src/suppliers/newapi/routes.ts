@@ -23,6 +23,13 @@ const ENDPOINT_ROUTE_MAP: RouteSpec[] = [
   { endpoint: 'openai-绘图', protocol: 'openai', capability: 'text-to-image' },
   { endpoint: 'openai-编辑', protocol: 'openai', capability: 'image-edit' },
   { endpoint: 'openai编辑图片', protocol: 'openai', capability: 'image-edit' },
+  // new-api 站点的英文端点名（gpt-image 系常用）：OpenAI image edit / images edits / edit
+  { endpoint: 'openai image edit', protocol: 'openai', capability: 'image-edit' },
+  { endpoint: 'images/edit', protocol: 'openai', capability: 'image-edit' },
+  { endpoint: 'images/edits', protocol: 'openai', capability: 'image-edit' },
+  { endpoint: 'images-edits', protocol: 'openai', capability: 'image-edit' },
+  { endpoint: 'image-edits', protocol: 'openai', capability: 'image-edit' },
+  { endpoint: 'edit', protocol: 'openai', capability: 'image-edit' },
   { endpoint: 'dall-e-3', protocol: 'openai', capability: 'text-to-image' },
   { endpoint: 'dall-e-2', protocol: 'openai', capability: 'text-to-image' },
   { endpoint: 'openai', protocol: 'openai', capability: 'text-to-image' },
