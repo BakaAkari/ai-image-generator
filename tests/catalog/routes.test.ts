@@ -81,6 +81,13 @@ describe('resolveNewApiRoutes', () => {
     ])
   })
 
+  test('MJ blend 英文端点识别为 mj image-edit（供 compose-image 选择 blend 契约）', () => {
+    const routes = resolveNewApiRoutes(['MJ blend'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'mj:image-edit', protocol: 'mj', capability: 'image-edit', endpointName: 'MJ blend' },
+    ])
+  })
+
   test('编辑语义变体全部识别为 openai image-edit', () => {
     for (const ep of ['images/edits', 'images-edits', 'image edit 2', 'openai-编辑', 'edit-image', 'openaiEdits']) {
       const routes = resolveNewApiRoutes([ep])
@@ -103,7 +110,7 @@ describe('resolveNewApiRoutes', () => {
   })
 
   test('未接入契约的 MJ 操作 fail-closed 不产出路由', () => {
-    for (const ep of ['MJ action', 'MJ blend', 'MJ describe', 'MJ modal', 'MJ upscale', 'mj动作']) {
+    for (const ep of ['MJ action', 'MJ describe', 'MJ modal', 'MJ upscale', 'mj动作']) {
       expect(resolveNewApiRoutes([ep])).toEqual([])
     }
   })
@@ -131,7 +138,7 @@ describe('resolveNewApiRoutes', () => {
       ['images-generations', ['openai:text-to-image']],
       ['MJ describe', 'BLOCK'],
       ['Image recognition', 'BLOCK'],
-      ['MJ blend', 'BLOCK'],
+      ['MJ blend', ['mj:image-edit']],
       ['MJ imagine', ['mj:text-to-image']],
       ['omni-image', 'BLOCK'], // kling-omni-image（Kling Omni，未接入契约）
       ['openai-编辑', ['openai:image-edit']],

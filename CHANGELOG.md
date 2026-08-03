@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.0] - 2026-08-03
+
+### 新增
+
+- **接入 MJ Blend 合成图**：`合成图 -mj` 现在走真正的 Midjourney 多图融合接口 `/mj/submit/blend`，不再复用 Imagine 垫图语义。
+  - 新增契约 `newapi.mj.blend`（operation=`compose-image`，endpoint=`/mj/submit/blend`）。
+  - `resolveContract()` 对 `protocol=mj + operation=compose-image` 优先匹配 blend 契约，确保合成图与图生图区分：
+    - `图生图 -mj` → Imagine + base64Array（垫图 / 参考图生成）
+    - `合成图 -mj` → Blend + base64Array（多图融合）
+  - MjProvider 新增 `submitBlend()`：按 openlux 文档发送 `{ botType, base64Array, dimensions }`，至少 2 张输入图，任务完成仍复用 `/mj/task/{id}/fetch` 轮询。
+  - `dimensions` 按比例自动映射：`1:1→SQUARE`，横图→`LANDSCAPE`，竖图→`PORTRAIT`。
+  - 语义规则引擎新增 `MJ blend` → `mj:image-edit`，`mj_blend` 进入可用模型目录。
+- 测试：新增契约解析、provider body、输入图数量校验与 `MJ blend` 路由测试；全量 `547 passed`，`tsc` clean。
+
 ## [2.2.0] - 2026-08-03
 
 ### 重构（端点能力识别：语义规则引擎）

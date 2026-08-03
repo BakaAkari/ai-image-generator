@@ -111,6 +111,22 @@ describe('resolveContract', () => {
     if (i2i.ok) expect(i2i.contract.id).toBe('newapi.mj.imagine.reference')
   })
 
+  test('MJ compose-image matches blend contract (not imagine reference)', () => {
+    const compose = resolveContract({ modelId: 'mj_imagine', supplier: 'newapi', protocol: 'mj', operation: 'compose-image' })
+    expect(compose.ok).toBe(true)
+    if (compose.ok) expect(compose.contract.id).toBe('newapi.mj.blend')
+    expect(compose.ok && compose.contract.endpoint).toBe('/mj/submit/blend')
+  })
+
+  test('MJ blend contract registered with correct fields', () => {
+    const blend = getContractById('newapi.mj.blend')
+    expect(blend?.protocol).toBe('mj')
+    expect(blend?.operation).toBe('compose-image')
+    expect(blend?.endpoint).toBe('/mj/submit/blend')
+    expect(blend?.method).toBe('POST')
+    expect(blend?.modelIds).toBe('*')
+  })
+
   test('unknown supplier/protocol combos fail-closed', () => {
     const result = resolveContract({
       modelId: 'x',

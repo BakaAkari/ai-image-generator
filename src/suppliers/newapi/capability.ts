@@ -31,7 +31,7 @@ const NON_GENERATION_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /上传|upload/, reason: 'upload endpoint' },
   { pattern: /图片模板|image.template|template/, reason: 'image template endpoint' },
   { pattern: /图像识别|image[- ]?recognition|recognize/, reason: 'recognition-only endpoint' },
-  { pattern: /^mj动作$|^mj混合$|^mj描述模式$|^mj模态模式$|^kling生图$|^kling多图生图$|^kling扩图$|^omni-image$/, reason: 'unsupported MJ/Kling operation (no contract)' },
+  { pattern: /^mj动作$|^mj描述模式$|^mj模态模式$|^kling生图$|^kling多图生图$|^kling扩图$|^omni-image$/, reason: 'unsupported MJ/Kling operation (no contract)' },
 ]
 
 function isImageModelType(modelType?: string): boolean {

@@ -5,6 +5,7 @@ import { getContractById } from '../../src/contracts/registry.js'
 
 const MJ_IMAGINE = getContractById('newapi.mj.imagine')!
 const MJ_REFERENCE = getContractById('newapi.mj.imagine.reference')!
+const MJ_BLEND = getContractById('newapi.mj.blend')!
 
 function makeCtx(opts: {
   submitResponse?: unknown
@@ -169,6 +170,61 @@ describe('MjProvider Imagine polling', () => {
     expect(result).toEqual(['https://cdn/y.png'])
     expect(Array.isArray(captured.base64Array)).toBe(true)
     expect(captured.base64Array[0]).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('blend contract posts to /mj/submit/blend with 2+ base64 images and no prompt', async () => {
+    let captured: any
+    let submitUrl = ''
+    const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    const { ctx } = makeCtx({ onSubmit: (body) => { captured = body } })
+    ctx.http = Object.assign(
+      vi.fn(async (url: string, config: { data?: unknown }) => {
+        submitUrl = url
+        captured = config.data
+        return { data: { code: 1, result: 'blend-task-1', description: 'submit success' }, headers: { get: () => null } }
+      }),
+      {
+        post: vi.fn(),
+        get: vi.fn(async (url: string) => {
+          if (url.includes('/mj/task/')) return { status: 'SUCCESS', imageUrl: 'https://cdn/blend.png' }
+          return pngMagic.buffer
+        }),
+      },
+    ) as any
+    const provider = makeProvider(ctx)
+    const result = await provider.generateImages('', ['https://ref/1.png', 'https://ref/2.png'], 1, {
+      contract: MJ_BLEND,
+      operation: 'compose-image',
+      contractFields: { botType: 'MID_JOURNEY' },
+      numImages: 1,
+      aspectRatio: '16:9',
+    })
+    expect(result).toEqual(['https://cdn/blend.png'])
+    expect(submitUrl).toMatch(/\/mj\/submit\/blend$/)
+    expect(captured.botType).toBe('MID_JOURNEY')
+    expect(captured.prompt).toBeUndefined()
+    expect(captured.dimensions).toBe('LANDSCAPE')
+    expect(captured.base64Array).toHaveLength(2)
+    expect(captured.base64Array[0]).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('blend contract requires at least 2 input images', async () => {
+    const { ctx, post } = makeCtx()
+    const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    ctx.http.get = vi.fn(async (url: string) => {
+      if (url.includes('/mj/task/')) return { status: 'SUCCESS', imageUrl: 'https://cdn/blend.png' }
+      return pngMagic.buffer
+    })
+    const provider = makeProvider(ctx)
+    await expect(
+      provider.generateImages('', ['https://ref/1.png'], 1, {
+        contract: MJ_BLEND,
+        operation: 'compose-image',
+        contractFields: { botType: 'MID_JOURNEY' },
+        numImages: 1,
+      }),
+    ).rejects.toThrow(/至少需要 2 张|2 张/)
+    expect(post).not.toHaveBeenCalled()
   })
 
   test('all reference images fail to download → fail-closed, no fallback', async () => {

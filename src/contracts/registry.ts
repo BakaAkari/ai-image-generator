@@ -353,6 +353,29 @@ const NEWAPI_MJ_IMAGINE_WITH_REFERENCE: ImageContract = {
   },
 }
 
+/**
+ * MJ 合成图（blend）：POST /mj/submit/blend，body 为 base64Array（2-5 张）+ dimensions。
+ * 与 imagine 垫图语义不同：blend 是多图融合成一张，imagine+base64Array 是参考图+prompt 生成。
+ * operation 声明 compose-image（合成图），resolveContract 对 compose-image 优先匹配本契约。
+ */
+const NEWAPI_MJ_BLEND: ImageContract = {
+  id: 'newapi.mj.blend',
+  supplier: 'newapi',
+  protocol: 'mj',
+  operation: 'compose-image',
+  endpoint: '/mj/submit/blend',
+  method: 'POST',
+  modelIds: '*',
+  label: 'newapi MJ blend',
+  mj: {
+    supportsAspectRatio: true,
+    aspectRatios: ['1:1', '4:3', '3:2', '16:9', '9:16', '2:3'],
+    supportsStylize: false,
+    botTypes: ['MID_JOURNEY'],
+    supportsBase64ReferenceImages: true,
+  },
+}
+
 const ALL_CONTRACTS: ImageContract[] = [
   NEWAPI_OPENAI_GPT_IMAGE_2_GENERATE,
   NEWAPI_OPENAI_GPT_IMAGE_2_C_GENERATE,
@@ -368,6 +391,7 @@ const ALL_CONTRACTS: ImageContract[] = [
   OFFICIAL_GEMINI_EDIT,
   NEWAPI_MJ_IMAGINE,
   NEWAPI_MJ_IMAGINE_WITH_REFERENCE,
+  NEWAPI_MJ_BLEND,
 ]
 
 // ---------------------------------------------------------------------------
@@ -382,6 +406,16 @@ function normalizeOperation(operation: ContractOperation): ContractOperation {
 }
 
 export function resolveContract(input: ContractResolveInput): ContractResolveResult {
+  // MJ 合成图：compose-image 优先匹配 blend 契约（多图融合），
+  // 而不是 imagine 垫图（参考图+prompt 生成）。
+  if (input.protocol === 'mj' && input.operation === 'compose-image') {
+    const blend = ALL_CONTRACTS.find(
+      (c) => c.id === 'newapi.mj.blend'
+        && c.supplier === input.supplier,
+    )
+    if (blend) return { ok: true, contract: blend }
+  }
+
   const target = normalizeOperation(input.operation)
   const candidates = ALL_CONTRACTS.filter(
     (c) => c.supplier === input.supplier

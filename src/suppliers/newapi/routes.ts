@@ -44,7 +44,7 @@ const BLOCK_RULES: SemanticRule[] = [
   { name: 'upload', match: /上传|upload/, block: true, reason: 'upload endpoint' },
   { name: 'template', match: /图片模板|image[ -]?template|template/, block: true, reason: 'image template endpoint' },
   { name: 'recognition', match: /识别|recognition|recognize/, block: true, reason: 'recognition-only endpoint' },
-  { name: 'mj-unsupported', match: /^mj\s*(action|blend|describe|modal|upscale|variation|img2img|remix|pan|zoom)$|^mj动作$|^mj混合$|^mj描述模式$|^mj模态模式$|^mj图片上传$/, block: true, reason: 'unsupported MJ operation (no contract)' },
+  { name: 'mj-unsupported', match: /^mj\s*(action|describe|modal|upscale|variation|img2img|remix|pan|zoom)$|^mj动作$|^mj描述模式$|^mj模态模式$|^mj图片上传$/, block: true, reason: 'unsupported MJ operation (no contract)' },
   { name: 'kling', match: /kling|omni-image/i, block: true, reason: 'Kling not wired into contract layer' },
 ]
 
@@ -53,6 +53,9 @@ const SEMANTIC_RULES: SemanticRule[] = [
   // Midjourney Imagine —— 唯一已实现契约（newapi.mj.imagine）。
   // 中英文端点名都覆盖：`mj想象模式` / `MJ imagine` / `mj imagine`。
   { name: 'mj-imagine', match: /^mj\s*想象模式$|^mj\s*imagine$/i, protocol: 'mj', capabilities: ['text-to-image'], reason: 'mj imagine endpoint' },
+  // Midjourney Blend —— 多图融合（compose-image），契约 /mj/submit/blend。
+  // Catalog capability 暂用 image-edit 表达「需要输入图」的生成操作；resolveContract 对 compose-image 优先选 blend。
+  { name: 'mj-blend', match: /^mj\s*混合$|^mj\s*blend$/i, protocol: 'mj', capabilities: ['image-edit'], reason: 'mj blend endpoint' },
   // Gemini generateContent 同一 endpoint 同时承载文生图与参考图编辑。
   { name: 'gemini', match: /^gemini$/i, protocol: 'gemini', capabilities: ['text-to-image', 'image-to-image'], reason: 'gemini image endpoint' },
   // OpenAI 编辑语义（中英文）：edit / edits / 编辑 / 修图 等。
