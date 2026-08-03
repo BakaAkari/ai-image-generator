@@ -135,16 +135,18 @@ describe('normalizeNewApiSnapshot', () => {
         },
       ],
     }
-    // 无别名：MJ imagine 英文 endpoint 不被识别 → unsupported
+    // 语义规则引擎直接识别 `MJ imagine` → mj:text-to-image → executable（无需别名）
     const withoutAlias = normalizeNewApiSnapshot(snapshot)
-    expect(withoutAlias.allModels.find(m => m.id === 'mj_imagine')?.executable).toBe(false)
+    const row = withoutAlias.allModels.find(m => m.id === 'mj_imagine')
+    expect(row?.executable).toBe(true)
+    expect(row?.routes.some(r => r.id === 'mj:text-to-image')).toBe(true)
 
-    // 带别名：'MJ imagine' → mj:text-to-image → executable
+    // 带别名：'MJ imagine' → mj:text-to-image → 结果一致，别名作为显式覆盖仍生效
     const withAlias = normalizeNewApiSnapshot(snapshot, {
       'MJ imagine': { protocol: 'mj', capability: 'text-to-image' },
     })
-    const row = withAlias.allModels.find(m => m.id === 'mj_imagine')
-    expect(row?.executable).toBe(true)
-    expect(row?.routes.some(r => r.id === 'mj:text-to-image')).toBe(true)
+    const aliasRow = withAlias.allModels.find(m => m.id === 'mj_imagine')
+    expect(aliasRow?.executable).toBe(true)
+    expect(aliasRow?.routes.some(r => r.id === 'mj:text-to-image')).toBe(true)
   })
 })

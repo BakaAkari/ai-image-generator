@@ -15,21 +15,22 @@ function makeModel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('resolveNewApiCapabilities with aliases', () => {
-  test('MJ imagine alias makes openlux MJ model executable (case-insensitive)', () => {
+  test('MJ imagine endpoint is recognized by semantic rule even without alias', () => {
+    const item = makeModel()
+    const { capabilities, reasons } = resolveNewApiCapabilities(item)
+    expect(capabilities).toContain('text-to-image')
+    expect(reasons.some(r => r.includes('mj imagine'))).toBe(true)
+  })
+
+  test('alias can override semantic rule (explicit user declaration wins)', () => {
+    // 用户把 MJ imagine 显式覆盖为 openai 协议（异常但允许）
     const aliases: EndpointAliasMap = {
-      'MJ imagine': { protocol: 'mj', capability: 'text-to-image' },
+      'MJ imagine': { protocol: 'openai', capability: 'image-edit' },
     }
     const item = makeModel()
     const { capabilities, reasons } = resolveNewApiCapabilities(item, aliases)
-    expect(capabilities).toContain('text-to-image')
-    expect(reasons.some(r => r.includes('mj/kling'))).toBe(true)
-  })
-
-  test('without alias, unknown english endpoint stays unsupported', () => {
-    const item = makeModel()
-    const { capabilities, reasons } = resolveNewApiCapabilities(item)
-    expect(capabilities).toEqual([])
-    expect(reasons.some(r => r.includes('no recognized'))).toBe(true)
+    expect(capabilities).toContain('image-edit')
+    expect(reasons.some(r => r.includes('alias'))).toBe(true)
   })
 
   test('openai alias endpoint resolves text-to-image capability', () => {

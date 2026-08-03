@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0] - 2026-08-03
+
+### 重构（端点能力识别：语义规则引擎）
+
+**不再穷举硬编码端点名 → 端点名由语义规则自动分类**（解决"内置端点表是否必须硬编码"的根因）。
+
+- **语义规则引擎**（routes.ts）：端点名按语义识别（阻断 / 协议+能力），openlux 实测 18 种图像端点全量分类正确：
+  - 阻断：video / recognition / upload / template / 未接入契约的 MJ 操作 / Kling（含 omni-image）
+  - mj：`mj想象模式` / `MJ imagine` → mj:text-to-image
+  - gemini：`gemini` → text-to-image + image-to-image
+  - openai 编辑语义：`edit` / `编辑` / `修图` / `ps` 等 → image-edit
+  - openai 生成语义：`generation` / `dall-e` / `绘图` / `绘画` 等 → text-to-image
+- **能力判定复用同一语义规则**（capability.ts）：删除独立端点集合，消除两套逻辑漂移。
+- **normalizer 不再叠加 capability 推导**：推导把协议写死 openai 会产生 mj/gemini 伪 openai 路由；空端点模型 fail-closed。
+- **endpointAliases 保留为最高优先级**：用户显式覆盖先于语义规则判定。
+- **效果**：
+  - gpt-image 全系（1/1-mini/1.5/2/2-c）图生图/合成图路由正确（英文 `OpenAI image edit` 自动识别）
+  - mj_imagine 不再依赖手动 endpointAliases 配置（英文 `MJ imagine` 直接识别）
+  - 未来新端点名（如 `image edit 2`、`dall-e-4`）自动识别，无需改代码
+  - 全目录从 118 → 38 个可用图像模型（之前 capability 推导把大量非契约端点误判为可用）
+- 测试：+13 个语义规则用例（18 种真实端点全量 + 变体鲁棒性 + alias 优先级），542 全绿。
+
 ## [2.1.2] - 2026-08-03
 
 ### 修复

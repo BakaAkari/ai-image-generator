@@ -82,6 +82,18 @@ describe('resolveNewApiCapabilities', () => {
     expect(capabilities).toEqual([])
   })
 
+  test('mj_imagine with English MJ imagine endpoint yields mj text-to-image without alias', () => {
+    const item: NewApiModelItem = {
+      id: 'mj_imagine',
+      model_type: '图像',
+      supported_endpoint_types: ['MJ imagine'],
+      available: true,
+    }
+    const { capabilities, reasons } = resolveNewApiCapabilities(item)
+    expect(capabilities).toContain('text-to-image')
+    expect(reasons.some(r => r.includes('mj imagine'))).toBe(true)
+  })
+
   test('pixverse-image-template is blocked as template endpoint', () => {
     const item: NewApiModelItem = {
       id: 'pixverse-image-template',

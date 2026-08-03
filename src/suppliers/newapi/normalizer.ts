@@ -7,7 +7,7 @@ import type { CatalogModelPricing } from '../../catalog/model-catalog.js'
 import type { NewApiModelItem, NewApiPricingItem, NewApiRawSnapshot } from './raw-types.js'
 import { resolveNewApiCapabilities } from './capability.js'
 import type { EndpointAliasMap } from './routes.js'
-import { resolveRoutesFromCapabilities, resolveNewApiRoutes } from './routes.js'
+import { resolveNewApiRoutes } from './routes.js'
 
 export const NEWAPI_PARSER_VERSION = '1.0.0'
 
@@ -39,9 +39,10 @@ function normalizePricing(item: NewApiModelItem, pricing?: NewApiPricingItem): C
 
 function normalizeModel(item: NewApiModelItem, pricing?: NewApiPricingItem, aliases?: EndpointAliasMap): CatalogModel {
   const { capabilities, reasons } = resolveNewApiCapabilities(item, aliases)
-  const routesFromEndpoints = resolveNewApiRoutes(item.supported_endpoint_types ?? [], aliases)
-  const routesFromCapabilities = routesFromEndpoints.length > 0 ? [] : resolveRoutesFromCapabilities(capabilities)
-  const routes = [...routesFromEndpoints, ...routesFromCapabilities]
+  // 语义规则引擎（v2.3）：端点语义识别直接产出路由（协议+能力由规则决定）。
+  // 不再叠加 capability 推导：推导会把协议写死 openai，导致 mj/gemini 模型
+  // 产生伪 openai 路由。空端点模型 fail-closed（如已弃用的 dall-e-3）。
+  const routes = resolveNewApiRoutes(item.supported_endpoint_types ?? [], aliases)
   const hasBlockingReason = reasons.some(r =>
     r.includes('not image')
     || r.includes('no recognized')

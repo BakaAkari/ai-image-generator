@@ -1,58 +1,30 @@
 /**
  * 从 new-api 模型元数据推导图像生成能力。
+ *
+ * 设计（v2.3 语义规则引擎）：
+ * - 能力判定复用 routes.ts 的语义规则（matchSemanticRule / matchBlockRule），
+ *   不再维护独立的端点集合，避免两套逻辑漂移。
+ * - 阻断规则优先（video / recognition / upload / template / 非契约 MJ / Kling）；
+ * - 语义规则命中产出对应能力（openai edit → image-edit，openai gen → text-to-image 等）；
+ * - endpointAliases（用户显式配置）最高优先级：alias 声明的 capability 直接加入。
+ * - 兜底：图像类型模型但端点全部未识别 → 保守产出 text-to-image（不误杀 dal-e 系空端点）。
  */
 
 import type { ModelCapability } from '../../catalog/model-catalog.js'
 import type { NewApiModelItem } from './raw-types.js'
+import {
+  matchBlockRule,
+  matchSemanticRule,
+  normalizeEndpoint,
+  type EndpointAliasMap,
+} from './routes.js'
+
+export type { EndpointAliasMap } from './routes.js'
 
 export interface CapabilityResult {
   capabilities: ModelCapability[]
   reasons: string[]
 }
-
-export interface EndpointAliasMap {
-  [endpointName: string]: { protocol: 'openai' | 'gemini' | 'mj'; capability: 'text-to-image' | 'image-to-image' | 'image-edit' }
-}
-
-const OPENAI_IMAGE_ENDPOINTS = new Set([
-  'image-generation',
-  'images/generations',
-  'openai-绘图',
-  'openai编辑图片',
-  'openai-编辑',
-  'openai image edit',
-  'images/edit',
-  'images/edits',
-  'images-edits',
-  'image-edits',
-  'edit',
-  'dall-e-3',
-  'dall-e-2',
-  'openai',
-])
-
-const GEMINI_IMAGE_ENDPOINTS = new Set(['gemini'])
-
-/**
- * 已实现契约的 MJ/Kling endpoint —— 目前仅 MJ Imagine（newapi.mj.imagine 契约）。
- * 其他 MJ Action/Blend/Describe/Kling 未接入契约层，本轮显式 fail-closed。
- */
-const MJ_KLING_IMAGE_ENDPOINTS = new Set([
-  'mj想象模式',
-])
-
-/** 已识别但尚未接入契约的 MJ/Kling endpoint —— 显式记录理由，避免被误判成默认 openai。 */
-const UNSUPPORTED_MJ_KLING_ENDPOINTS = new Set([
-  'mj动作',
-  'mj混合',
-  'mj描述模式',
-  'mj模态模式',
-  'mj图片上传',
-  'kling生图',
-  'kling多图生图',
-  'kling扩图',
-  'omni-image',
-])
 
 const NON_GENERATION_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /数字人|avatar|image2video|image-to-video|video/, reason: 'avatar/video endpoint' },
@@ -86,14 +58,9 @@ function blockReasonsFromModelType(item: NewApiModelItem): string[] {
 function mergeAliasEndpoints(endpoints: string[], aliases?: EndpointAliasMap): string[] {
   if (!aliases) return endpoints
   const aliasNames = Object.keys(aliases)
-    .map(e => e.trim())
+    .map((e) => e.trim())
     .filter(Boolean)
   return [...endpoints, ...aliasNames]
-}
-
-/** 与 routes.ts 的 normalizeEndpoint 保持一致：trim + toLowerCase。 */
-function normalizeEndpoint(endpoint: string): string {
-  return endpoint.trim().toLowerCase()
 }
 
 function capabilitiesFromEndpoints(endpoints: string[], aliases?: EndpointAliasMap): CapabilityResult {
@@ -105,55 +72,44 @@ function capabilitiesFromEndpoints(endpoints: string[], aliases?: EndpointAliasM
     return { capabilities: [], reasons: [] }
   }
 
-  // Treat aliased endpoint names as known endpoints of the aliased protocol.
-  const effectiveOpenai = new Set(OPENAI_IMAGE_ENDPOINTS)
-  const effectiveGemini = new Set(GEMINI_IMAGE_ENDPOINTS)
-  const effectiveMjKling = new Set(MJ_KLING_IMAGE_ENDPOINTS)
+  // 1. 阻断规则（fail-closed）：命中即不产出任何能力
+  for (const ep of normalized) {
+    const block = matchBlockRule(ep)
+    if (block) {
+      reasons.push(`${block.reason}: ${ep}`)
+    }
+  }
+  if (reasons.length > 0) {
+    return { capabilities: [], reasons }
+  }
 
+  // 2. 用户显式别名：alias 声明的 capability 直接加入
   if (aliases) {
     for (const [name, alias] of Object.entries(aliases)) {
-      const key = name.trim().toLowerCase()
+      const key = normalizeEndpoint(name)
       if (!key) continue
-      if (alias.protocol === 'openai') effectiveOpenai.add(key)
-      else if (alias.protocol === 'gemini') effectiveGemini.add(key)
-      else if (alias.protocol === 'mj') effectiveMjKling.add(key)
+      if (normalized.includes(key)) {
+        caps.add(alias.capability)
+        reasons.push(`alias ${name} → ${alias.capability}`)
+      }
     }
   }
 
-  const hasOpenai = normalized.some(e => effectiveOpenai.has(e))
-  const hasGemini = normalized.some(e => effectiveGemini.has(e))
-  const hasMjKling = normalized.some(e => effectiveMjKling.has(e))
-  const hasEdit = normalized.some(e => /编辑|edit/i.test(e)) || normalized.some(e => ['mj动作', 'kling扩图'].includes(e))
-  const hasGeneration = normalized.some(e => /绘图|generation|generations|dall-e/i.test(e))
-  const hasRecognition = normalized.some(e => ['mj描述模式', '图像识别'].includes(e))
-
-  if (hasOpenai) {
-    if (hasEdit) {
-      caps.add('image-edit')
-      reasons.push('openai-edit endpoint')
+  // 3. 语义规则：命中产出对应能力
+  for (const ep of normalized) {
+    const rule = matchSemanticRule(ep)
+    if (!rule?.capabilities) continue
+    for (const capability of rule.capabilities) {
+      caps.add(capability)
     }
-    if (hasGeneration || hasEdit) {
-      caps.add('text-to-image')
-      caps.add('image-to-image')
-      if (hasGeneration) reasons.push('openai-generation endpoint')
-    }
-    if (caps.size === 0) {
-      caps.add('text-to-image')
-      reasons.push('openai image endpoint')
-    }
+    if (rule.reason) reasons.push(rule.reason)
   }
 
-  if (hasGemini) {
+  // 4. 兜底：图像类型模型但端点全部未识别 → 保守产出 text-to-image
+  //    （避免 dall-e 系空端点 / 未知命名被误杀成不可用）
+  if (caps.size === 0) {
     caps.add('text-to-image')
-    caps.add('image-to-image')
-    reasons.push('gemini image endpoint')
-  }
-
-  if (hasMjKling) {
-    caps.add('text-to-image')
-    if (hasEdit) caps.add('image-edit')
-    if (hasRecognition) caps.add('image-recognition')
-    reasons.push('mj/kling endpoint')
+    reasons.push('openai image endpoint fallback')
   }
 
   return { capabilities: [...caps], reasons }
@@ -177,8 +133,22 @@ export function resolveNewApiCapabilities(item: NewApiModelItem, aliases?: Endpo
   return { capabilities: [...new Set(capabilities)], reasons }
 }
 
-export function isNewApiExecutableImageModel(item: NewApiModelItem, aliases?: EndpointAliasMap): boolean {
-  const { capabilities } = resolveNewApiCapabilities(item, aliases)
-  if (capabilities.length === 0) return false
-  return isImageModelType(item.model_type)
+/**
+ * 判断模型是否为「可执行的图像生成模型」。
+ * - 阻断模型类型（音视频/非图像）→ false
+ * - 阻断端点（video/recognition/upload/template/非契约 MJ/Kling）→ false
+ * - 空端点且模型类型为图像 → 保守视为可执行（dall-e 系空端点场景）
+ */
+export function isNewApiExecutableImageModel(item: NewApiModelItem): boolean {
+  const typeBlocks = blockReasonsFromModelType(item)
+  if (typeBlocks.length > 0) return false
+
+  const endpointBlocks = blockReasonsFromEndpoints(item.supported_endpoint_types ?? [])
+  if (endpointBlocks.length > 0) return false
+
+  const endpoints = item.supported_endpoint_types ?? []
+  const normalized = endpoints.map(normalizeEndpoint).filter(Boolean)
+  if (normalized.length === 0) return isImageModelType(item.model_type)
+
+  return normalized.some((ep) => Boolean(matchSemanticRule(ep)))
 }

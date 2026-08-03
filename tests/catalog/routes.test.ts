@@ -62,6 +62,103 @@ describe('resolveNewApiRoutes', () => {
       'gemini:image-to-image',
     ])
   })
+
+  // ---------------------------------------------------------------------------
+  // 语义规则引擎（v2.3）：不再依赖穷举端点名表，语义变体自动识别
+  // ---------------------------------------------------------------------------
+
+  test('MJ imagine 英文端点直接识别为 mj 协议（无需 endpointAliases）', () => {
+    const routes = resolveNewApiRoutes(['MJ imagine'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'mj:text-to-image', protocol: 'mj', capability: 'text-to-image', endpointName: 'MJ imagine' },
+    ])
+  })
+
+  test('mj想象模式 中文端点识别为 mj 协议', () => {
+    const routes = resolveNewApiRoutes(['mj想象模式'])
+    expect(routes).toEqual<GenerationRoute[]>([
+      { id: 'mj:text-to-image', protocol: 'mj', capability: 'text-to-image', endpointName: 'mj想象模式' },
+    ])
+  })
+
+  test('编辑语义变体全部识别为 openai image-edit', () => {
+    for (const ep of ['images/edits', 'images-edits', 'image edit 2', 'openai-编辑', 'edit-image', 'openaiEdits']) {
+      const routes = resolveNewApiRoutes([ep])
+      expect(routes.map(r => r.id)).toEqual(['openai:image-edit'])
+      expect(routes[0].endpointName).toBe(ep)
+    }
+  })
+
+  test('生成语义变体全部识别为 openai text-to-image', () => {
+    for (const ep of ['image-generation', 'images/generations', 'dall-e-4', 'openai-绘图', 'image-generate']) {
+      const routes = resolveNewApiRoutes([ep])
+      expect(routes.map(r => r.id)).toEqual(['openai:text-to-image'])
+      expect(routes[0].endpointName).toBe(ep)
+    }
+  })
+
+  test('gemini 大小写变体识别为 gemini 双能力', () => {
+    const routes = resolveNewApiRoutes(['Gemini'])
+    expect(routes.map(r => r.id)).toEqual(['gemini:text-to-image', 'gemini:image-to-image'])
+  })
+
+  test('未接入契约的 MJ 操作 fail-closed 不产出路由', () => {
+    for (const ep of ['MJ action', 'MJ blend', 'MJ describe', 'MJ modal', 'MJ upscale', 'mj动作']) {
+      expect(resolveNewApiRoutes([ep])).toEqual([])
+    }
+  })
+
+  test('Kling 系列 fail-closed 不产出路由', () => {
+    for (const ep of ['Kling image generation', 'Kling multi-image to image', 'Kling image expand']) {
+      expect(resolveNewApiRoutes([ep])).toEqual([])
+    }
+  })
+
+  test('阻断语义（recognition/video/upload/template）不产出路由', () => {
+    for (const ep of ['Image recognition', '数字人', 'image-to-video', 'mj图片上传', '图片模板']) {
+      expect(resolveNewApiRoutes([ep])).toEqual([])
+    }
+  })
+
+  test('openlux 真实 18 种图像端点全量分类正确', () => {
+    const openluxEndpoints: Array<[string, string[] | 'BLOCK']> = [
+      ['image-generation', ['openai:text-to-image']],
+      ['MJ action', 'BLOCK'],
+      ['gemini', ['gemini:text-to-image', 'gemini:image-to-image']],
+      ['openai', ['openai:text-to-image']],
+      ['dall-e-3', ['openai:text-to-image']],
+      ['OpenAI image edit', ['openai:image-edit']],
+      ['images-generations', ['openai:text-to-image']],
+      ['MJ describe', 'BLOCK'],
+      ['Image recognition', 'BLOCK'],
+      ['MJ blend', 'BLOCK'],
+      ['MJ imagine', ['mj:text-to-image']],
+      ['omni-image', 'BLOCK'], // kling-omni-image（Kling Omni，未接入契约）
+      ['openai-编辑', ['openai:image-edit']],
+      ['openai-绘图', ['openai:text-to-image']],
+      ['MJ modal', 'BLOCK'],
+      ['Kling image generation', 'BLOCK'],
+      ['Kling multi-image to image', 'BLOCK'],
+      ['Kling image expand', 'BLOCK'],
+    ]
+    for (const [ep, expected] of openluxEndpoints) {
+      const routes = resolveNewApiRoutes([ep])
+      const ids = routes.map(r => r.id)
+      if (expected === 'BLOCK') {
+        expect(ids, `endpoint=${ep} should be blocked`).toEqual([])
+      } else {
+        expect(ids, `endpoint=${ep}`).toEqual(expected)
+      }
+    }
+  })
+
+  test('endpointAliases 优先级最高：覆盖语义规则', () => {
+    // 用户显式把 image-generation 覆盖为 mj 协议（异常但允许）
+    const routes = resolveNewApiRoutes(['image-generation'], {
+      'image-generation': { protocol: 'mj', capability: 'text-to-image' },
+    })
+    expect(routes.map(r => r.id)).toEqual(['mj:text-to-image'])
+  })
 })
 
 describe('resolveRoutesFromCapabilities', () => {
