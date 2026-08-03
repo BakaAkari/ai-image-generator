@@ -24,6 +24,7 @@ import type {
 } from '../shared/types.js'
 import type { CreditLedgerEventV2 } from '../services/UserManager.js'
 import { ContractRejectedParamsError } from '../shared/generation-setup.js'
+import { MissingCatalogRouteError } from '../service/model-route-selection.js'
 import type { WizardHandler } from '../wizard/wizard-handler.js'
 import {
   buildModelMappingIndex,
@@ -42,6 +43,21 @@ export interface RegisterImageCommandsParams {
 
 export interface RegisteredImageCommands {
   refreshStyleCommands: () => void
+}
+
+/** 把命令预检阶段的已知错误转成面向用户的友好消息；非预期错误原样抛出。 */
+function toUserFriendlyError(error: unknown): string | null {
+  if (error instanceof ContractRejectedParamsError) return error.message
+  if (error instanceof MissingCatalogRouteError) {
+    const opName = error.operation === 'image-edit' ? '图生图（image-edit）' : error.operation === 'compose-image' ? '合图（compose-image）' : error.operation ?? '该操作'
+    return [
+      `模型 ${error.modelId} 不支持${opName}`,
+      '',
+      '- 提示｜换一个支持该操作的模型（如 gpt-image-2 仅支持文生图），或改用对应的文生图命令',
+      '- 提示｜可在 aka-tools 面板查看各模型的能力（text-to-image / image-edit）',
+    ].join('\n')
+  }
+  return null
 }
 
 export function registerImageCommands(params: RegisterImageCommandsParams): RegisteredImageCommands {
@@ -93,7 +109,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
           'text-to-image',
         )
       } catch (error) {
-        if (error instanceof ContractRejectedParamsError) return error.message
+        const friendly = toUserFriendlyError(error)
+        if (friendly !== null) return friendly
         throw error
       }
 
@@ -150,7 +167,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
           'image-edit',
         )
       } catch (error) {
-        if (error instanceof ContractRejectedParamsError) return error.message
+        const friendly = toUserFriendlyError(error)
+        if (friendly !== null) return friendly
         throw error
       }
       // 无图时不再提前拒绝（方案 A，2026-07-30 对齐）：
@@ -210,7 +228,8 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
           'compose-image',
         )
       } catch (error) {
-        if (error instanceof ContractRejectedParamsError) return error.message
+        const friendly = toUserFriendlyError(error)
+        if (friendly !== null) return friendly
         throw error
       }
 
@@ -523,7 +542,8 @@ function registerStyleCommand(
           operationForStyle,
         )
       } catch (error) {
-        if (error instanceof ContractRejectedParamsError) return error.message
+        const friendly = toUserFriendlyError(error)
+        if (friendly !== null) return friendly
         throw error
       }
       const finalPrompt = mergePrompt(style.prompt, cleanPrompt, modifiers.customAdditions)
