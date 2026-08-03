@@ -90,11 +90,11 @@ export function estimatePreGenerationCost(
   } else if (pricing.type === 'per-call' && typeof pricing.pricePerCall === 'number' && pricing.pricePerCall > 0) {
     supplierCredits = pricing.pricePerCall * safeRatio
   } else if (pricing.type === 'per-token') {
-    // per-token 模型：使用官方定价 officialPriceOutput（每 1M tokens 的供应商积分）
-    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
-      ? pricing.officialPriceOutput
-      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    supplierCredits = DEFAULT_TOKEN_ESTIMATE / 1_000_000 * outputPrice * safeRatio
+    // per-token 模型：按 new-api 权威公式估算（quota=(prompt+completion×completionRatio)×model_ratio；美元=quota/500000）
+    // 预扣时无真实 tokens，用默认估算 × (1+completionRatio) 作为保守上界
+    const completionRatio = typeof pricing.completionRatio === 'number' && pricing.completionRatio > 0 ? pricing.completionRatio : 1
+    const ratio = typeof pricing.tokenRatio === 'number' && pricing.tokenRatio > 0 ? pricing.tokenRatio : 1
+    supplierCredits = DEFAULT_TOKEN_ESTIMATE * (1 + completionRatio) * ratio / 500000 * safeRatio
   } else {
     // 定价类型不可识别：同 unknown 分支
     const knownPrices = catalogModels
@@ -137,12 +137,12 @@ export function computeSupplierCreditsFromCatalog(
   }
 
   if (pricing.type === 'per-token') {
+    // 对齐 new-api text_quota.go 分支 A：quota = (prompt + completion×completionRatio) × model_ratio × group_ratio
+    // 美元 = quota / 500000。无 input/output 拆分时按 total × completionRatio 保守估算。
+    const completionRatio = typeof pricing.completionRatio === 'number' && pricing.completionRatio > 0 ? pricing.completionRatio : 1
+    const ratio = typeof pricing.tokenRatio === 'number' && pricing.tokenRatio > 0 ? pricing.tokenRatio : 1
     const tokens = typeof totalTokens === 'number' && Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
-    // 使用官方定价 officialPriceOutput（每 1M tokens 的供应商积分）
-    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
-      ? pricing.officialPriceOutput
-      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    return tokens / 1_000_000 * outputPrice * safeRatio
+    return tokens * completionRatio * ratio / 500000 * safeRatio
   }
 
   // fallback
@@ -182,10 +182,11 @@ export function computeUpperBoundSupplierCredits(
   }
 
   if (pricing.type === 'per-token') {
-    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
-      ? pricing.officialPriceOutput
-      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    return DEFAULT_TOKEN_ESTIMATE / 1_000_000 * outputPrice * upperRatio
+    // 预扣上界：无真实 tokens，用默认估算 × (1+completionRatio)（假定全部为补全 token，保证上界充分）
+    // 公式对齐 new-api text_quota.go 分支 A：quota = (prompt + completion×completionRatio) × model_ratio × group_ratio；美元 = quota/500000
+    const completionRatio = typeof pricing.completionRatio === 'number' && pricing.completionRatio > 0 ? pricing.completionRatio : 1
+    const ratio = typeof pricing.tokenRatio === 'number' && pricing.tokenRatio > 0 ? pricing.tokenRatio : 1
+    return DEFAULT_TOKEN_ESTIMATE * (1 + completionRatio) * ratio / 500000 * upperRatio
   }
 
   return (DEFAULT_TOKEN_ESTIMATE / 500000) * upperRatio
@@ -202,6 +203,8 @@ export function computeActualSupplierCredits(
   totalTokens: number | null,
   catalogModels: CatalogModelForPricing[],
   actualRatio: number,
+  inputTokens?: number | null,
+  outputTokens?: number | null,
 ): number {
   const safeRatio = Number.isFinite(actualRatio) && actualRatio > 0 ? actualRatio : 1
   const model = catalogModels.find(m => m.id === modelId)
@@ -216,11 +219,16 @@ export function computeActualSupplierCredits(
   }
 
   if (pricing.type === 'per-token') {
-    const tokens = typeof totalTokens === 'number' && Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 0
-    const outputPrice = typeof pricing.officialPriceOutput === 'number' && pricing.officialPriceOutput > 0
-      ? pricing.officialPriceOutput
-      : (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : 5)
-    return tokens / 1_000_000 * outputPrice * safeRatio
+    // 对齐 new-api text_quota.go 分支 A：quota = (prompt + completion×completionRatio) × model_ratio × group_ratio
+    // 美元 = quota / 500000。有 input/output 拆分时精确计算；否则按 total × completionRatio（保守上界）估算。
+    const completionRatio = typeof pricing.completionRatio === 'number' && pricing.completionRatio > 0 ? pricing.completionRatio : 1
+    const ratio = typeof pricing.tokenRatio === 'number' && pricing.tokenRatio > 0 ? pricing.tokenRatio : 1
+    const hasSplit = typeof inputTokens === 'number' && Number.isFinite(inputTokens) && inputTokens >= 0 &&
+      typeof outputTokens === 'number' && Number.isFinite(outputTokens) && outputTokens >= 0
+    const effective = hasSplit
+      ? inputTokens + outputTokens * completionRatio
+      : (typeof totalTokens === 'number' && Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens * completionRatio : 0)
+    return effective * ratio / 500000 * safeRatio
   }
 
   return (totalTokens ?? 0) / 500000 * safeRatio

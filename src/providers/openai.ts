@@ -25,7 +25,13 @@ interface OpenAIImagesResponse {
     url?: string
     revised_prompt?: string
   }>
-  usage?: { total_tokens?: number }
+  usage?: {
+    total_tokens?: number
+    input_tokens?: number
+    output_tokens?: number
+    input_tokens_details?: { image_tokens?: number; text_tokens?: number }
+    output_tokens_details?: { image_tokens?: number; text_tokens?: number }
+  }
 }
 
 /** ctx.http 可调用形式返回的完整响应（含 headers，用于捕获 x-routing-group）。 */
@@ -222,6 +228,8 @@ export class OpenAIProvider extends BaseImageProvider {
       this.captureRoutingGroup(response?.headers)
       const parsed = parseOpenAIImagesResponse(response?.data)
       this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
+      this.lastInputTokens = parsed.inputTokens ?? this.lastInputTokens
+      this.lastOutputTokens = parsed.outputTokens ?? this.lastOutputTokens
       if (parsed.images.length === 0) {
         this.logger.warn('provider=%s event=create_empty_response iteration=%d', this.name, i + 1)
         continue
@@ -317,6 +325,8 @@ export class OpenAIProvider extends BaseImageProvider {
       this.captureRoutingGroup(response?.headers)
       const parsed = parseOpenAIImagesResponse(response?.data)
       this.lastTotalTokens = parsed.totalTokens ?? this.lastTotalTokens
+      this.lastInputTokens = parsed.inputTokens ?? this.lastInputTokens
+      this.lastOutputTokens = parsed.outputTokens ?? this.lastOutputTokens
       if (parsed.images.length === 0) {
         this.logger.warn('provider=%s event=edit_empty_response iteration=%d', this.name, i + 1)
         continue
@@ -337,7 +347,12 @@ export class OpenAIProvider extends BaseImageProvider {
 
 // -------- 模块级工具 --------
 
-export function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): { images: string[]; totalTokens: number | null } {
+export function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undefined): {
+  images: string[]
+  totalTokens: number | null
+  inputTokens: number | null
+  outputTokens: number | null
+} {
   if (!response) {
     throw new ParseError('OpenAI Images API 响应为空', { providerName: 'openai' })
   }
@@ -351,7 +366,7 @@ export function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undef
     })
   }
   const data = response.data
-  if (!Array.isArray(data)) return { images: [], totalTokens: null }
+  if (!Array.isArray(data)) return { images: [], totalTokens: null, inputTokens: null, outputTokens: null }
   const images: string[] = []
   for (const item of data) {
     if (item.b64_json) {
@@ -361,7 +376,9 @@ export function parseOpenAIImagesResponse(response: OpenAIImagesResponse | undef
     }
   }
   const totalTokens = response.usage?.total_tokens ?? null
-  return { images, totalTokens }
+  const inputTokens = response.usage?.input_tokens ?? null
+  const outputTokens = response.usage?.output_tokens ?? null
+  return { images, totalTokens, inputTokens, outputTokens }
 }
 
 function isContentFilter(message: string): boolean {

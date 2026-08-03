@@ -1,6 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.0] - 2026-08-02
+
+### 修复（计费精确性）
+
+- **per-token 计费公式对齐 new-api 权威结算**：移除无依据的 `tokenRatio × 5` fallback，改为 new-api `text_quota.go` 分支 A 的权威公式——`quota = (prompt + completion × completionRatio) × model_ratio × group_ratio`，`供应商积分 = quota / 500000`（= 美元口径）。
+  - provider 层新增捕获 `usage.input_tokens` / `output_tokens`（OpenAI images API 实测返回 `input_tokens: 9, output_tokens: 4380` 这类拆分），结算时精确计算 prompt + completion×ratio，不再用 total_tokens 粗估。
+  - 无 input/output 拆分时按 `total × completionRatio` 保守估算（补全 token 通常占大头，保证不低估）。
+- **预扣上界充足化**：per-token 预扣改用 `DEFAULT_TOKEN_ESTIMATE × (1+completionRatio) × tokenRatio / 500000 × 上界倍率`（假定全部为补全 token），保证预扣 ≥ 任何实际路由成本，余额不足直接拒绝。
+- **修复 `actualCost=0` 误回退预扣**：`UserManager.settleReservation` 中真实成本为 0（极小成本 round 后为 0）时不再回退到预授权估算，而是按真实成本结算（多退少补精确生效）。
+- 实测校准：gpt-image-1.5 单张（9 input + 4380 output tokens, Codex-Gpt-2 分组）真实成本 ≈ 0.00825 美元 ≈ 0.056 元 ≈ 0.56 平台积分；gpt-image-2 类似量级。此前 ×5 fallback 会高估数倍。
 
 ### 改进
 
@@ -8,7 +17,7 @@
   - **预扣用上界**：`computeUpperBoundSupplierCredits` 取该模型 `enable_groups` 中最大的 group_ratio（`model_price × max(enable_groups 倍率)`），保证预扣 ≥ 任何实际路由成本 → 余额不足直接拒绝（防滥用，且随资费调整自动更新，非硬编码）。
   - **结算用实际路由**：provider 捕获响应头 `x-routing-group`（openai/mj submit），`computeActualSupplierCredits` 按实际分组倍率结算，多退少补；分组不在表中回退 `default` → mapping 固定值 → 1。
   - 新增 `src/catalog/pricing-snapshot.ts`：`/api/pricing` 实时拉取 + 60s 进程内缓存（TTL 可配），供后续结算/预扣复用最新倍率。
-  - `settlement-audit` 日志新增 `routingGroup` 与 `groupRatio` 字段，可追溯每次生成的实际路由分组与倍率。
+  - `settlement-audit` 日志新增 `routingGroup` / `groupRatio` / `inputTokens` / `outputTokens` 字段，可追溯每次生成的实际路由分组与倍率。
   - 实机验证：真实生成捕获 `x-routing-group: Doubao-1`；预扣 0.0735 ≥ 结算 0.0074 供应商积分，动态倍率闭环成立。
 
 ### 重构

@@ -598,6 +598,8 @@ export function createImageGenerationHandlers(
           const modelId = options.requestContext?.modelId ?? ''
           // TODO: accumulate tokens across multi-call batches
           const totalTokens = service.lastProviderUsage
+          const inputTokens = service.lastProviderInputTokens
+          const outputTokens = service.lastProviderOutputTokens
 
           // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
           const settleSuffix = options.requestContext?.modelSuffix
@@ -609,16 +611,18 @@ export function createImageGenerationHandlers(
           const fallbackRatio = typeof settleMapping?.groupRatio === 'number' && Number.isFinite(settleMapping.groupRatio) && settleMapping.groupRatio > 0
             ? settleMapping.groupRatio : 1
           const actualRatio = resolveActualRoutingRatio(routingGroup, groupRatioMap, fallbackRatio)
-          const supplierCredits = computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio)
+          const supplierCredits = computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio, inputTokens, outputTokens)
           const actualCost = computePostGenerationCost(supplierCredits, config)
 
           // audit trail：完整记录定价计算过程，事后可追溯（含路由分组与倍率）
           const postCredits = catalog.billingInfo?.supplierCredits ?? null
           logger.info(
-            'settlement-audit model=%s pricingType=%s totalTokens=%s routingGroup=%s groupRatio=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
+            'settlement-audit model=%s pricingType=%s totalTokens=%s inputTokens=%s outputTokens=%s routingGroup=%s groupRatio=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
             modelId,
             catalogModels.find(m => m.id === modelId)?.pricing?.type ?? 'unknown',
             totalTokens,
+            inputTokens ?? '-',
+            outputTokens ?? '-',
             routingGroup ?? '-',
             actualRatio,
             supplierCredits,

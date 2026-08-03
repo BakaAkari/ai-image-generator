@@ -753,9 +753,12 @@ export class UserManager {
         return result
       }
 
-      // 后生成定价：优先使用 evidence.actualCost（真实消耗），否则退回预授权估算
-      const actualCost = typeof evidence?.actualCost === 'number' && evidence.actualCost > 0 ? evidence.actualCost : null
-      const costPerImage = actualCost ?? reservation.cost.creditCostPerImage
+      // 后生成定价：优先使用 evidence.actualCost（真实消耗，含 0 成本），否则退回预授权估算
+      // 注意：真实成本极小时 roundCredits 可能为 0——这是有效的结算值，不应回退到预扣估算
+      const actualCost = typeof evidence?.actualCost === 'number' && Number.isFinite(evidence.actualCost) && evidence.actualCost >= 0
+        ? evidence.actualCost
+        : null
+      const costPerImage = actualCost !== null ? actualCost : reservation.cost.creditCostPerImage
       const settledCredits = roundCredits(costPerImage * delivered)
       const releasedCredits = roundCredits(reservation.reservedCredits - settledCredits)
       const before = this.snapshotBalance(user, config)

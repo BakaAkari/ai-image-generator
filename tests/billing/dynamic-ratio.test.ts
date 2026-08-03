@@ -78,10 +78,10 @@ describe('computeUpperBoundSupplierCredits', () => {
     expect(credits).toBeCloseTo(0.3 * 0.07353, 6)
   })
 
-  test('per-token model uses official output price path with upper ratio', () => {
+  test('per-token model uses upper-bound estimate with completionRatio penalty', () => {
     const credits = computeUpperBoundSupplierCredits('gpt-image-2', catalogModels, groupRatioMap)
-    // DEFAULT_TOKEN_ESTIMATE / 1_000_000 × officialPriceOutput(100) × 0.09192
-    expect(credits).toBeCloseTo(15000 / 1_000_000 * 100 * 0.09192, 8)
+    // DEFAULT_TOKEN_ESTIMATE × (1+completionRatio) × tokenRatio / 500000 × max(group ratio)
+    expect(credits).toBeCloseTo(15000 * (1 + 6) * 2.5 / 500000 * 0.09192, 8)
   })
 
   test('unknown pricing falls back to highest known per-call price × ratio', () => {
@@ -107,9 +107,16 @@ describe('computeActualSupplierCredits', () => {
     expect(credits).toBeCloseTo(0.3, 6)
   })
 
-  test('per-token model uses totalTokens with actual ratio', () => {
+  test('per-token model uses totalTokens × completionRatio with actual ratio', () => {
     const credits = computeActualSupplierCredits('gpt-image-2', 30000, catalogModels, 0.09192)
-    expect(credits).toBeCloseTo(30000 / 1_000_000 * 100 * 0.09192, 8)
+    // 30000 × completionRatio(6) × tokenRatio(2.5) / 500000 × 0.09192
+    expect(credits).toBeCloseTo(30000 * 6 * 2.5 / 500000 * 0.09192, 8)
+  })
+
+  test('per-token model uses input/output split when available', () => {
+    // input=100, output=400 → effective = 100 + 400×6 = 2500
+    const credits = computeActualSupplierCredits('gpt-image-2', 500, catalogModels, 0.09192, 100, 400)
+    expect(credits).toBeCloseTo((100 + 400 * 6) * 2.5 / 500000 * 0.09192, 8)
   })
 
   test('upper bound is always >= actual for the same model', () => {

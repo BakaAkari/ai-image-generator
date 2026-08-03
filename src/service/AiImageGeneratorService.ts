@@ -201,6 +201,8 @@ export class AiImageGeneratorService extends Service {
     const providerInstance = this.providerRegistry.createProvider(provider, this.ctx, factoryConfig)
     // 重置前一次用量/路由追踪
     this.lastProviderUsage = null
+    this.lastProviderInputTokens = null
+    this.lastProviderOutputTokens = null
     this.lastProviderRoutingGroup = null
     const result = await providerInstance.generateImages(
       prompt,
@@ -210,8 +212,10 @@ export class AiImageGeneratorService extends Service {
       onImageGenerated,
     )
 
-    // 后生成定价：捕获 provider 返回的 usage.total_tokens
+    // 后生成定价：捕获 provider 返回的 usage（total/input/output tokens）
     this.lastProviderUsage = providerInstance.lastTotalTokens
+    this.lastProviderInputTokens = providerInstance.lastInputTokens
+    this.lastProviderOutputTokens = providerInstance.lastOutputTokens
     // 后生成结算：捕获 new-api 实际路由分组（x-routing-group 响应头）
     this.lastProviderRoutingGroup = providerInstance.lastRoutingGroup
 
@@ -220,6 +224,8 @@ export class AiImageGeneratorService extends Service {
       provider,
       resultCount: result.length,
       lastTotalTokens: this.lastProviderUsage,
+      lastInputTokens: this.lastProviderInputTokens,
+      lastOutputTokens: this.lastProviderOutputTokens,
     })
 
     return result
@@ -465,6 +471,12 @@ export class AiImageGeneratorService extends Service {
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
   /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
   lastProviderUsage: number | null = null
+
+  /** 最近一次 provider 生成调用返回的 usage.input_tokens（per-token 精确结算用）。 */
+  lastProviderInputTokens: number | null = null
+
+  /** 最近一次 provider 生成调用返回的 usage.output_tokens（per-token 精确结算用）。 */
+  lastProviderOutputTokens: number | null = null
 
   /** 最近一次 provider 生成调用响应头的 x-routing-group（new-api 实际路由分组，后生成结算用）。 */
   lastProviderRoutingGroup: string | null = null
