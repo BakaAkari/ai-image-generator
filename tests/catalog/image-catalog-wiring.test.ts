@@ -47,7 +47,21 @@ describe('ImageCatalogService scheduler wiring', () => {
   })
 
   test('can publish when models succeeded even if pricing failed', () => {
-    expect(canPublishNewApiSnapshot({ endpoints: { models: { success: true }, pricing: { success: false } } } as any)).toBe(true)
+    expect(canPublishNewApiSnapshot({
+      endpoints: {
+        models: { success: true, data: { data: [{ id: 'gpt-image-2' }] } },
+        pricing: { success: false },
+      },
+    } as any)).toBe(true)
+  })
+
+  test('does not publish an empty models payload even when endpoint succeeded', () => {
+    expect(canPublishNewApiSnapshot({
+      endpoints: {
+        models: { success: true, data: { data: [] } },
+        pricing: { success: true },
+      },
+    } as any)).toBe(false)
   })
 
   test('endpoints config is accepted by refresh type', () => {

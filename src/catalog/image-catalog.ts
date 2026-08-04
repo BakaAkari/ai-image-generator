@@ -21,7 +21,10 @@ import { CatalogFileRepository } from './catalog-repository.js'
 import { CatalogScheduler } from './catalog-scheduler.js'
 
 export function canPublishNewApiSnapshot(snapshot: Pick<NewApiRawSnapshot, 'endpoints'>): boolean {
-  return snapshot.endpoints.models.success === true
+  const models = snapshot.endpoints.models
+  return models.success === true
+    && Array.isArray(models.data?.data)
+    && models.data.data.length > 0
 }
 
 interface CatalogConfig {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.3] - 2026-08-04
+
+### 修复
+
+- **防止空模型目录覆盖有效快照**：`/v1/models` 偶发返回成功但 `data=[]` 时，旧逻辑只看 `success=true`，会把 40/442 的有效目录覆盖成 `models=0 unsupported=0`。现在发布快照前必须确认 `models.data.data.length > 0`，否则视为 refresh rejected 并沿用旧缓存。
+- 运行态已从 `model-catalog-v2.json.bak` 恢复到 40 个可用模型 / 442 个 unsupported；空快照另存为 `model-catalog-v2.empty-20260804-0521.json` 便于追溯。
+- 验证：`tsc` clean，全量 `548 passed`，bundle 确认包含空目录防护。
+
 ## [2.3.2] - 2026-08-03
 
 ### 清理
