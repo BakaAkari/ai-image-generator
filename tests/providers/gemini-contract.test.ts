@@ -9,22 +9,25 @@ const NEWAPI_3_PRO_EDIT = getContractById('newapi.gemini.3-pro.edit')!
 const OFFICIAL = getContractById('gemini.official.generate')!
 
 function makeCtx(handler?: (url: string, body: unknown) => unknown) {
-  const post = vi.fn(async (url: string, body: unknown) => {
-    if (handler) return handler(url, body)
-    return {
+  const http = vi.fn(async (url: string, config: { data?: unknown }) => {
+    const body = config?.data
+    let data: unknown
+    if (handler) data = handler(url, body)
+    else data = {
       candidates: [
         { content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } },
       ],
       usageMetadata: { totalTokenCount: 15 },
     }
+    return { data, headers: { get: () => null } }
   })
   const ctx = {
-    http: { post, get: vi.fn() },
+    http,
     logger: () => ({
       info: () => {}, warn: () => {}, error: () => {}, debug: () => {},
     }),
   } as any
-  return { ctx, post }
+  return { ctx, post: http }
 }
 
 function makeProvider(ctx: any, modelId = 'gemini-3-pro-image-preview', apiBase = 'https://api.example.com') {
@@ -172,5 +175,34 @@ describe('GeminiProvider response parsing', () => {
       numImages: 1,
     })
     expect(result).toEqual(['https://cdn/x.png'])
+  })
+
+  test('captures x-routing-group and request-id from response headers', async () => {
+    let capturedConfig: { data?: unknown } | undefined
+    const http = vi.fn(async (_url: string, config: { data?: unknown }) => {
+      capturedConfig = config
+      return {
+        data: {
+          candidates: [{ content: { parts: [{ inline_data: { mime_type: 'image/png', data: 'AAAA' } }] } }],
+          usageMetadata: { totalTokenCount: 15 },
+        },
+        headers: { get: (name: string) => name === 'x-routing-group' ? 'Aistudio-Gemini-2' : name === 'x-api-request-id' ? 'req-123' : null },
+      }
+    })
+    const ctx = {
+      http,
+      logger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
+    } as any
+    const provider = makeProvider(ctx)
+    await provider.generateImages('cat', '', 1, {
+      contract: NEWAPI_3_PRO,
+      operation: 'text-to-image',
+      contractFields: { imageSize: '1K' },
+      numImages: 1,
+    })
+    expect(provider.lastRoutingGroup).toBe('Aistudio-Gemini-2')
+    expect(provider.lastRequestId).toBe('req-123')
+    expect(capturedConfig).toBeDefined()
+    expect((capturedConfig as { data?: unknown }).data).toBeDefined()
   })
 })

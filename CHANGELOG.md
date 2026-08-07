@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.1] - 2026-08-08
+
+### 修复
+
+- **Gemini 结算缺失路由分组捕获导致少算约 3.6 倍**：`GeminiProvider` 未捕获 `x-routing-group` / request-id 响应头（openai / midjourney provider 均有），per-call 结算回退 default 倍率 0.07353；而平台按实际分组倍率扣费（如 Aistudio-Gemini-2 = 0.26471），gemini-3-pro-image 平台扣 $0.33×0.26471=$0.087354，插件仅按 $0.33×0.07353=$0.024265 记账。修复：`gemini.ts` 改用与 openai provider 一致的 `ctx.http(url, config)` 直接调用形式以获取完整响应头，捕获 `x-routing-group` 与 `x-api-request-id`（备选 `x-oneapi-request-id` / `x-request-id`），并对齐 `lastInputTokens` / `lastOutputTokens` 记录。实测结算 `source=log`、`logQuota=43677`、`supplierCredits=0.087354`、`actualCost=5.96 积分`（修复前 1.66）。
+
+### 验证
+
+- `tsc` clean；全量 `585 passed`（55 files）；本地 Koishi 实机验证：gemini-3-pro-image 结算 `source=log`、`logQuota=43677`、`actualCost=5.96 积分`（修复前 1.66），与平台实际扣费 $0.087354 一致。
+
 ## [2.4.0] - 2026-08-07
 
 ### 新增

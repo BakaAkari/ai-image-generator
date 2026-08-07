@@ -137,24 +137,32 @@ export class GeminiProvider extends BaseImageProvider {
     const allImages: string[] = []
     for (let i = 0; i < numImages; i++) {
       try {
-        const response = await this.callApi<unknown>(() =>
+        const response = await this.callApi<{ data?: unknown; headers?: { get?: (name: string) => string | null } }>(() =>
           (
             this.ctx.http as unknown as {
-              post: (
-                url: string,
-                body: unknown,
-                opts: Record<string, unknown>
-              ) => Promise<unknown>
+              (url: string, config: Record<string, unknown>): Promise<{ data?: unknown; headers?: { get?: (name: string) => string | null } }>
             }
-          ).post(endpoint, requestData, {
+          )(endpoint, {
+            method: 'POST',
+            data: requestData,
             headers: { 'Content-Type': 'application/json' },
             params: { key: this.apiKey },
             timeout: this.getTimeoutMs(),
           })
         )
 
-        const { images, totalTokens } = parseGeminiResponse(response, this.name, this.logger)
+        // 捕获 new-api 路由分组（x-routing-group），供后生成结算按实际分组倍率计价；
+        // 捕获 request-id（x-api-request-id / x-oneapi-request-id / x-request-id），
+        // 供结算按 /api/log/self 查权威 quota。对齐 openai / midjourney provider。
+        const headers = response?.headers
+        const routingGroup = headers?.get?.('x-routing-group')?.trim()
+        this.lastRoutingGroup = routingGroup && routingGroup.length > 0 ? routingGroup : null
+        this.lastRequestId = extractRequestIdFromHeaders(headers)
+
+        const { images, totalTokens, inputTokens, outputTokens } = parseGeminiResponse(response?.data, this.name, this.logger)
         this.lastTotalTokens = totalTokens
+        this.lastInputTokens = inputTokens
+        this.lastOutputTokens = outputTokens
         if (images.length === 0) {
           this.logger.warn('provider=%s event=empty_response iteration=%d', this.name, i + 1)
           continue
@@ -219,7 +227,7 @@ function parseGeminiResponse(
   rawResponse: unknown,
   providerName: string,
   logger: { debug: Function; warn: Function; error: Function; info?: Function }
-): { images: string[]; totalTokens: number | null } {
+): { images: string[]; totalTokens: number | null; inputTokens: number | null; outputTokens: number | null } {
   const response = (rawResponse ?? {}) as {
     error?: { message?: string }
     usageMetadata?: {
@@ -329,7 +337,22 @@ function parseGeminiResponse(
   }
 
   const totalTokens = response.usageMetadata?.totalTokenCount ?? null
-  return { images, totalTokens }
+  const inputTokens = response.usageMetadata?.promptTokenCount ?? null
+  const outputTokens = response.usageMetadata?.candidatesTokenCount ?? null
+  return { images, totalTokens, inputTokens, outputTokens }
+}
+
+/** 从响应头提取 new-api request-id(x-api-request-id / x-oneapi-request-id / x-request-id)。 */
+function extractRequestIdFromHeaders(
+  headers: { get?: (name: string) => string | null } | null | undefined,
+): string | null {
+  if (!headers?.get) return null
+  const keys = ['x-api-request-id', 'x-oneapi-request-id', 'x-request-id']
+  for (const key of keys) {
+    const value = headers.get(key)?.trim()
+    if (value) return value
+  }
+  return null
 }
 
 function isContentFilterText(message: string): boolean {
