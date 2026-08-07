@@ -137,6 +137,44 @@ describe('resolveContract', () => {
     expect(result.ok).toBe(false)
   })
 
+  test('qwen-image-max resolves to newapi qwen generate contract (supportsN=false)', () => {
+    const r1 = resolveContract({ modelId: 'qwen-image-max', supplier: 'newapi', protocol: 'openai', operation: 'text-to-image' })
+    expect(r1.ok).toBe(true)
+    if (r1.ok) {
+      expect(r1.contract.id).toBe('newapi.openai.qwen-image-max.generate')
+      expect(r1.contract.openai?.supportsN).toBe(false)
+      expect(r1.contract.openai?.maxN).toBe(1)
+      expect(r1.contract.endpoint).toBe('/v1/images/generations')
+    }
+    const r2 = resolveContract({ modelId: 'qwen-image-max-2025-12-30', supplier: 'newapi', protocol: 'openai', operation: 'text-to-image' })
+    expect(r2.ok).toBe(true)
+    if (r2.ok) expect(r2.contract.id).toBe('newapi.openai.qwen-image-max.generate')
+  })
+
+  test('grok-imagine-image resolves to newapi grok generate contract', () => {
+    const r1 = resolveContract({ modelId: 'grok-imagine-image', supplier: 'newapi', protocol: 'openai', operation: 'text-to-image' })
+    expect(r1.ok).toBe(true)
+    if (r1.ok) {
+      expect(r1.contract.id).toBe('newapi.openai.grok-imagine.generate')
+      expect(r1.contract.openai?.supportsN).toBe(false)
+    }
+    const r2 = resolveContract({ modelId: 'grok-imagine-image-pro', supplier: 'newapi', protocol: 'openai', operation: 'text-to-image' })
+    expect(r2.ok).toBe(true)
+    if (r2.ok) expect(r2.contract.id).toBe('newapi.openai.grok-imagine.generate')
+  })
+
+  test('qwen/grok contracts reject 2k/4k resolution and auto (fail-closed, no custom size)', () => {
+    const qwen = getContractById('newapi.openai.qwen-image-max.generate')
+    const sizes = qwen?.openai?.size
+    expect(sizes?.fixedSizes).toContain('1024x1024')
+    expect(sizes?.customSizeLimits).toBeUndefined()
+    expect(sizes?.supportsAuto).toBeUndefined()
+    expect(sizes?.fixedSizes).not.toContain('auto')
+    const grok = getContractById('newapi.openai.grok-imagine.generate')
+    expect(grok?.openai?.size?.customSizeLimits).toBeUndefined()
+    expect(grok?.openai?.size?.fixedSizes).not.toContain('auto')
+  })
+
   test('getContractById returns known contract or undefined', () => {
     expect(getContractById('newapi.mj.imagine')?.protocol).toBe('mj')
     expect(getContractById('nonexistent-contract-id')).toBeUndefined()

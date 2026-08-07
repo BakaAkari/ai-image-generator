@@ -146,6 +146,52 @@ const NEWAPI_OPENAI_GPT_IMAGE_1_GENERATE: ImageContract = {
   },
 }
 
+/** newapi Qwen Image Max 系列（per-call 定价；实测平台不支持 size=auto，仅接受固定 width*height）。 */
+const NEWAPI_QWEN_IMAGE_MAX_GENERATE: ImageContract = {
+  id: 'newapi.openai.qwen-image-max.generate',
+  supplier: 'newapi',
+  protocol: 'openai',
+  operation: 'text-to-image',
+  endpoint: '/v1/images/generations',
+  method: 'POST',
+  modelIds: ['qwen-image-max', 'qwen-image-max-2025-12-30'],
+  label: 'newapi Qwen Image Max generate',
+  openai: {
+    contentType: 'application/json',
+    size: {
+      fixedSizes: ['1024x1024', '1024x1536', '1536x1024'],
+      fixedByResolutionAndAspect: {
+        '1k': { '1:1': '1024x1024', '3:2': '1536x1024', '2:3': '1024x1536' },
+      },
+    },
+    supportsN: false,
+    maxN: 1,
+  },
+}
+
+/** newapi Grok Imagine 系列（per-call 定价；保守声明：仅固定 1k 尺寸，不开放未证实的 auto）。 */
+const NEWAPI_GROK_IMAGINE_GENERATE: ImageContract = {
+  id: 'newapi.openai.grok-imagine.generate',
+  supplier: 'newapi',
+  protocol: 'openai',
+  operation: 'text-to-image',
+  endpoint: '/v1/images/generations',
+  method: 'POST',
+  modelIds: ['grok-imagine-image', 'grok-imagine-image-pro'],
+  label: 'newapi Grok Imagine generate',
+  openai: {
+    contentType: 'application/json',
+    size: {
+      fixedSizes: ['1024x1024', '1024x1536', '1536x1024'],
+      fixedByResolutionAndAspect: {
+        '1k': { '1:1': '1024x1024', '3:2': '1536x1024', '2:3': '1024x1536' },
+      },
+    },
+    supportsN: false,
+    maxN: 1,
+  },
+}
+
 /** OpenAI 官方 GPT Image 生成契约（gpt-image-1 官方能力）。 */
 const OFFICIAL_OPENAI_GENERATE: ImageContract = {
   id: 'openai.official.images.generate',
@@ -381,6 +427,8 @@ const ALL_CONTRACTS: ImageContract[] = [
   NEWAPI_OPENAI_GPT_IMAGE_2_C_GENERATE,
   NEWAPI_OPENAI_GPT_IMAGE_2_EDIT,
   NEWAPI_OPENAI_GPT_IMAGE_1_GENERATE,
+  NEWAPI_QWEN_IMAGE_MAX_GENERATE,
+  NEWAPI_GROK_IMAGINE_GENERATE,
   OFFICIAL_OPENAI_GENERATE,
   OFFICIAL_OPENAI_EDIT,
   NEWAPI_GEMINI_2_5_GENERATE,

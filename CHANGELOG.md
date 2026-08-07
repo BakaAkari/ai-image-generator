@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.5.0] - 2026-08-08
+
+### 新增
+
+- **qwen-image-max / grok-imagine 系列契约接入**：注册 `newapi.openai.qwen-image-max.generate`（qwen-image-max / qwen-image-max-2025-12-30）与 `newapi.openai.grok-imagine.generate`（grok-imagine-image / grok-imagine-image-pro）两个 newapi openai text-to-image 契约，目录中这两系模型从 fail-closed 变为可路由、可结算（走 `/v1/images/generations`，单张调用，1k 固定尺寸）。定价沿用既有结算链（日志真源 → 公式链 per-call pricePerCall × group_ratio，qwen 0.5 / grok 0.208 / grok-pro 0.728），无新计费语义。
+
+### 修复
+
+- **qwen 平台不支持 `size=auto`**：实测触发 qwen 生成时平台返回 `Invalid size format: auto, expected format: width*height`。qwen / grok 契约移除 `auto` 尺寸（仅固定 1024x1024 / 1536x1024 / 1024x1536），grok 同步保守处理（未证实能力不开放）。
+
+### 验证
+
+- `tsc` clean；全量 `588 passed`（55 files）；契约解析单测覆盖 qwen / grok 命中与 2k/4k/auto fail-closed；本地 mock 实测 qwen 契约命中（`requestProviderImages` 确认 contract=newapi.openai.qwen-image-max.generate）。结算三方对账（settlement-audit vs 平台 log 接口）待实机验收。
+
 ## [2.4.1] - 2026-08-08
 
 ### 修复
