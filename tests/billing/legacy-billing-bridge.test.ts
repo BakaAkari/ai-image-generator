@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'vitest'
-import { calculateGenerationCost, computePostGenerationCost, resolveSupplierCreditToRmb, tokensToSupplierCredits } from '../../src/shared/billing.js'
+import {
+  DEFAULT_PER_TOKEN_ESTIMATE,
+  DEFAULT_QUOTA_PER_UNIT,
+  USD_TO_RMB,
+  calculateGenerationCost,
+  computePostGenerationCost,
+  resolveSupplierCreditToRmb,
+  resolveUsdToRmb,
+  roundCreditsPrecise,
+  tokensToSupplierCredits,
+} from '../../src/shared/billing.js'
 import type { Config } from '../../src/shared/config.js'
 
 const config = {
@@ -36,30 +46,43 @@ describe('legacy billing bridge (deprecated, always returns reservation)', () =>
 })
 
 describe('post-generation pricing', () => {
-  test('tokensToSupplierCredits computes correctly', () => {
+  test('exports defaults (USD_TO_RMB=6.76, quota=500000, perTokenEstimate=2000)', () => {
+    expect(USD_TO_RMB).toBe(6.76)
+    expect(DEFAULT_QUOTA_PER_UNIT).toBe(500000)
+    expect(DEFAULT_PER_TOKEN_ESTIMATE).toBe(2000)
+  })
+
+  test('tokensToSupplierCredits uses default quotaPerUnit=500000', () => {
+    // 500000 raw tokens ÷ 500000 = 1 USD
     expect(tokensToSupplierCredits(500000)).toBe(1)
-    expect(tokensToSupplierCredits(1000000)).toBe(2)
-    expect(tokensToSupplierCredits(250000)).toBe(0.5)
+    expect(tokensToSupplierCredits(1_000_000)).toBe(2)
+    expect(tokensToSupplierCredits(250_000)).toBe(0.5)
     expect(tokensToSupplierCredits(0)).toBe(0)
     expect(tokensToSupplierCredits(-100)).toBe(0)
   })
 
-  test('computePostGenerationCost with default pricing config', () => {
-    // 1 supplier credit × 0.5 × 10 credits/cny × 1.3 = 6.5
-    const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 30 })
-    expect(cost).toBe(6.5)
+  test('tokensToSupplierCredits honors custom quotaPerUnit override', () => {
+    // 自建站的非标 QuotaPerUnit=5000：显式传入应反映
+    expect(tokensToSupplierCredits(5000, 1, 5000)).toBe(1)
+    expect(tokensToSupplierCredits(1000, 2, 5000)).toBe(0.4)
   })
 
-  test('computePostGenerationCost with different markup', () => {
-    // 1 supplier credit × 0.5 × 10 × 1.0 = 5.0
+  test('computePostGenerationCost with default pricing (usdToRmb=6.76)', () => {
+    // 1 USD × 6.76 × 10 credits/cny × 1.3 = 87.88
+    const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 30 })
+    expect(cost).toBeCloseTo(87.88, 2)
+  })
+
+  test('computePostGenerationCost with markup 0', () => {
+    // 1 USD × 6.76 × 10 × 1.0 = 67.6
     const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 0 })
-    expect(cost).toBe(5)
+    expect(cost).toBeCloseTo(67.6, 2)
   })
 
   test('computePostGenerationCost with different creditsPerCny', () => {
-    // 1 supplier credit × 0.5 × 20 × 1.3 = 13
+    // 1 USD × 6.76 × 20 × 1.3 = 175.76
     const cost = computePostGenerationCost(1, { creditsPerCny: 20, pricingMarkupPercent: 30 })
-    expect(cost).toBe(13)
+    expect(cost).toBeCloseTo(175.76, 2)
   })
 
   test('computePostGenerationCost returns 0 for invalid inputs', () => {
@@ -67,26 +90,73 @@ describe('post-generation pricing', () => {
     expect(computePostGenerationCost(-1, { creditsPerCny: 10, pricingMarkupPercent: 30 })).toBe(0)
   })
 
-  test('computePostGenerationCost honors custom supplierCreditToRmb', () => {
-    // 1 supplier credit × 0.8 × 10 × 1.3 = 10.4
+  test('computePostGenerationCost honors custom usdToRmb (preferred field)', () => {
+    // 1 USD × 6.5 × 10 × 1.3 = 84.5
+    const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 30, usdToRmb: 6.5 })
+    expect(cost).toBeCloseTo(84.5, 2)
+  })
+
+  test('computePostGenerationCost falls back to deprecated supplierCreditToRmb when usdToRmb missing', () => {
+    // migration 窗口内可能同时残留旧字段；无 usdToRmb 时用 supplierCreditToRmb
+    // 1 USD × 0.8 × 10 × 1.3 = 10.4
     const cost = computePostGenerationCost(1, { creditsPerCny: 10, pricingMarkupPercent: 30, supplierCreditToRmb: 0.8 })
-    expect(cost).toBe(10.4)
+    expect(cost).toBeCloseTo(10.4, 2)
+  })
+
+  test('computePostGenerationCost prefers usdToRmb over supplierCreditToRmb when both present', () => {
+    // 1 USD × 7 × 10 × 1.3 = 91
+    const cost = computePostGenerationCost(1, {
+      creditsPerCny: 10, pricingMarkupPercent: 30, usdToRmb: 7, supplierCreditToRmb: 0.8,
+    })
+    expect(cost).toBeCloseTo(91, 2)
+  })
+
+  test('computePostGenerationCost with round:false keeps 4dp precision (per-token 微额)', () => {
+    // 0.0004 USD × 6.76 × 10 × 1.3 = 0.0351 → 2dp roundCredits 保留 0.04；4dp 精确 0.0351
+    const rounded = computePostGenerationCost(0.0004, { creditsPerCny: 10, pricingMarkupPercent: 30 })
+    expect(rounded).toBeCloseTo(0.04, 2)
+    const precise = computePostGenerationCost(0.0004, { creditsPerCny: 10, pricingMarkupPercent: 30 }, { round: false })
+    expect(precise).toBeCloseTo(0.0004 * 6.76 * 10 * 1.3, 4)
+    expect(precise).toBeGreaterThan(0)
   })
 })
 
-describe('resolveSupplierCreditToRmb', () => {
-  test('returns default 0.5 when undefined', () => {
-    expect(resolveSupplierCreditToRmb(undefined)).toBe(0.5)
+describe('roundCreditsPrecise', () => {
+  test('rounds to 4 decimal places by default', () => {
+    expect(roundCreditsPrecise(0.00123456)).toBe(0.0012)
+    expect(roundCreditsPrecise(1.23456789)).toBe(1.2346)
+  })
+
+  test('honors custom dp', () => {
+    expect(roundCreditsPrecise(0.123456, 2)).toBe(0.12)
+    expect(roundCreditsPrecise(0.123456, 6)).toBe(0.123456)
+  })
+
+  test('clamps negative to 0, handles non-finite', () => {
+    expect(roundCreditsPrecise(-1)).toBe(0)
+    expect(roundCreditsPrecise(Number.NaN)).toBe(0)
+    expect(roundCreditsPrecise(Number.POSITIVE_INFINITY)).toBe(0)
+  })
+})
+
+describe('resolveUsdToRmb', () => {
+  test('returns default 6.76 when undefined', () => {
+    expect(resolveUsdToRmb(undefined)).toBe(6.76)
   })
 
   test('returns config value when valid', () => {
-    expect(resolveSupplierCreditToRmb(0.8)).toBe(0.8)
+    expect(resolveUsdToRmb(6.5)).toBe(6.5)
   })
 
   test('falls back to default for non-positive or invalid values', () => {
-    expect(resolveSupplierCreditToRmb(0)).toBe(0.5)
-    expect(resolveSupplierCreditToRmb(-1)).toBe(0.5)
-    expect(resolveSupplierCreditToRmb(Number.NaN)).toBe(0.5)
-    expect(resolveSupplierCreditToRmb(Number.POSITIVE_INFINITY)).toBe(0.5)
+    expect(resolveUsdToRmb(0)).toBe(6.76)
+    expect(resolveUsdToRmb(-1)).toBe(6.76)
+    expect(resolveUsdToRmb(Number.NaN)).toBe(6.76)
+    expect(resolveUsdToRmb(Number.POSITIVE_INFINITY)).toBe(6.76)
+  })
+
+  test('deprecated resolveSupplierCreditToRmb alias delegates to resolveUsdToRmb', () => {
+    expect(resolveSupplierCreditToRmb(6.5)).toBe(6.5)
+    expect(resolveSupplierCreditToRmb(undefined)).toBe(6.76)
   })
 })

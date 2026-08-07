@@ -86,12 +86,41 @@ describe('UserManager', () => {
     u.dispose()
   })
 
-  test('admin: bypass balance check', async () => {
+  test('admin: bypass balance check (reservedCredits=0 → cap skipped, settledCredits reflects actual)', async () => {
+    // 管理员豁免路径 reservedCredits=0，封顶逻辑跳过，settledCredits 按 actualCost 记账（豁免语义保持）
     const u = await manager()
     const res = await u.reserveCredits('admin1', 'A', 'r1', cost(100), adminCfg)
     expect(res.allowed).toBe(true)
     const result = await u.settleReservation('r1', 1, 'gen', adminCfg, { actualCost: 5 })
     expect(result.settledCredits).toBe(5)
+    u.dispose()
+  })
+
+  test('paid: settlement cap prevents balance from going negative (overrun logged)', async () => {
+    // 预扣 4 积分，结算真实成本 10 积分（预扣不足）：应封顶到 reservedCredits=4，余额不变负
+    const u = await manager()
+    await fundUser(u, 'u1', 'U', 10)
+    await u.reserveCredits('u1', 'U', 'r1', cost(4, 1), paidCfg)
+    const before = await u.getUserData('u1', 'U', paidCfg)
+    const beforePurchased = before.balance.purchasedCredits
+    const result = await u.settleReservation('r1', 1, 'gen', paidCfg, { actualCost: 10 })
+    expect(result.settledCredits).toBe(4)
+    expect(result.releasedCredits).toBe(0)
+    const after = await u.getUserData('u1', 'U', paidCfg)
+    // 余额 = 之前 + released(0) = 之前，永不小于 0
+    expect(after.balance.purchasedCredits).toBe(beforePurchased)
+    expect(after.balance.purchasedCredits).toBeGreaterThanOrEqual(0)
+    u.dispose()
+  })
+
+  test('paid: settlement 4dp precision keeps per-token micro-cost non-zero', async () => {
+    // 结算真实成本 0.0026 积分（<0.01，两位取整会归零）；封顶后仍应保留 4dp 精度
+    const u = await manager()
+    await fundUser(u, 'u1', 'U', 10)
+    await u.reserveCredits('u1', 'U', 'r1', cost(4, 1), paidCfg)
+    const result = await u.settleReservation('r1', 1, 'gen', paidCfg, { actualCost: 0.0026 })
+    expect(result.settledCredits).toBeCloseTo(0.0026, 4)
+    expect(result.settledCredits).toBeGreaterThan(0)
     u.dispose()
   })
 })

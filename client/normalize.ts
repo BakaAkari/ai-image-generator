@@ -125,14 +125,27 @@ export function normalizeConfig(raw: any): any {
   c.chatlunaContextHistorySize ??= 20
   c.chatlunaContextTtlSeconds ??= 86400
   c.chatlunaPreferLastGeneratedInPrivateRoom ??= true
+  // 日志真源结算凭据：字段透传，未设置时保持 undefined 让后端使用默认值
+  if (typeof c.logAccessApiKey !== 'string') delete c.logAccessApiKey
+  if (typeof c.logAccessUserId !== 'number' || !Number.isFinite(c.logAccessUserId) || c.logAccessUserId <= 0) {
+    delete c.logAccessUserId
+  }
+  // 已移除的探测字段：从旧配置中剥离，避免面板保存时回写
+  delete c.probeApiBase
+  delete c.probeApiKey
+  delete c.probeRateLimit
+  delete c.probePrompt
+  delete c.probeReserveMargin
   c.yesimbotEnabled ??= false
   c.yesimbotExposeQuotaTool ??= true
   c.yesimbotExposeStyleListTool ??= true
-  // 模型映射分组倍率：默认 1
+  // 模型映射：ratioOverride 可选（未配置时后端按 MJ 默认因子 / 表值 / 1 兜底）。
+  // 旧 groupRatio 字段仅用于旧配置反序列化，运行时不再读取；此处剥离以避免面板保存时回写。
   c.modelMappings = Array.isArray(source.modelMappings) ? source.modelMappings.map((m: any) => {
     const copy = { ...m }
-    if (typeof copy.groupRatio !== 'number' || !Number.isFinite(copy.groupRatio) || copy.groupRatio <= 0) {
-      copy.groupRatio = 1
+    delete copy.groupRatio
+    if (typeof copy.ratioOverride !== 'number' || !Number.isFinite(copy.ratioOverride) || copy.ratioOverride <= 0) {
+      delete copy.ratioOverride
     }
     return copy
   }) : []

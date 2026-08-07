@@ -10,6 +10,7 @@ import type { ImageCatalogService } from '../catalog/image-catalog.js'
 import type { ActiveSupplier, ImageModelInfo } from '../catalog/types.js'
 import type { Config } from '../shared/config.js'
 import type { UserManager } from '../services/UserManager.js'
+import { resolveUsdToRmb } from '../shared/billing.js'
 
 export interface RegisterCatalogCommandsParams {
   ctx: Context
@@ -29,9 +30,9 @@ export interface RegisterCatalogCommandsParams {
 
 function formatPrice(m: ImageModelInfo): string {
   const p = m.pricing
-  // new-api /api/pricing 的 model_price 语义是“供应商积分/次”（上游计费单位，
-  // 1 供应商积分 = ¥0.5）；这里只做展示，不参与运行时用户计价。
-  if (p.type === 'per-call' && p.pricePerCall != null) return `${p.pricePerCall.toFixed(2)} 供应商积分/次`
+  // new-api /api/pricing 的 model_price 单位是**美元**（真实扣费 = pricePerCall × group_ratio）。
+  // 这里只做展示，不参与运行时用户计价。
+  if (p.type === 'per-call' && p.pricePerCall != null) return `$${p.pricePerCall.toFixed(4)}/次`
   if (p.type === 'per-token' && p.tokenRatio != null) return `token×${p.tokenRatio}`
   return '计价未知'
 }
@@ -82,8 +83,9 @@ export function registerCatalogCommands(params: RegisterCatalogCommandsParams) {
       if (!billing || credits == null) {
         return '当前供应商不支持消耗查询，或尚未获取到数据（稍后重试）'
       }
+      const usdToRmb = resolveUsdToRmb(getConfig().usdToRmb)
       const lines = [`💰 供应商消耗（key：${billing.tokenName ?? '未知'}）`]
-      lines.push(`  累计供应商积分：${credits.toFixed(2)}（≈¥${(credits * 0.5).toFixed(2)}）`)
+      lines.push(`  累计消耗：$${credits.toFixed(4)}（≈¥${(credits * usdToRmb).toFixed(2)}）`)
       if (billing.hardLimitUsd != null) {
         lines.push(`  Key 限额：$${billing.hardLimitUsd.toFixed(2)}`)
       }

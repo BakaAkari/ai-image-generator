@@ -33,8 +33,17 @@ export interface ModelMappingConfig {
   restricted?: boolean
   /** @deprecated 0.9.0 迁移为 chargePolicy.fixed，保留一版只读兼容。 */
   creditCostPerImage?: number
-  /** 该映射的分组倍率（覆盖目录分组默认值）。yunwu 后台 API 令牌页面查看。默认 1。 */
+  /**
+   * @deprecated 1.1.1 起改为 ratioOverride（语义更清晰：路由分组倍率覆盖）。
+   * 保留字段仅用于旧配置反序列化（Koishi 校验先于 migration 执行，删字段会阻止插件加载）。
+   * migration 会清空该字段；运行时不再读取。
+   */
   groupRatio?: number
+  /**
+   * 路由分组倍率覆盖：配置后该模型的预扣与结算直接使用该倍率，不再查 group_ratio 表 / 读响应头。
+   * 未配置时按 enable_groups 表上界（预扣）/ 响应头 x-routing-group 命中（结算）/ default 兜底。
+   */
+  ratioOverride?: number
 }
 
 export interface ImageGenerationModifiers {
@@ -168,3 +177,4 @@ export type ProviderCredentials =
   | OpenAICompatibleCredentials
   | GeminiOfficialCredentials
   | GptOfficialCredentials
+

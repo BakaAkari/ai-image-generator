@@ -108,8 +108,37 @@ export interface Config {
   }
   /** endpoint 名称 → 协议/能力 别名表（可选；按站补充，如 "MJ imagine"） */
   endpointAliases?: Record<string, { protocol: 'openai' | 'gemini' | 'mj'; capability: 'text-to-image' | 'image-to-image' | 'image-edit' }>
-  /** 供应商积分 → 人民币汇率（默认 0.5） */
+  /**
+   * @deprecated 1.1.2 起改名 usdToRmb（美元→人民币，OpenLux 美元口径）。migration 会读到此字段一次性折算并清理。
+   * 旧默认 0.5 是 yunwu 时代残渣（1 供应商积分=¥0.5，非 USD 语义），供应商积分本身即美元。
+   */
   supplierCreditToRmb?: number
+  /**
+   * 美元→人民币汇率。OpenLux / NewAPI 兼容站的 supplier credits 与 model_price 均为美元口径，
+   * 用户扣费 = usdCost × usdToRmb × creditsPerCny × (1 + markup%)。默认 6.76（2026-08-06 open.er-api.com 实时）。
+   */
+  usdToRmb?: number
+  /**
+   * NewAPI quota 除数。真实美元 = quota / 500000（默认值）。修改需匹配站点自建 QuotaPerUnit；
+   * 未配置时按 500000 计算。
+   */
+  quotaPerUnit?: number
+  /**
+   * per-token 模型预扣时的 raw prompt token 估算基线。默认 2000 覆盖实测最长 prompt。
+   * 结算按精确 usage 4dp 多退少补。
+   */
+  perTokenEstimateTokens?: number
+  /**
+   * 计费日志访问 apiKey（NewAPI 系统令牌 / role secret，只读日志用途）。配置后 MJ 等
+   * 逐任务精确计费的模型会在生成响应后按 request_id 查询 `/api/log/self` 获取权威
+   * quota → 真实美元 = quota / quotaPerUnit（默认 500000），作为 actualCost 结算。
+   * 未配置或查询失败时回退到目录公式链。
+   */
+  logAccessApiKey?: string
+  /**
+   * 与 logAccessApiKey 配对：`/api/log/self` 需要 `New-Api-User` 请求头声明用户 ID。
+   */
+  logAccessUserId?: number
 
   // ── ① 供应商凭证 ──────────────────────────────────────────────────────────
   /** @deprecated 0.5.9 起不再使用全局 provider 单选，保留字段避免 Koishi 反序列化报错 */
@@ -265,7 +294,25 @@ const SupplierRuntimeSchema = Schema.object({
       capability: Schema.union([Schema.const('text-to-image'), Schema.const('image-to-image'), Schema.const('image-edit')]),
     })
   ).hidden(),
-  supplierCreditToRmb: Schema.number().default(0.5).hidden(),
+  supplierCreditToRmb: Schema.number().hidden().description('旧字段（1.1.2 起改用 usdToRmb），仅用于反序列化与迁移'),
+  usdToRmb: Schema.number()
+    .min(0.01)
+    .step(0.01)
+    .default(6.76)
+    .description('美元→人民币汇率，OpenLux 美元口径，默认 6.76（2026-08-06 实时汇率）'),
+  quotaPerUnit: Schema.number()
+    .min(100)
+    .step(100)
+    .default(500000)
+    .description('NewAPI quota 除数（真实美元 = quota / 500000）；自建站需要匹配 QuotaPerUnit 配置'),
+  perTokenEstimateTokens: Schema.number()
+    .min(100)
+    .max(100000)
+    .step(100)
+    .default(2000)
+    .description('per-token 预扣估算基线（raw prompt tokens）；默认 2000 覆盖实测最长 prompt'),
+  logAccessApiKey: Schema.string().role('secret').default('').description('计费日志访问 apiKey（系统令牌 / role secret），配置后 MJ 等模型按 request_id 查 /api/log/self 拿权威 quota 结算'),
+  logAccessUserId: Schema.number().min(1).step(1).description('与 logAccessApiKey 配对的 New-Api-User 用户 ID'),
 }).hidden()
 
 // ----------------------------------------------------------------------------
@@ -308,10 +355,12 @@ const CONFIG_GROUPS = [
           .hidden()
           .description('旧字段，仅用于迁移'),
         groupRatio: Schema.number()
-          .default(1)
+          .hidden()
+          .description('旧字段（1.1.1 起改用 ratioOverride），仅用于旧配置反序列化与一次性清理'),
+        ratioOverride: Schema.number()
           .min(0.01)
           .step(0.01)
-          .description('分组倍率（覆盖目录分组默认值）'),
+          .description('路由分组倍率覆盖（可选）：配置后直接使用该倍率，不再查表/读响应头。MJ 等表内无真实倍率的模型建议配置'),
       }).collapse()
     )
       .role('table')

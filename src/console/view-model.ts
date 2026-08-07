@@ -1,7 +1,7 @@
 import type { Config } from '../shared/config.js'
 import type { ModelMappingConfig } from '../shared/types.js'
 import type { BillingInfo } from '../catalog/billing-info.js'
-import { SUPPLIER_CREDIT_TO_RMB as CATALOG_SUPPLIER_CREDIT_TO_RMB } from '../catalog/billing-info.js'
+import { USD_TO_RMB as CATALOG_USD_TO_RMB } from '../catalog/billing-info.js'
 
 interface CatalogModelInput {
   id: string
@@ -24,10 +24,14 @@ interface CatalogInput {
 export interface ConsoleCatalogRow extends CatalogModelInput {
   selectable: boolean
   /**
-   * 供应商目录报价折算后的人民币成本（× mapping.groupRatio × 0.5）。仅参考，
-   * 运行时用户扣费依赖后生成定价（usage.total_tokens）。
+   * 供应商目录报价折算后的人民币成本（USD × usdToRmb ≈ 6.76）。仅参考，
+   * 运行时用户扣费依赖后生成定价（真实美元 = quota / quotaPerUnit，默认 500000）。
    */
   yunwuCost: { type: string; label: string }
+  /**
+   * 用于 UI 展示的等效倍率：mapping.ratioOverride 优先，否则 1。
+   * 命名保持 groupRatio 以减少前端字段爆炸半径；语义已改为「路由分组倍率覆盖或 1」。
+   */
   groupRatio: number
 }
 
@@ -46,8 +50,8 @@ export interface ImageGeneratorConsoleState {
 }
 
 export function resolveMappingGroupRatio(mapping?: ModelMappingConfig): number {
-  if (typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0) {
-    return mapping.groupRatio
+  if (typeof mapping?.ratioOverride === 'number' && Number.isFinite(mapping.ratioOverride) && mapping.ratioOverride > 0) {
+    return mapping.ratioOverride
   }
   return 1
 }
@@ -110,16 +114,16 @@ function formatYunwuCost(model: CatalogModelInput, groupRatio: number): ConsoleC
   const ratio = Number.isFinite(groupRatio) && groupRatio > 0 ? groupRatio : 1
   if (pricing?.type === 'per-call' && typeof pricing.pricePerCall === 'number') {
     const effective = pricing.pricePerCall * ratio
-    const rmb = Math.round(effective * CATALOG_SUPPLIER_CREDIT_TO_RMB * 100) / 100
+    const rmb = Math.round(effective * CATALOG_USD_TO_RMB * 100) / 100
     if (ratio !== 1) {
-      return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张（分组倍率 ×${ratio}）` }
+      return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张（倍率覆盖 ×${ratio}）` }
     }
     return { type: 'per-call', label: `¥${rmb.toFixed(2)}/张` }
   }
   if (pricing?.type === 'per-token') {
     const outputPrice = pricing.officialPriceOutput ?? (typeof pricing.tokenRatio === 'number' ? pricing.tokenRatio * 5 : undefined)
     if (outputPrice) {
-      const rmb = Math.round(outputPrice / 1_000_000 * CATALOG_SUPPLIER_CREDIT_TO_RMB * 100) / 100
+      const rmb = Math.round(outputPrice / 1_000_000 * CATALOG_USD_TO_RMB * 100) / 100
       return { type: 'per-token', label: `≈¥${rmb.toFixed(2)}/1k tokens（按量）` }
     }
     return { type: 'per-token', label: `token ×${pricing.tokenRatio ?? '?'}（按量）` }

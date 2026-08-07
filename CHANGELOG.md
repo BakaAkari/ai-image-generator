@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.4.0] - 2026-08-07
+
+### 新增
+
+- **MJ 日志精确结算**：生成成功后按响应捕获的 `request_id` 查 `/api/log/self`（`logAccessApiKey` + `logAccessUserId` 凭据，aka-tools 定价页 C 分区配置）拿权威 quota，`真实美元 = quota / quotaPerUnit(500000)` 作为 actualCost 精确结算；未配置凭据或查询失败时回退目录公式链（per-call `pricePerCall × group_ratio`），MJ 结算不漏计。新增 `src/services/log-quota.ts` 最小日志查询工具。
+- 结算优先级：`日志真源 → 公式链`；预扣恢复公式上界 × 图数；4dp 记账、封顶 + overrun 告警、豁免路径保持不变。
+
+### 移除
+
+- **计费探测功能**：探测服务（`ModelProbeService` 等）/ 面板「计费探测」列与确认弹窗 / 探测配置字段（`probeApiBase/probeApiKey/probeRateLimit/probePrompt/probeReserveMargin`）/ 探测测试全部删除；migration 与前端 normalize 清理旧配置残留。独立只读 CLI 诊断工具 `probe:newapi`（`scripts/probe-newapi-catalog.mjs`，脱敏输出）保留。
+
+### 修复
+
+- **`quotaPerUnit` 旧值未迁移导致日志真源结算放大 100 倍**：计费单位修正（5000→500000）后，已持久化的 `quotaPerUnit=5000` 从未被迁移，日志真源路径 `quota/5000` 把真实 $0.0132 算成 $1.32。新增 migration：`quotaPerUnit===5000`（已知错误默认）→ `500000`；其它自定义值（自建站非标）保留。测试新增 3 例（5000→500000 / 正确值不动 / 自定义值保留）。
+
+### 文档
+
+- 交互面全审计报告 `docs/working/ux-audit-report.md`（DELETE 6 组 / CHANGE-INTERACTION 20 项 / REFACTOR-MERGE 8 项，P1-P3 优先级；仅审计不落地）。
+- 计费机制最终定案 `docs/working/billing-mechanism-final.md`（唯一权威计费设计文档，替代并归档历史计费方案至 `docs/archive/2026-08-billing-superseded/`）。
+
+### 验证
+
+- `tsc` clean；全量 `584 passed`（55 files）；构建部署后本地 Koishi 实机验证：MJ 生成结算 `source=log`、`logQuota=6618`、`actualCost=0.90 积分`（修复前 90.37）；供应商账本增量 $0.0133 与日志真源一致。
+
 ## [2.3.3] - 2026-08-04
 
 ### 修复

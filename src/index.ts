@@ -153,6 +153,11 @@ export async function apply(ctx: Context, config: Config) {
     return selectRouteForOperation(model, operation ?? 'text-to-image')
   }
 
+  // 3c. 日志真源结算凭据（可选）：配置后 MJ 等逐任务结算模型按 request_id
+  //     查 /api/log/self 拿权威 quota。resolveCredentials 后置声明，此处通过
+  //     late-bound getter 保持初始化顺序不变。
+  let getLogAccessCredentials: () => { apiBase: string; apiKey: string; userId: number; extraHeaders?: Record<string, string>; timeoutSec?: number } | null = () => null
+
   const handlers = createImageGenerationHandlers({
     ctx,
     service,
@@ -160,6 +165,7 @@ export async function apply(ctx: Context, config: Config) {
     logger,
     getConfig: () => currentConfig,
     catalog,
+    getLogAccessCredentials: () => getLogAccessCredentials(),
   })
 
   // ── Wizard 向导系统 ──────────────────────────────────────────────────────
@@ -198,7 +204,7 @@ export async function apply(ctx: Context, config: Config) {
         Schema.union(models.map(m =>
           Schema.const(m.id).description(
             m.pricing.type === 'per-call' && m.pricing.pricePerCall != null
-              ? `${m.id}（${m.pricing.pricePerCall.toFixed(2)} 供应商积分/次）`
+              ? `${m.id}（$${m.pricing.pricePerCall.toFixed(4)}/次）`
               : m.pricing.type === 'per-token'
                 ? `${m.id}（token 计费 ×${m.pricing.tokenRatio ?? '?'}）`
                 : m.id,
@@ -256,6 +262,24 @@ export async function apply(ctx: Context, config: Config) {
     }
     // gemini-official：目录拉取协议不同（/v1beta/models），M1 暂不支持
     return null
+  }
+
+  // 日志真源凭据 late-binding：MJ 结算按 /api/log/self 拿权威 quota。
+  // 仅在 NewAPI 兼容供应商 + logAccessApiKey/UserId 都配置时启用。
+  getLogAccessCredentials = () => {
+    const cred = resolveCredentials(currentConfig)
+    if (!cred || cred.supplier !== 'newapi') return null
+    const logKey = (currentConfig.logAccessApiKey ?? '').trim()
+    const logUid = currentConfig.logAccessUserId
+    if (!logKey) return null
+    if (typeof logUid !== 'number' || !Number.isFinite(logUid) || logUid <= 0) return null
+    return {
+      apiBase: cred.apiBase,
+      apiKey: logKey,
+      userId: logUid,
+      extraHeaders: cred.extraHeaders,
+      timeoutSec: cred.timeoutSec,
+    }
   }
 
   // 包装 refresh：每次刷新完成后重校验映射

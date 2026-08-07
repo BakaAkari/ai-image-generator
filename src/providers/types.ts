@@ -64,6 +64,12 @@ export interface ImageProvider {
   lastRoutingGroup: string | null
 
   /**
+   * 最近一次生成调用响应头里的 request id（x-api-request-id / x-oneapi-request-id / x-request-id）。
+   * 用于结算路径按 `/api/log/self?request_id=…` 查权威 quota。
+   */
+  lastRequestId: string | null
+
+  /**
    * 生成图像
    *
    * @param prompt 提示词

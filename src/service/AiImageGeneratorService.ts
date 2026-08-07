@@ -204,6 +204,7 @@ export class AiImageGeneratorService extends Service {
     this.lastProviderInputTokens = null
     this.lastProviderOutputTokens = null
     this.lastProviderRoutingGroup = null
+    this.lastProviderRequestId = null
     const result = await providerInstance.generateImages(
       prompt,
       imageUrls,
@@ -218,6 +219,8 @@ export class AiImageGeneratorService extends Service {
     this.lastProviderOutputTokens = providerInstance.lastOutputTokens
     // 后生成结算：捕获 new-api 实际路由分组（x-routing-group 响应头）
     this.lastProviderRoutingGroup = providerInstance.lastRoutingGroup
+    // 后生成结算：捕获 request-id（供 MJ /api/log/self 权威查 quota）
+    this.lastProviderRequestId = providerInstance.lastRequestId
 
     this.pluginLogger.info('requestProviderImages 完成', {
       supplier,
@@ -480,6 +483,12 @@ export class AiImageGeneratorService extends Service {
 
   /** 最近一次 provider 生成调用响应头的 x-routing-group（new-api 实际路由分组，后生成结算用）。 */
   lastProviderRoutingGroup: string | null = null
+
+  /**
+   * 最近一次 provider 生成调用响应头的 request-id（x-api-request-id 等）。
+   * MJ 逐任务结算路径按此查 `/api/log/self` 拿权威 quota → 真实美元。
+   */
+  lastProviderRequestId: string | null = null
 
   public catalogRouteLookup: CatalogRouteLookup | undefined
 

@@ -11,20 +11,10 @@
 import type { Context, Logger } from 'koishi'
 
 import type { ImageCatalogService } from '../catalog/image-catalog.js'
-import type { BillingInfo } from '../catalog/billing-info.js'
 import type { Config } from '../shared/config.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import { buildConsoleState } from './view-model.js'
 import { buildOverviewStats } from './overview-stats.js'
-
-type CatalogCredentials = {
-  supplier: string
-  apiBase: string
-  apiKey: string
-  timeoutSec: number
-  refreshHours: number
-  extraHeaders?: Record<string, string>
-} | null
 
 export interface ConsoleServiceDeps {
   ctx: Context
@@ -36,7 +26,6 @@ export interface ConsoleServiceDeps {
   applyConfig: (config: Config) => Promise<void> | void
   mergeConfig: (current: Config, incoming: Partial<Config>) => Config
   service?: AiImageGeneratorService
-  resolveCredentials?: (config: Config) => CatalogCredentials
   knownPlatforms?: Set<string>
 }
 
@@ -59,9 +48,27 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
     return { ...state, knownPlatforms }
   })
 
-  consoleService.addListener('image-generator/save-config', async (config: Config) => {
+  consoleService.addListener('image-generator/save-config', async (config: Config, ...rest: unknown[]) => {
     try {
-      const next = mergeConfig(getConfig(), config)
+      const prev = getConfig()
+      const next = mergeConfig(prev, config)
+      // 汇率/除数/估算变更审计：这三项直接影响结算金额，必须留痕以便事后追溯
+      const AUDIT_FIELDS: Array<keyof Config> = ['usdToRmb', 'quotaPerUnit', 'perTokenEstimateTokens']
+      for (const field of AUDIT_FIELDS) {
+        const before = prev[field]
+        const after = next[field]
+        if (before !== after) {
+          const requester = (rest?.[0] as { session?: { userId?: string; platform?: string } } | undefined)?.session
+          logger.info(
+            'config-audit field=%s before=%s after=%s requester=%s@%s',
+            field,
+            String(before ?? '(unset)'),
+            String(after ?? '(unset)'),
+            requester?.userId ?? 'console',
+            requester?.platform ?? '-',
+          )
+        }
+      }
       await writeConfig(next)
       await applyConfig(next)
       return { success: true }

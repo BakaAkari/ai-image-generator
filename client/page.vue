@@ -48,7 +48,7 @@
             </div>
             <div class="stat-card">
               <div class="stat-value">{{ supplierCreditsDisplay }}</div>
-              <div class="stat-label">供应商积分</div>
+              <div class="stat-label">消耗(USD)</div>
             </div>
             <div class="stat-card">
               <div class="stat-value">{{ billingLimit }}</div>
@@ -222,6 +222,20 @@
                   </el-select>
                 </template>
               </el-table-column>
+              <el-table-column label="倍率覆盖" width="110">
+                <template #default="{ row }">
+                  <el-input-number
+                    :model-value="row.ratioOverride ?? null"
+                    :min="0.01"
+                    :step="0.01"
+                    controls-position="right"
+                    size="small"
+                    style="width: 100%"
+                    placeholder="自动"
+                    @update:model-value="(v) => setRatioOverride(row, v)"
+                  />
+                </template>
+              </el-table-column>
               <el-table-column label="受限" width="55">
                 <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
               </el-table-column>
@@ -385,7 +399,7 @@
                   <div class="hint">只有选中的模型允许普通用户使用每日免费额度；为空时禁用每日免费。</div>
                 </el-form-item>
 
-                <el-divider content-position="left">B · 自动定价（供应商积分 → 平台积分 → 用户售价）</el-divider>
+                <el-divider content-position="left">B · 自动定价（USD 成本 → 平台积分 → 用户售价）</el-divider>
                 <el-form-item label="1 元人民币 = N 平台积分">
                   <el-input-number v-model="cfg.creditsPerCny" :min="0.01" :step="1" :precision="2" />
                   <div class="hint">人民币与平台积分的换算比例；同时用作管理员余额/充值提示的估值。</div>
@@ -394,17 +408,35 @@
                   <el-input-number v-model="cfg.pricingMarkupPercent" :min="0" :max="10000" :step="1" :precision="2" />
                   <div class="hint">用户扣费 = 平台积分成本 × (1 + N/100)。例如 30 表示在成本上加价 30%。</div>
                 </el-form-item>
-                <el-form-item label="供应商 → 人民币汇率">
-                  <el-input :model-value="'1 供应商积分 = ¥0.50'" readonly style="width: 220px" />
-                  <div class="hint">NewAPI 兼容站官方约定值（默认 0.5），不作为可配置项；修改需要新版本发布。</div>
+                <el-form-item label="美元 → 人民币汇率">
+                  <el-input-number v-model="cfg.usdToRmb" :min="0.01" :step="0.01" :precision="2" />
+                  <div class="hint">NewAPI 兼容站 supplier credits 即美元；默认 6.76（2026-08-06 实时）。可参照 open.er-api.com 更新。</div>
+                </el-form-item>
+                <el-form-item label="per-token quota 除数">
+                  <el-input-number v-model="cfg.quotaPerUnit" :min="100" :step="100" />
+                  <div class="hint">NewAPI 真实美元 = quota / 除数；默认 500000。改动需匹配站点 QuotaPerUnit 配置。</div>
+                </el-form-item>
+                <el-form-item label="per-token 预扣估算 (raw tokens)">
+                  <el-input-number v-model="cfg.perTokenEstimateTokens" :min="100" :max="100000" :step="100" />
+                  <div class="hint">预扣时的 raw prompt token 估算基线，默认 2000。结算按精确 usage 4dp 多退少补。</div>
                 </el-form-item>
                 <div class="hint" style="margin-left: 16px">
-                  公式：用户扣费 = 供应商积分 × 0.5 × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
-                  修改本区两项后无需重新探测，扣费会即时按持久化的探测结果重算。
+                  公式：用户扣费 = USD 成本 × usdToRmb × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
+                  MJ 等逐任务精确计费模型配置日志真源凭据后按 quota / quotaPerUnit 结算；其它模型走目录公式链。
                 </div>
 
                 <el-collapse>
-                  <el-collapse-item title="C · 展示偏好">
+                  <el-collapse-item title="C · 日志真源结算凭据（可选）">
+                    <el-form-item label="日志访问 apiKey（系统令牌）">
+                      <el-input v-model="cfg.logAccessApiKey" type="password" show-password placeholder="OpenLux 系统访问令牌" />
+                      <div class="hint">配置后 MJ 等逐任务精确计费模型按 request_id 查 /api/log/self 拿权威 quota（真实美元 = quota / quotaPerUnit）作为 actualCost 结算；未配置或查询失败时回退公式链。</div>
+                    </el-form-item>
+                    <el-form-item label="日志访问用户 ID">
+                      <el-input-number v-model="cfg.logAccessUserId" :min="1" :step="1" />
+                      <div class="hint">与 logAccessApiKey 配对；/api/log/self 需要 New-Api-User 请求头。</div>
+                    </el-form-item>
+                  </el-collapse-item>
+                  <el-collapse-item title="D · 展示偏好">
                     <el-form-item label="生成结束时显示本次消耗">
                       <el-switch v-model="cfg.showCreditCostInResult" />
                     </el-form-item>
@@ -670,6 +702,13 @@ function mappingValid(row: any) {
 function addMapping() {
   cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false })
 }
+function setRatioOverride(row: any, v: number | null | undefined) {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+    row.ratioOverride = v
+  } else {
+    delete row.ratioOverride
+  }
+}
 function moveMapping(i: number, dir: number) {
   const arr = cfg.value.modelMappings
   const [item] = arr.splice(i, 1)
@@ -909,10 +948,6 @@ async function saveAll() {
 .unsupported-block { margin-top: 0.75rem; }
 .extra-headers { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
 .extra-header-row { display: flex; gap: 0.4rem; align-items: center; width: 100%; }
-.probe-cell { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
-.probe-line { font-size: 0.75rem; line-height: 1.2; }
-.probe-line.probe-ok { color: var(--el-color-success); }
-.probe-line.probe-err { color: var(--el-color-danger); }
 .preset-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
 .preset-section-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
 .preset-section-title { font-weight: 600; color: var(--fg1); }

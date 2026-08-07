@@ -7,9 +7,9 @@ const config = {
   creditsPerCny: 10,
   pricingMarkupPercent: 30,
   modelMappings: [
-    { suffix: 'fixed', modelId: 'per-call', groupRatio: 1 },
-    { suffix: 'token', modelId: 'per-token', groupRatio: 1 },
-    { suffix: 'vip-fixed', modelId: 'per-call', groupRatio: 2.4 },
+    { suffix: 'fixed', modelId: 'per-call' },
+    { suffix: 'token', modelId: 'per-token' },
+    { suffix: 'vip-fixed', modelId: 'per-call', ratioOverride: 2.4 },
   ],
 } as unknown as Config
 
@@ -31,7 +31,8 @@ describe('buildConsoleState', () => {
     const row = state.catalog!.models.find(m => m.id === 'per-call')!
     expect((row as any).catalogPrice).toBeUndefined()
     expect(row.yunwuCost.type).toBe('per-call')
-    expect(row.yunwuCost.label).toBe('¥0.01/张')
+    // 0.01 USD × 1 × 6.76 = 0.0676 → rounded 0.07
+    expect(row.yunwuCost.label).toBe('¥0.07/张')
     expect((row as any).costQuote).toBeUndefined()
     expect((row as any).chargePolicy).toBeUndefined()
     expect((row as any).catalogEstimate).toBeUndefined()
@@ -44,9 +45,9 @@ describe('buildConsoleState', () => {
     expect(row.yunwuCost.label).toContain('按量')
   })
 
-  test('yunwu cost applies mapping group ratio > 1', () => {
+  test('yunwu cost applies mapping ratioOverride > 1', () => {
     const state = buildConsoleState(config, catalog as any, null, [
-      { suffix: 'vip-fixed', modelId: 'per-call', groupRatio: 2.4 },
+      { suffix: 'vip-fixed', modelId: 'per-call', ratioOverride: 2.4 },
     ])
     const row = state.catalog!.models.find(m => m.id === 'per-call')!
     expect(row.yunwuCost.label).toContain('×2.4')
@@ -72,18 +73,22 @@ describe('buildConsoleState', () => {
   })
 })
 
-describe('resolveMappingGroupRatio', () => {
-  test('returns mapping groupRatio when positive finite', () => {
-    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: 3.6 })).toBe(3.6)
+describe('resolveMappingGroupRatio (now reads ratioOverride)', () => {
+  test('returns mapping ratioOverride when positive finite', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', ratioOverride: 3.6 })).toBe(3.6)
   })
 
-  test('falls back to 1 when groupRatio missing', () => {
+  test('falls back to 1 when ratioOverride missing', () => {
     expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm' } as any)).toBe(1)
   })
 
-  test('falls back to 1 for invalid groupRatio values', () => {
-    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: 0 } as any)).toBe(1)
-    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: -1 } as any)).toBe(1)
-    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: Number.NaN } as any)).toBe(1)
+  test('falls back to 1 for invalid ratioOverride values', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', ratioOverride: 0 } as any)).toBe(1)
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', ratioOverride: -1 } as any)).toBe(1)
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', ratioOverride: Number.NaN } as any)).toBe(1)
+  })
+
+  test('ignores legacy groupRatio (deprecated field, cleared by migration)', () => {
+    expect(resolveMappingGroupRatio({ suffix: 'x', modelId: 'm', groupRatio: 3.6 } as any)).toBe(1)
   })
 })

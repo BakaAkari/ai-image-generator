@@ -73,6 +73,21 @@ export class NewApiClient implements ImageSupplierAdapter<SupplierRawSnapshot<Ne
     return createKeyScopeFingerprint({ supplier: SUPPLIER, apiBase: this.apiBase, apiKey: this.apiKey })
   }
 
+  /**
+   * 读余额位移法用的累计消耗（USD 口径）。返回 null 表示读失败或字段缺失。
+   * 用于计费探测：before/after 差值即真实成本，不依赖对供应商内部公式的理解。
+   */
+  async getBalance(signal?: AbortSignal): Promise<{ totalUsageUsd: number | null; fetchedAt: number; error?: string }> {
+    const url = this.buildUsageUrl()
+    const res = await this.getJson<NewApiBillingPayload>(url, signal)
+    const fetchedAt = res.fetchedAt ?? Date.now()
+    if (!res.success) {
+      return { totalUsageUsd: null, fetchedAt, error: res.error }
+    }
+    const raw = typeof res.data?.total_usage === 'number' ? res.data.total_usage : null
+    return { totalUsageUsd: raw, fetchedAt }
+  }
+
   async fetchSnapshot(signal?: AbortSignal): Promise<SupplierRawSnapshot<NewApiRawEndpoints & Record<string, import('../types.js').SupplierEndpointResult<unknown>>>> {
     const fetchedAt = Date.now()
     const usageUrl = this.buildUsageUrl()

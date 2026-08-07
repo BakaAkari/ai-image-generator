@@ -22,12 +22,14 @@ import {
   getPromptTimeoutText,
 } from '../shared/prompt-timeout.js'
 import type { GenerationCost } from '../shared/billing.js'
-import { computeActualSupplierCredits, computePostGenerationCost, computeUpperBoundSupplierCredits } from '../shared/billing.js'
+import { computeActualSupplierCredits, computePostGenerationCost, computeUpperBoundSupplierCredits, roundCredits } from '../shared/billing.js'
 import type { CatalogModelForPricing } from '../shared/billing.js'
 import type {
   GenerationDisplayInfo,
   ImageRequestContext,
+  ModelMappingConfig,
 } from '../shared/types.js'
+import { queryLogQuotaByRequestId } from '../services/log-quota.js'
 import { applyPromptAppends } from '../shared/generation-setup.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type { UserManager } from '../services/UserManager.js'
@@ -79,6 +81,12 @@ export interface CreateImageGenerationHandlersParams {
   getConfig: () => Config
   /** 目录快照访问器（用于定价读取 & 计费 delta 日志） */
   catalog: CatalogAccessor
+  /**
+   * 日志真源结算凭据获取器（可选）：返回 { apiBase, apiKey, userId }，MJ 等
+   * 逐任务精确计费模型在生成成功后按 request_id 查 /api/log/self 拿权威 quota。
+   * 返回 null 表示未配置，结算走公式链。
+   */
+  getLogAccessCredentials?: () => { apiBase: string; apiKey: string; userId: number; extraHeaders?: Record<string, string>; timeoutSec?: number } | null
 }
 
 export interface ImageGenerationHandlers {
@@ -185,7 +193,7 @@ async function waitUserInput(session: Session, timeoutMs: number): Promise<WaitI
 export function createImageGenerationHandlers(
   params: CreateImageGenerationHandlersParams,
 ): ImageGenerationHandlers {
-  const { service, userManager, logger, getConfig, catalog } = params
+  const { service, userManager, logger, getConfig, catalog, getLogAccessCredentials } = params
 
   // ---------------------------------------------------------------------------
   // 内部工具
@@ -460,15 +468,25 @@ export function createImageGenerationHandlers(
       const modelIdForPricing = options.requestContext?.modelId ?? options.displayInfo?.modelId ?? ''
       const requestedSuffix = options.requestContext?.modelSuffix
       const mapping = config.modelMappings?.find(m => requestedSuffix ? m.suffix === requestedSuffix : m.modelId === modelIdForPricing)
-      // 动态倍率：优先用目录 group_ratio 表取 enable_groups 上界，缺表/缺模型时回退 mapping 固定倍率（默认 1）
+      // 动态倍率优先级：mapping.ratioOverride > MJ 协议默认因子 > enable_groups 表上界 > 1
       const groupRatioMap = catalog.current?.groupRatio
-      const fallbackRatio = typeof mapping?.groupRatio === 'number' && Number.isFinite(mapping.groupRatio) && mapping.groupRatio > 0
-        ? mapping.groupRatio : 1
-      const estimatedCost = freePlatform
+      const ratioOverride = resolveEffectiveRatioOverride(modelIdForPricing, mapping, catalogModels)
+      const numImages = options.numImages || 1
+      // 预扣基准：公式上界（enable_groups 表最高倍率 × pricePerCall 或 per-token 上界）。
+      // 结算路径在生成完成后按真实 usage / 日志真源精确结算，多退少补。
+      const formulaBase = modelIdForPricing
+        ? estimatePreGenerationCostWithDynamicUpper(modelIdForPricing, config, catalogModels, groupRatioMap, ratioOverride)
+        : (options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext))
+      const estimatedCost: GenerationCost | undefined = freePlatform
         ? undefined
         : (modelIdForPricing
-          ? estimatePreGenerationCostWithDynamicUpper(modelIdForPricing, config, catalogModels, groupRatioMap, fallbackRatio)
-          : options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext))
+          ? {
+              ...formulaBase,
+              totalCredits: roundCredits(formulaBase.totalCredits * numImages),
+              creditCostPerImage: roundCredits(formulaBase.totalCredits),
+              numImages,
+            }
+          : formulaBase)
 
       // 1. 积分预检（免计费平台完全跳过预授权）
       if (!freePlatform) {
@@ -604,27 +622,52 @@ export function createImageGenerationHandlers(
           // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
           const settleSuffix = options.requestContext?.modelSuffix
           const settleMapping = config.modelMappings?.find(m => settleSuffix ? m.suffix === settleSuffix : m.modelId === modelId)
-          // 动态倍率结算：优先用响应头实际路由分组（x-routing-group）对应的 group_ratio；
-          // 缺失时回退 mapping 固定倍率（默认 1）。groupRatioMap 来自目录快照（含 default 键）。
+          // 动态倍率结算：header 命中表 > ratioOverride > table.default > 1
           const routingGroup = service.lastProviderRoutingGroup
           const groupRatioMap = catalog.current?.groupRatio
-          const fallbackRatio = typeof settleMapping?.groupRatio === 'number' && Number.isFinite(settleMapping.groupRatio) && settleMapping.groupRatio > 0
-            ? settleMapping.groupRatio : 1
-          const actualRatio = resolveActualRoutingRatio(routingGroup, groupRatioMap, fallbackRatio)
-          const supplierCredits = computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio, inputTokens, outputTokens)
-          const actualCost = computePostGenerationCost(supplierCredits, config)
+          const settleOverride = resolveEffectiveRatioOverride(modelId, settleMapping, catalogModels)
+          const actualRatio = resolveActualRoutingRatio(routingGroup, groupRatioMap, settleOverride)
+          // 结算优先级：MJ 日志真源（若配置 logAccess 且捕获 request_id）→ 公式链
+          //   - 日志真源：quota / quotaPerUnit(默认 500000) = 权威美元；不重复叠加 routingGroup。
+          //   - 公式链：per-call = pricePerCall × actualRatio；per-token = eff_tokens × tokenRatio × actualRatio / quotaPerUnit。
+          const providerRequestId = service.lastProviderRequestId
+          const logCreds = getLogAccessCredentials?.()
+          let logSourceQuota: number | null = null
+          if (logCreds && providerRequestId) {
+            try {
+              const looked = await queryLogQuotaByRequestId(logCreds, providerRequestId)
+              if (looked && Number.isFinite(looked.quota) && looked.quota >= 0) {
+                logSourceQuota = looked.quota
+              }
+            } catch (err) {
+              logger.warn('log-quota lookup failed model=%s requestId=%s: %s', modelId, providerRequestId, sanitizeString(err instanceof Error ? err.message : String(err)))
+            }
+          }
+          const settleSource: 'log' | 'formula' = logSourceQuota != null ? 'log' : 'formula'
+          const quotaPerUnit = typeof config.quotaPerUnit === 'number' && Number.isFinite(config.quotaPerUnit) && config.quotaPerUnit > 0
+            ? config.quotaPerUnit
+            : 500000
+          const supplierCredits = logSourceQuota != null
+            ? logSourceQuota / quotaPerUnit
+            : computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio, inputTokens, outputTokens, config.quotaPerUnit)
+          // 结算使用精确 4dp 精度，避免 per-token 模型微额消耗被 2 位取整吞没
+          const actualCost = computePostGenerationCost(supplierCredits, config, { round: false })
 
-          // audit trail：完整记录定价计算过程，事后可追溯（含路由分组与倍率）
+          // audit trail：完整记录定价计算过程，事后可追溯（含路由分组、覆盖、倍率、日志真源）
           const postCredits = catalog.billingInfo?.supplierCredits ?? null
           logger.info(
-            'settlement-audit model=%s pricingType=%s totalTokens=%s inputTokens=%s outputTokens=%s routingGroup=%s groupRatio=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
+            'settlement-audit model=%s pricingType=%s totalTokens=%s inputTokens=%s outputTokens=%s routingGroup=%s ratioOverride=%s actualRatio=%s source=%s requestId=%s logQuota=%s supplierCredits=%s creditsPerCny=%s markup=%s actualCost=%s delivered=%d billingPre=%s billingPost=%s delta=%s',
             modelId,
             catalogModels.find(m => m.id === modelId)?.pricing?.type ?? 'unknown',
             totalTokens,
             inputTokens ?? '-',
             outputTokens ?? '-',
             routingGroup ?? '-',
+            settleOverride ?? '-',
             actualRatio,
+            settleSource,
+            providerRequestId ?? '-',
+            logSourceQuota ?? '-',
             supplierCredits,
             config.creditsPerCny,
             config.pricingMarkupPercent,
@@ -871,16 +914,23 @@ export function createImageGenerationHandlers(
 
 /**
  * 动态倍率预估价（包装 computeUpperBoundSupplierCredits 为 GenerationCost）。
- * 与旧 estimatePreGenerationCost 签名等价，但倍率来自 group_ratio 表上界而非静态 mapping。
+ * ratioOverride 优先：mapping.ratioOverride；否则取 enable_groups 表上界。
  */
 function estimatePreGenerationCostWithDynamicUpper(
   modelId: string,
   config: Config,
   catalogModels: CatalogModelForPricing[],
   groupRatioMap: Record<string, number> | undefined,
-  fallbackRatio: number,
+  ratioOverride: number | undefined,
 ): GenerationCost {
-  const supplierCredits = computeUpperBoundSupplierCredits(modelId, catalogModels, groupRatioMap, fallbackRatio)
+  const supplierCredits = computeUpperBoundSupplierCredits(
+    modelId,
+    catalogModels,
+    groupRatioMap,
+    1,
+    ratioOverride,
+    { quotaPerUnit: config.quotaPerUnit, perTokenEstimate: config.perTokenEstimateTokens },
+  )
   const totalCredits = computePostGenerationCost(supplierCredits, config)
   return {
     totalCredits,
@@ -892,19 +942,42 @@ function estimatePreGenerationCostWithDynamicUpper(
 }
 
 /**
- * 解析实际路由分组倍率：x-routing-group 响应头命中 groupRatioMap 返回其倍率；
- * 未命中回退 'default'；再退 fallbackRatio（mapping 固定值，默认 1）。
+ * 解析实际路由分组倍率（结算路径）：优先级
+ *   1. x-routing-group 响应头命中 groupRatioMap → 表值（真实路由证据最优）
+ *   2. ratioOverride（mapping.ratioOverride 或 MJ 协议默认因子）→ 覆盖值
+ *   3. groupRatioMap.default → default 值
+ *   4. 1（最终兜底）
  */
 function resolveActualRoutingRatio(
   routingGroup: string | null | undefined,
   groupRatioMap: Record<string, number> | undefined,
-  fallbackRatio: number,
+  ratioOverride: number | undefined,
 ): number {
   if (routingGroup && groupRatioMap) {
     const direct = groupRatioMap[routingGroup]
     if (typeof direct === 'number' && Number.isFinite(direct) && direct >= 0) return direct
+  }
+  if (typeof ratioOverride === 'number' && Number.isFinite(ratioOverride) && ratioOverride > 0) {
+    return ratioOverride
+  }
+  if (groupRatioMap) {
     const def = groupRatioMap['default']
     if (typeof def === 'number' && Number.isFinite(def) && def >= 0) return def
   }
-  return Number.isFinite(fallbackRatio) && fallbackRatio > 0 ? fallbackRatio : 1
+  return 1
+}
+
+/**
+ * 解析模型有效的 ratioOverride：mapping.ratioOverride > undefined。
+ * undefined 表示无覆盖，交由 resolveActualRoutingRatio / computeUpperBoundSupplierCredits 按表兜底。
+ * （MJ 与其它 per-call 模型一致，用表内 enable_groups × pricePerCall；无需协议特判。）
+ */
+function resolveEffectiveRatioOverride(
+  _modelId: string,
+  mapping: ModelMappingConfig | undefined,
+  _catalogModels: CatalogModelForPricing[],
+): number | undefined {
+  const override = mapping?.ratioOverride
+  if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  return undefined
 }

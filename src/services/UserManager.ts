@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, promises as fs } from 'fs'
 import { dirname, join } from 'path'
 import type { Config } from '../shared/config.js'
 import type { GenerationCost } from '../shared/billing.js'
-import { roundCredits } from '../shared/billing.js'
+import { roundCredits, roundCreditsPrecise } from '../shared/billing.js'
 
 class AsyncLock {
   private promise: Promise<void> = Promise.resolve()
@@ -759,11 +759,34 @@ export class UserManager {
         ? evidence.actualCost
         : null
       const costPerImage = actualCost !== null ? actualCost : reservation.cost.creditCostPerImage
-      const settledCredits = roundCredits(costPerImage * delivered)
-      const releasedCredits = roundCredits(reservation.reservedCredits - settledCredits)
+      // 结算精度：4 位小数记账（避免 per-token 微额消耗被 2 位取整吞没），展示层仍走 roundCredits
+      const rawTotal = roundCreditsPrecise(costPerImage * delivered, 4)
+      // 封顶：非豁免路径（reservedCredits > 0）时 settledCredits 永不超过预扣，防止余额变负。
+      // 免计费平台 / 试用走上面 isTrial 分支，此处不涉及；管理员 / 永久会员通过 reservedCredits=0
+      // 命中「无预扣」分支，跳过封顶，保持豁免语义完全不变。
+      const isBounded = reservation.reservedCredits > 0
+      // 2dp 容差：预扣按 roundCredits(2dp) 存储，4dp 结算值可能因取整差 ≤0.01 而大于预扣
+      // （如 MJ 预扣 6.80 vs 结算 6.8024）。仅真实超预扣（>0.01）才触发 settlement-overrun 告警，
+      // 避免每张 MJ 图误报导致告警疲劳；封顶逻辑不受影响（仍 min(raw, reserved)）。
+      const overrun = isBounded && rawTotal > reservation.reservedCredits + 0.01
+      const settledCredits = isBounded
+        ? roundCreditsPrecise(Math.min(rawTotal, reservation.reservedCredits), 4)
+        : rawTotal
+      const releasedCredits = roundCreditsPrecise(reservation.reservedCredits - settledCredits, 4)
+      if (overrun) {
+        this.logger.warn('settlement-overrun 结算超出预扣，已封顶到 reservedCredits', {
+          reservationId,
+          userId: user.userId,
+          reservedCredits: reservation.reservedCredits,
+          rawSettleTotal: rawTotal,
+          actualCostPerImage: costPerImage,
+          delivered,
+          modelId: reservation.cost.modelId,
+        })
+      }
       const before = this.snapshotBalance(user, config)
-      user.balance.purchasedCredits = roundCredits(user.balance.purchasedCredits + releasedCredits)
-      user.balance.totalConsumedCredits = roundCredits(user.balance.totalConsumedCredits + settledCredits)
+      user.balance.purchasedCredits = roundCreditsPrecise(user.balance.purchasedCredits + releasedCredits, 4)
+      user.balance.totalConsumedCredits = roundCreditsPrecise(user.balance.totalConsumedCredits + settledCredits, 4)
       user.statistics.totalImagesGenerated += delivered
       user.statistics.totalGenerationRequests += 1
       if (reservation.cost.modelId) user.statistics.lastModelId = reservation.cost.modelId
@@ -797,6 +820,7 @@ export class UserManager {
           reservedCredits: reservation.reservedCredits,
           settledCredits,
           releasedCredits,
+          ...(overrun ? { overrun: true, rawSettleTotal: rawTotal } : {}),
           evidence,
         },
       })

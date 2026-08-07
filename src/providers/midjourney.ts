@@ -237,6 +237,8 @@ export class MjProvider extends BaseImageProvider {
     // 捕获 new-api 路由分组（x-routing-group），供后生成结算按实际分组倍率计价
     const routingGroup = raw?.headers?.get?.('x-routing-group')?.trim()
     this.lastRoutingGroup = routingGroup && routingGroup.length > 0 ? routingGroup : null
+    // 捕获 new-api request-id（x-api-request-id / 备选头），供 MJ 结算按 /api/log/self 查权威 quota
+    this.lastRequestId = extractRequestIdFromHeaders(raw?.headers)
 
     const response: MjSubmitResponse = typeof raw?.data === 'string' ? safeJsonParse(raw.data) : (raw?.data as MjSubmitResponse)
     if (!response?.result) {
@@ -283,6 +285,8 @@ export class MjProvider extends BaseImageProvider {
     // 捕获 new-api 路由分组（x-routing-group），供后生成结算按实际分组倍率计价
     const routingGroup = raw?.headers?.get?.('x-routing-group')?.trim()
     this.lastRoutingGroup = routingGroup && routingGroup.length > 0 ? routingGroup : null
+    // 捕获 new-api request-id（x-api-request-id / 备选头），供 MJ 结算按 /api/log/self 查权威 quota
+    this.lastRequestId = extractRequestIdFromHeaders(raw?.headers)
 
     const response: MjSubmitResponse = typeof raw?.data === 'string' ? safeJsonParse(raw.data) : (raw?.data as MjSubmitResponse)
     if (!response?.result) {
@@ -335,6 +339,18 @@ function safeJsonParse<T>(raw: string): T {
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`
+}
+
+function extractRequestIdFromHeaders(
+  headers: { get: (name: string) => string | null } | null | undefined,
+): string | null {
+  if (!headers?.get) return null
+  const keys = ['x-api-request-id', 'x-oneapi-request-id', 'x-request-id']
+  for (const key of keys) {
+    const value = headers.get(key)?.trim()
+    if (value) return value
+  }
+  return null
 }
 
 function dimensionsFromAspectRatio(value: string): 'SQUARE' | 'PORTRAIT' | 'LANDSCAPE' {

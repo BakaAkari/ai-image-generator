@@ -11,7 +11,7 @@ function baseConfig(): Config {
     activeSupplier: 'newapi',
     catalogRefreshHours: 6,
     pricingMarkupPercent: 30,
-    supplierCreditToRmb: 0.5,
+    usdToRmb: 6.76,
     trialImageLimit: 1,
     defaultCreditCostPerImage: 0.3,
     defaultNumImages: 1,

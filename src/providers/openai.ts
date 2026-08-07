@@ -161,6 +161,10 @@ export class OpenAIProvider extends BaseImageProvider {
   private captureRoutingGroup(headers: { get: (name: string) => string | null } | null | undefined): void {
     const value = headers?.get('x-routing-group')?.trim()
     this.lastRoutingGroup = value && value.length > 0 ? value : null
+    const rid = headers?.get('x-api-request-id')?.trim()
+      || headers?.get('x-oneapi-request-id')?.trim()
+      || headers?.get('x-request-id')?.trim()
+    this.lastRequestId = rid && rid.length > 0 ? rid : null
   }
 
   private getApiBase(): string {

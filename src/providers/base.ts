@@ -47,6 +47,12 @@ export abstract class BaseImageProvider implements ImageProvider {
   /** 最近一次生成调用响应头里的 x-routing-group（new-api 路由分组，后生成结算用）。 */
   lastRoutingGroup: string | null = null
 
+  /**
+   * 最近一次生成调用响应头里的 request-id（x-api-request-id / x-oneapi-request-id / x-request-id）。
+   * 用于结算路径按 `/api/log/self?request_id=…` 查权威 quota → 真实美元 = quota / quotaPerUnit。
+   */
+  lastRequestId: string | null = null
+
   protected readonly ctx: Context
   protected readonly logger: Logger
   protected readonly apiKey: string
