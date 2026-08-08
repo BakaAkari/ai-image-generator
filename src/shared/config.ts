@@ -64,6 +64,10 @@ export interface Config {
   // ── ⓪ 初始化说明 ──────────────────────────────────────────────────────────
   setupGuide?: string
 
+  // ── ⓪b 配置模式（双模式机制） ─────────────────────────────────────────────
+  /** 配置模式：auto = 从平台自动推导可推导配置（面板只读+覆盖形态）；simple = 简化手动定价（管理员直接设每模型每次消耗积分，盈亏自负）。默认 simple。 */
+  configMode?: 'auto' | 'simple'
+
   // ── ①b 激活供应商（互斥单选）与动态模型目录 ────────────────────────────────
   /** 互斥单选：模型目录与默认凭证来源。旧值 yunwu/gptgod 兼容反序列化，migration 迁移为 newapi。 */
   activeSupplier?: 'newapi' | 'openai-official' | 'gemini-official' | 'yunwu' | 'gptgod'
@@ -331,6 +335,16 @@ const CONFIG_GROUPS = [
       .description('只读速查：首次配置顺序、聊天命令和管理员命令')
       .disabled(),
   }).description('📌 使用说明 / 命令速查'),
+
+  // ⓪b 配置模式（双模式）
+  Schema.object({
+    configMode: Schema.union([
+      Schema.const('auto').description('自动模式：凭据 + 平台目录自动推导定价，面板只读 + 覆盖'),
+      Schema.const('simple').description('简易模式：无需凭据也可运行；管理员直接设置每模型每次消耗积分，盈亏自负'),
+    ])
+      .default('simple')
+      .description('配置模式：auto 自动推导（需平台目录已刷新）；simple 简化手动定价（默认，无凭据可用）'),
+  }).description('🔀 配置模式（双模式）'),
 
   // ① 供应商（直接展示凭证，无单选）
   SupplierSchema,

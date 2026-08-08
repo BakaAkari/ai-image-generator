@@ -24,6 +24,43 @@ export function migrateConfig(config: Config): MigrationResult {
   const clone = structuredClone(config)
   const mappings = (clone.modelMappings ?? []) as ModelMappingConfig[]
 
+  // configMode: manual → simple（2.6.0 起只保留 auto / simple 双模式）
+  // 旧配置运行时可能携带 manual（反序列化不受 TS 类型约束），按字符串判断。
+  if ((clone.configMode as string | undefined) === 'manual') {
+    clone.configMode = 'simple'
+    actions.push('migrated configMode manual → simple')
+    changed = true
+  }
+
+  // simple 模式下：为没有固定积分策略的映射补保守默认（1 积分/次），
+  // 避免迁移后 simple 定价无法结算；已有 creditCostPerImage 保留。
+  // 死字段 billingPolicy.fixed 的值迁移到 creditCostPerImage（保留用户显式定价，如 mj 0.1），
+  // 然后删除 billingPolicy（结算层不消费该字段）。
+  // auto 模式：不动映射字段（billingPolicy 可能是用户显式配置，由 config-autopilot 推导保留）。
+  const DEFAULT_SIMPLE_CREDITS = 1
+  if (clone.configMode === 'simple' || clone.configMode == null) {
+    for (const mapping of mappings) {
+      const raw = mapping as unknown as Record<string, unknown>
+      if (raw.billingPolicy !== undefined) {
+        const policy = raw.billingPolicy as { type?: string; creditsPerImage?: number }
+        if (policy && policy.type === 'fixed' && typeof policy.creditsPerImage === 'number' && Number.isFinite(policy.creditsPerImage) && policy.creditsPerImage > 0) {
+          if (typeof mapping.creditCostPerImage !== 'number' || !Number.isFinite(mapping.creditCostPerImage) || mapping.creditCostPerImage <= 0) {
+            mapping.creditCostPerImage = policy.creditsPerImage
+            actions.push(`simple mode: migrated billingPolicy.fixed=${policy.creditsPerImage} → creditCostPerImage for mapping ${mapping.suffix}`)
+          }
+        }
+        delete raw.billingPolicy
+        actions.push(`removed dead billingPolicy from mapping ${mapping.suffix}`)
+        changed = true
+      }
+      if (typeof mapping.creditCostPerImage !== 'number' || !Number.isFinite(mapping.creditCostPerImage) || mapping.creditCostPerImage <= 0) {
+        mapping.creditCostPerImage = DEFAULT_SIMPLE_CREDITS
+        actions.push(`simple mode: set default creditCostPerImage=1 for mapping ${mapping.suffix}`)
+        changed = true
+      }
+    }
+  }
+
   // activeSupplier: yunwu/gptgod → newapi（new-api 兼容站统一标识）
   const rawActive = clone.activeSupplier as string | undefined
   if (rawActive === 'yunwu' || rawActive === 'gptgod') {

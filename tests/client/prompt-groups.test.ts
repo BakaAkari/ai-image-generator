@@ -58,24 +58,31 @@ describe('normalizeStyleGroups (dirty input defence)', () => {
 
 describe('aka-tools panel Prompt 预设 card contract', () => {
   test('Prompt presets are placed directly after model mappings and before pricing settings', () => {
-    // 分页式布局：tab 声明顺序与模板分区顺序均为 模型目录 → 模型映射 → 预设 → 定价
-    const catalogTab = PAGE_VUE.indexOf(`{ key: 'catalog'`)
-    const mappingsTab = PAGE_VUE.indexOf(`{ key: 'mappings'`)
-    const presetsTab = PAGE_VUE.indexOf(`{ key: 'presets'`)
-    const pricingTab = PAGE_VUE.indexOf(`{ key: 'pricing'`)
-    expect(catalogTab).toBeGreaterThan(-1)
-    expect(mappingsTab).toBeGreaterThan(catalogTab)
-    expect(presetsTab).toBeGreaterThan(mappingsTab)
-    expect(pricingTab).toBeGreaterThan(presetsTab)
-
+    // 分页式布局：auto 模式 tab 声明顺序为 总览 → 模型(catalog) → 运营 → 预设；simple 为 总览 → 模型定价 → 运营
+    const autoCatalogTab = PAGE_VUE.indexOf(`{ key: 'catalog'`)
+    const autoPresetsTab = PAGE_VUE.indexOf(`{ key: 'presets'`)
+    const simplePricingTab = PAGE_VUE.indexOf(`{ key: 'pricing'`)
+    const simpleOpsTab = PAGE_VUE.indexOf(`{ key: 'operations'`)
+    expect(autoCatalogTab).toBeGreaterThan(-1)
+    expect(autoPresetsTab).toBeGreaterThan(-1)
+    expect(simplePricingTab).toBeGreaterThan(-1)
+    expect(simpleOpsTab).toBeGreaterThan(-1)
+    // 供应商配置页（凭据/结算凭据）必须存在于两种模式，且紧随总览之后
+    const credTab = PAGE_VUE.indexOf(`{ key: 'credentials', label: '供应商' }`)
+    expect(credTab).toBeGreaterThan(-1)
+    expect(credTab).toBeLessThan(autoCatalogTab)
+    expect(credTab).toBeLessThan(simplePricingTab)
+    // 模板分区顺序保持：模型目录 → 模型映射 → 预设 → 定价 → 运营
     const catalogSection = PAGE_VUE.indexOf(`v-show="activeTab === 'catalog'"`)
     const mappingsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'mappings'"`)
     const presetsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'presets'"`)
     const pricingSection = PAGE_VUE.indexOf(`v-show="activeTab === 'pricing'"`)
+    const opsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'operations'"`)
     expect(catalogSection).toBeGreaterThan(-1)
     expect(mappingsSection).toBeGreaterThan(catalogSection)
     expect(presetsSection).toBeGreaterThan(mappingsSection)
     expect(pricingSection).toBeGreaterThan(presetsSection)
+    expect(opsSection).toBeGreaterThan(pricingSection)
   })
 
   test('legacy JSON textarea and mislabelled copy are removed', () => {

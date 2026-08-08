@@ -60,7 +60,8 @@ describe('aka-tools JSON config store', () => {
     const loaded = await readConfig(ctx, baseConfig())
 
     expect(loaded.trialImageLimit).toBe(42)
-    expect(loaded.modelMappings).toEqual([{ suffix: 'new', modelId: 'gpt-image-2' }])
+    // simple 模式迁移会为无固定积分的映射补默认 creditCostPerImage（1 积分/次）
+    expect(loaded.modelMappings).toEqual([{ suffix: 'new', modelId: 'gpt-image-2', creditCostPerImage: 1 }])
     expect(loaded.providerSettings?.openaiCompatibleApiKey).toBe('secret')
   })
 

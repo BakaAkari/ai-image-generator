@@ -15,6 +15,8 @@ import type { Config } from '../shared/config.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import { buildConsoleState } from './view-model.js'
 import { buildOverviewStats } from './overview-stats.js'
+import { deriveConfigFromSnapshot, mergeDerivedMappings } from '../services/config-autopilot.js'
+import { resolveEffectiveMode } from '../shared/effective-mode.js'
 
 export interface ConsoleServiceDeps {
   ctx: Context
@@ -45,13 +47,40 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
     } : null, billing)
     // 自动收集已知平台 ID（从运行时的 session.platform 获取）
     const knownPlatforms = Array.from(deps.knownPlatforms ?? new Set<string>())
-    return { ...state, knownPlatforms }
+    // 定价模式运行时判定（fallback simple：无凭据 / 目录失败）
+    const effective = resolveEffectiveMode(
+      getConfig(),
+      snapshot != null && !snapshot.error && snapshot.models.length > 0,
+    )
+    return { ...state, knownPlatforms, effectiveMode: effective }
   })
 
   consoleService.addListener('image-generator/save-config', async (config: Config, ...rest: unknown[]) => {
     try {
       const prev = getConfig()
       const next = mergeConfig(prev, config)
+      // 自动模式：保存时对 modelMappings 执行「只补缺」推导合并（单真源落盘）。
+      // 一致性约束：已有映射（含 billingPolicy / tokenRatio / ratioOverride 等）永不被覆盖；
+      // 推导只追加缺失 modelId；推导失败时保留当前映射不阻断。
+      if (next.configMode === 'auto') {
+        const snapshot = catalog?.current
+        if (snapshot && snapshot.models.length > 0) {
+          const existing = next.modelMappings ?? []
+          const { suggestedMappings } = deriveConfigFromSnapshot(snapshot, existing)
+          const merged = mergeDerivedMappings(existing, suggestedMappings)
+          if (merged.length !== existing.length) {
+            next.modelMappings = merged
+            logger.info(
+              'config-autopilot: auto mode derived %d missing mappings (existing %d → %d)',
+              suggestedMappings.length,
+              existing.length,
+              merged.length,
+            )
+          }
+        } else {
+          logger.warn('config-autopilot: catalog snapshot unavailable, skip derivation (keep current mappings)')
+        }
+      }
       // 汇率/除数/估算变更审计：这三项直接影响结算金额，必须留痕以便事后追溯
       const AUDIT_FIELDS: Array<keyof Config> = ['usdToRmb', 'quotaPerUnit', 'perTokenEstimateTokens']
       for (const field of AUDIT_FIELDS) {

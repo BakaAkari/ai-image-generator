@@ -44,6 +44,10 @@ export interface ModelMappingConfig {
    * 未配置时按 enable_groups 表上界（预扣）/ 响应头 x-routing-group 命中（结算）/ default 兜底。
    */
   ratioOverride?: number
+  /** MJ 等逐 token 计费模型的 token 倍率（实际配置中存在于 mj 映射，类型补全）。 */
+  tokenRatio?: number
+  /** 覆盖计费策略（如 MJ fixed creditsPerImage）；存在时优先于公式链。 */
+  billingPolicy?: { type: 'fixed'; creditsPerImage: number }
 }
 
 export interface ImageGenerationModifiers {

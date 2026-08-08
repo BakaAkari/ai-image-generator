@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.6.0] - 2026-08-08
+
+### 新增
+
+- **定价双模式收敛（auto / simple）**：删除 manual 模式，仅保留 auto（自动）与 simple（简易）两种模式。
+  - **auto**：连接供应商（NewAPI 兼容站）后从平台目录自动推导模型价格，按 `USD → 人民币 → 积分 × 加成` 公式链结算；价格随目录刷新更新，管理员只做运营决策。
+  - **simple**：无需供应商凭据也可运行，管理员直接为每个模型设置「每次消耗积分」（`creditCostPerImage`），不依赖平台价格；定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。
+  - 默认 simple；auto 但凭据缺失/错误/目录刷新失败时 UI 自动降级显示 simple（仅 UI 提示，不回写配置）；可在总览右上角手动切换。
+- **总览顶部定价系统简介卡**：说明两种模式的结算语义与切换方式。
+- **simple 固定积分接入真实结算链路**：新增 `resolveMappingFixedCost(mapping, configMode)`，simple 模式下预扣与结算直接按 `creditCostPerImage × 张数` 短路（`settleSource='fixed'`），不再依赖死字段 `billingPolicy`（该字段经审计确认为死代码，从未参与结算）；auto 模式两处恒走公式链。新增映射级 `creditCostPerImage` schema 字段（默认 1 积分/次）。
+- **供应商配置页恢复**：双模式 tabs 均恢复「供应商」页（供应商选择 / NewAPI Key / Base URL / 额外请求头 / 结算凭据日志真源），修复重构时入口丢失的回归。
+- 新增 `src/services/config-autopilot.ts`（auto 模式配置推导）与 `src/shared/effective-mode.ts`（运行时生效模式判定）模块。
+
+### 修复
+
+- **配置迁移保值**：simple 模式下旧的 `billingPolicy.fixed` 值迁移到 `creditCostPerImage` 后删除字段；auto 模式完全不动映射字段，避免丢用户显式配置。
+- **save-config 匿名会话被拒**：save-config listener 权限为管理员级（authority 4，自 v2.4.0 起如此），浏览器匿名会话（authType:0）保存时被 Koishi 权限层拦截且无 toast；此为会话权限问题而非代码 bug，登录管理员会话后保存正常。
+
+### 验证
+
+- `tsc` clean；全量 `619 passed`（含新增 mapping-fixed-cost / effective-mode / config-autopilot / prompt-groups 供应商 tab 断言）。
+- 本地 Koishi 实机验证：双模式 tabs 切换、simple 保存落盘、供应商页渲染均正常；`saveAll` 在管理员会话下成功（settings.json mtime 变化）。
+- **grok / qwen 真实计价对账**：沙盒真实触发 `文生图` 生成，系统结算 vs 平台 `/api/log/self` 权威 quota 完全一致——grok-imagine-image 平台 quota=7647（$0.015294）vs 系统 1.0442 积分（反推 $0.015294）；qwen-image-max-2025-12-30 平台 quota=18383（$0.036766）vs 系统 2.5102 积分（反推 $0.036765，4dp 舍入差 1e-6）。向导预估（grok 14.20 / qwen 34.14）按默认倍率 1 保守计算，真实结算按平台实际分组倍率 0.07 精确扣费，多退少补行为正确。
+
 ## [2.5.0] - 2026-08-08
 
 ### 新增

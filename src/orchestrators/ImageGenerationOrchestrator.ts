@@ -22,7 +22,7 @@ import {
   getPromptTimeoutText,
 } from '../shared/prompt-timeout.js'
 import type { GenerationCost } from '../shared/billing.js'
-import { computeActualSupplierCredits, computePostGenerationCost, computeUpperBoundSupplierCredits, roundCredits } from '../shared/billing.js'
+import { computeActualSupplierCredits, computePostGenerationCost, computeUpperBoundSupplierCredits, resolveMappingFixedCost, roundCredits } from '../shared/billing.js'
 import type { CatalogModelForPricing } from '../shared/billing.js'
 import type {
   GenerationDisplayInfo,
@@ -474,9 +474,13 @@ export function createImageGenerationHandlers(
       const numImages = options.numImages || 1
       // 预扣基准：公式上界（enable_groups 表最高倍率 × pricePerCall 或 per-token 上界）。
       // 结算路径在生成完成后按真实 usage / 日志真源精确结算，多退少补。
-      const formulaBase = modelIdForPricing
-        ? estimatePreGenerationCostWithDynamicUpper(modelIdForPricing, config, catalogModels, groupRatioMap, ratioOverride)
-        : (options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext))
+      // simple 模式（映射级固定积分 creditCostPerImage）：跳过公式链，直接按固定积分预扣。
+      const mappingFixedCost = resolveMappingFixedCost(mapping, config.configMode)
+      const formulaBase = mappingFixedCost != null
+        ? { totalCredits: mappingFixedCost, creditCostPerImage: mappingFixedCost, numImages: 1, modelId: modelIdForPricing, costSource: 'model-fixed' as const }
+        : (modelIdForPricing
+          ? estimatePreGenerationCostWithDynamicUpper(modelIdForPricing, config, catalogModels, groupRatioMap, ratioOverride)
+          : (options.generationCost || service.calculateGenerationCost(options.numImages, options.requestContext)))
       const estimatedCost: GenerationCost | undefined = freePlatform
         ? undefined
         : (modelIdForPricing
@@ -643,15 +647,22 @@ export function createImageGenerationHandlers(
               logger.warn('log-quota lookup failed model=%s requestId=%s: %s', modelId, providerRequestId, sanitizeString(err instanceof Error ? err.message : String(err)))
             }
           }
-          const settleSource: 'log' | 'formula' = logSourceQuota != null ? 'log' : 'formula'
+          const settleSource: 'log' | 'formula' | 'fixed' = logSourceQuota != null ? 'log' : 'formula'
           const quotaPerUnit = typeof config.quotaPerUnit === 'number' && Number.isFinite(config.quotaPerUnit) && config.quotaPerUnit > 0
             ? config.quotaPerUnit
             : 500000
-          const supplierCredits = logSourceQuota != null
-            ? logSourceQuota / quotaPerUnit
-            : computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio, inputTokens, outputTokens, config.quotaPerUnit)
+          // simple 模式（映射级固定积分 creditCostPerImage）：结算直接按固定积分，不走公式链 / 日志真源。
+          const settleFixedCost = resolveMappingFixedCost(settleMapping, config.configMode)
+          const supplierCredits = settleFixedCost != null
+            ? settleFixedCost
+            : (logSourceQuota != null
+              ? logSourceQuota / quotaPerUnit
+              : computeActualSupplierCredits(modelId, totalTokens, catalogModels, actualRatio, inputTokens, outputTokens, config.quotaPerUnit))
+          const settleKind = settleFixedCost != null ? 'fixed' : settleSource
           // 结算使用精确 4dp 精度，避免 per-token 模型微额消耗被 2 位取整吞没
-          const actualCost = computePostGenerationCost(supplierCredits, config, { round: false })
+          const actualCost = settleFixedCost != null
+            ? settleFixedCost
+            : computePostGenerationCost(supplierCredits, config, { round: false })
 
           // audit trail：完整记录定价计算过程，事后可追溯（含路由分组、覆盖、倍率、日志真源）
           const postCredits = catalog.billingInfo?.supplierCredits ?? null

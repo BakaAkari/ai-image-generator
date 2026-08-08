@@ -28,6 +28,10 @@
           <el-radio-button v-for="tab in tabs" :key="tab.key" :value="tab.key">{{ tab.label }}</el-radio-button>
         </el-radio-group>
         <div class="header-actions">
+          <el-select v-model="cfg.configMode" size="small" style="width: 150px" @change="onConfigModeChange" :loading="loading">
+            <el-option value="auto" label="自动模式" />
+            <el-option value="simple" label="简易模式" />
+          </el-select>
           <el-button size="small" plain @click="loadState" :loading="loading">刷新</el-button>
           <el-button size="small" type="primary" :loading="saving" @click="saveAll">保存全部</el-button>
         </div>
@@ -35,8 +39,32 @@
 
       <div v-if="!state" class="loading">正在加载…</div>
       <div v-else class="page-body">
+        <!-- 自动模式横幅（含 fallback 提示） -->
+        <div v-if="effectiveMode === 'auto'" class="auto-banner">
+          <span>🔒 自动模式：可推导配置（模型映射 / 定价参考）从平台目录自动推导，只读 + 可覆盖；运营决策字段保持手动。</span>
+          <span class="auto-banner-sub">切换为简易模式可手动设置每模型每次消耗积分（盈亏自负）。已有映射（含自定义计费策略）永不被自动覆盖。</span>
+        </div>
+        <div v-else-if="effectiveMode === 'simple' && cfg.configMode === 'auto'" class="auto-banner fallback-banner">
+          <span>⚠️ 凭据缺失或目录不可用，已按简易模式运行（每模型固定积分，盈亏自负）。</span>
+          <span class="auto-banner-sub">补齐供应商凭据并刷新目录后会自动恢复自动模式；也可在右上角切换为简易模式。</span>
+        </div>
         <!-- 总览 -->
-        <section v-show="activeTab === 'overview'" class="tab-panel">
+        <section v-show="activeTab === 'overview'" class="tab-panel scroll-panel">
+          <!-- 定价系统简介 -->
+          <div class="pricing-intro">
+            <div class="pricing-intro-title">定价系统</div>
+            <div class="pricing-intro-grid">
+              <div class="pricing-intro-item">
+                <div class="pricing-intro-mode">自动模式（auto）</div>
+                <div class="pricing-intro-desc">连接供应商（NewAPI 兼容站）后，从平台目录自动推导模型价格，按 USD → 人民币 → 积分 × 加成的公式链结算。价格随目录刷新更新，管理员只做运营决策。</div>
+              </div>
+              <div class="pricing-intro-item">
+                <div class="pricing-intro-mode">简易模式（simple）</div>
+                <div class="pricing-intro-desc">无需供应商凭据也可运行。管理员直接为每个模型设置「每次消耗积分」，不依赖平台价格。定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。</div>
+              </div>
+            </div>
+            <div class="pricing-intro-current">当前：{{ effectiveMode === 'auto' ? '自动模式（auto）' : '简易模式（simple）' }}<template v-if="fallbackReason === 'no-credential'"> — 未配置供应商凭据，已自动降级</template><template v-else-if="fallbackReason === 'catalog-failed'"> — 目录不可用，已自动降级</template>。右上角可切换模式。</div>
+          </div>
           <div class="stat-row">
             <div class="stat-card">
               <div class="stat-value">{{ state.catalog?.models?.length ?? 0 }}</div>
@@ -132,6 +160,16 @@
                       <div class="hint">键和值都会强制转成字符串；空键或空值会在保存前被丢弃。</div>
                     </div>
                   </el-form-item>
+
+                  <el-divider content-position="left">结算凭据（日志真源，可选）</el-divider>
+                  <el-form-item label="日志访问 apiKey（系统令牌）">
+                    <el-input v-model="cfg.logAccessApiKey" type="password" show-password placeholder="OpenLux 系统访问令牌" />
+                    <div class="hint">配置后 MJ 等逐任务精确计费模型按 request_id 查 /api/log/self 拿权威 quota（真实美元 = quota / quotaPerUnit）作为 actualCost 结算；未配置或查询失败时回退公式链。</div>
+                  </el-form-item>
+                  <el-form-item label="日志访问用户 ID">
+                    <el-input-number v-model="cfg.logAccessUserId" :min="1" :step="1" />
+                    <div class="hint">与 logAccessApiKey 配对；/api/log/self 需要 New-Api-User 请求头。</div>
+                  </el-form-item>
                 </template>
                 <template v-else-if="cfg.activeSupplier === 'openai-official'">
                   <el-form-item label="OpenAI API Key">
@@ -150,7 +188,7 @@
         </section>
 
         <!-- 模型目录 -->
-        <section v-show="activeTab === 'catalog'" class="tab-panel">
+        <section v-show="activeTab === 'catalog'" class="tab-panel scroll-panel">
           <k-card class="section" shadow="never">
             <template #header>
               <div class="card-header">
@@ -380,6 +418,41 @@
         <!-- 定价 -->
         <section v-show="activeTab === 'pricing'" class="tab-panel">
           <div class="panel-limit">
+            <!-- simple 模式：简化手动定价（每模型每次消耗积分，盈亏自负） -->
+            <template v-if="effectiveMode === 'simple'">
+              <k-card title="简易定价" class="section" shadow="never">
+                <div class="hint simple-risk-hint">简易模式：每模型按固定积分扣费，不依赖平台价格。定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。</div>
+                <el-form label-width="220px">
+                  <el-form-item label="平台积分单位名称">
+                    <el-input v-model="cfg.creditUnitName" style="width: 200px" />
+                    <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
+                  </el-form-item>
+                  <el-form-item label="试用图片张数（每用户）">
+                    <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
+                    <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
+                  </el-form-item>
+                </el-form>
+                <el-table :data="cfg.modelMappings" size="small" class="dark-table" style="margin-top: 0.5rem">
+                  <el-table-column label="命令后缀" width="140">
+                    <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
+                  </el-table-column>
+                  <el-table-column prop="modelId" label="模型" min-width="220" />
+                  <el-table-column label="每次消耗积分" width="180">
+                    <template #default="{ row }">
+                      <el-input-number v-model="row.creditCostPerImage" :min="0" :step="1" :precision="2" size="small" controls-position="right" style="width: 140px" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80">
+                    <template #default="{ $index }">
+                      <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <el-button size="small" style="margin-top: 0.5rem" @click="addMapping">添加模型</el-button>
+              </k-card>
+            </template>
+            <!-- auto 模式：完整定价（平台积分 + 公式链 + 展示偏好） -->
+            <template v-else>
             <k-card title="定价" class="section" shadow="never">
               <el-form label-width="260px">
                 <el-divider content-position="left">A · 平台积分</el-divider>
@@ -422,32 +495,20 @@
                 </el-form-item>
                 <div class="hint" style="margin-left: 16px">
                   公式：用户扣费 = USD 成本 × usdToRmb × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
-                  MJ 等逐任务精确计费模型配置日志真源凭据后按 quota / quotaPerUnit 结算；其它模型走目录公式链。
+                  MJ 等逐任务精确计费模型在「供应商与凭证」页配置日志真源结算凭据后按 quota / quotaPerUnit 结算；其它模型走目录公式链。
                 </div>
 
-                <el-collapse>
-                  <el-collapse-item title="C · 日志真源结算凭据（可选）">
-                    <el-form-item label="日志访问 apiKey（系统令牌）">
-                      <el-input v-model="cfg.logAccessApiKey" type="password" show-password placeholder="OpenLux 系统访问令牌" />
-                      <div class="hint">配置后 MJ 等逐任务精确计费模型按 request_id 查 /api/log/self 拿权威 quota（真实美元 = quota / quotaPerUnit）作为 actualCost 结算；未配置或查询失败时回退公式链。</div>
-                    </el-form-item>
-                    <el-form-item label="日志访问用户 ID">
-                      <el-input-number v-model="cfg.logAccessUserId" :min="1" :step="1" />
-                      <div class="hint">与 logAccessApiKey 配对；/api/log/self 需要 New-Api-User 请求头。</div>
-                    </el-form-item>
-                  </el-collapse-item>
-                  <el-collapse-item title="D · 展示偏好">
-                    <el-form-item label="生成结束时显示本次消耗">
-                      <el-switch v-model="cfg.showCreditCostInResult" />
-                    </el-form-item>
-                    <el-form-item label="附带显示剩余积分明细">
-                      <el-switch v-model="cfg.showQuotaInImageCommands" />
-                      <div class="hint">需先开启上方"生成结束时显示本次消耗"。</div>
-                    </el-form-item>
-                  </el-collapse-item>
-                </el-collapse>
+                <el-divider content-position="left">C · 展示偏好</el-divider>
+                <el-form-item label="生成结束时显示本次消耗">
+                  <el-switch v-model="cfg.showCreditCostInResult" />
+                </el-form-item>
+                <el-form-item label="附带显示剩余积分明细">
+                  <el-switch v-model="cfg.showQuotaInImageCommands" />
+                  <div class="hint">需先开启上方"生成结束时显示本次消耗"。</div>
+                </el-form-item>
               </el-form>
             </k-card>
+            </template>
           </div>
         </section>
 
@@ -562,16 +623,30 @@ function openVideoTools(): void {
   void router.push('/aka-tools-video')
 }
 
-const tabs = [
+const SIMPLE_TABS = [
   { key: 'overview', label: '总览' },
   { key: 'credentials', label: '供应商' },
-  { key: 'catalog', label: '模型目录' },
-  { key: 'mappings', label: '模型映射' },
-  { key: 'presets', label: '预设' },
-  { key: 'pricing', label: '定价' },
+  { key: 'pricing', label: '模型定价' },
   { key: 'operations', label: '运营' },
 ]
+const AUTO_TABS = [
+  { key: 'overview', label: '总览' },
+  { key: 'credentials', label: '供应商' },
+  { key: 'catalog', label: '模型' },
+  { key: 'operations', label: '运营' },
+  { key: 'presets', label: '预设' },
+]
+const tabs = computed(() => {
+  if (effectiveMode.value === 'auto') return AUTO_TABS
+  if (cfg.value?.configMode === 'simple') return SIMPLE_TABS
+  // auto 意图但 fallback simple：按 simple 布局展示，顶部横幅提示降级原因
+  return SIMPLE_TABS
+})
 const activeTab = ref('overview')
+
+/** 运行时生效模式（来自后端 effectiveMode 判定；未加载时按配置意图兜底）。 */
+const effectiveMode = computed(() => state.value?.effectiveMode?.mode ?? cfg.value?.configMode ?? 'simple')
+const fallbackReason = computed(() => state.value?.effectiveMode?.fallbackReason ?? null)
 
 const overviewStats = ref<any>(null)
 const overviewTotals = computed(() => overviewStats.value?.totals ?? null)
@@ -700,7 +775,12 @@ function mappingValid(row: any) {
 }
 
 function addMapping() {
-  cfg.value.modelMappings.push({ suffix: '', modelId: selectableModels.value[0]?.id ?? '', restricted: false })
+  cfg.value.modelMappings.push({
+    suffix: '',
+    modelId: selectableModels.value[0]?.id ?? '',
+    restricted: false,
+    creditCostPerImage: 1,
+  })
 }
 function setRatioOverride(row: any, v: number | null | undefined) {
   if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
@@ -820,24 +900,36 @@ async function refreshCatalog() {
   }
 }
 
-async function saveAll() {
-  // 校验：选中供应商时必须填写对应 API Key
-  const supplier = cfg.value.activeSupplier
-  const providerSettings = cfg.value.providerSettings || {}
-  let missingField = ''
-  if (supplier === 'newapi') {
-    const key = (providerSettings.openaiCompatibleApiKey || '').trim()
-    if (!key) missingField = 'NewAPI API Key'
-  } else if (supplier === 'openai-official') {
-    const key = (providerSettings.gptOfficialApiKey || '').trim()
-    if (!key) missingField = 'OpenAI 官方 API Key'
-  } else if (supplier === 'gemini-official') {
-    const key = (providerSettings.geminiOfficialApiKey || '').trim()
-    if (!key) missingField = 'Gemini API Key'
+async function onConfigModeChange(mode: string) {
+  // 切换模式：activeTab 重置到总览（auto/simple tab 集合不同）
+  activeTab.value = 'overview'
+  if (mode === 'auto') {
+    ElMessage.info('已切换到自动模式：保存后模型映射 / 定价参考将从平台目录自动推导。')
+  } else {
+    ElMessage.info('已切换到简易模式：每模型按固定积分扣费，盈亏自负。')
   }
-  if (missingField) {
-    ElMessage.warning(`请先填写 ${missingField}`)
-    return
+}
+
+async function saveAll() {
+  // 校验：选中供应商时必须填写对应 API Key（仅 auto 模式要求；simple 模式无需凭据）
+  if (effectiveMode.value === 'auto') {
+    const supplier = cfg.value.activeSupplier
+    const providerSettings = cfg.value.providerSettings || {}
+    let missingField = ''
+    if (supplier === 'newapi') {
+      const key = (providerSettings.openaiCompatibleApiKey || '').trim()
+      if (!key) missingField = 'NewAPI API Key'
+    } else if (supplier === 'openai-official') {
+      const key = (providerSettings.gptOfficialApiKey || '').trim()
+      if (!key) missingField = 'OpenAI 官方 API Key'
+    } else if (supplier === 'gemini-official') {
+      const key = (providerSettings.geminiOfficialApiKey || '').trim()
+      if (!key) missingField = 'Gemini API Key'
+    }
+    if (missingField) {
+      ElMessage.warning(`请先填写 ${missingField}`)
+      return
+    }
   }
 
   saving.value = true
@@ -881,6 +973,80 @@ async function saveAll() {
   margin: 0 auto;
 }
 .page-tabs { flex-wrap: wrap; row-gap: 0.4rem; }
+.auto-banner {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: rgba(138, 122, 92, 0.12);
+  border: 1px solid rgba(138, 122, 92, 0.35);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-1, #d8d3c8);
+}
+.auto-banner-sub {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.auto-banner.fallback-banner {
+  background: rgba(230, 162, 60, 0.12);
+  border-color: rgba(230, 162, 60, 0.4);
+}
+/* 总览顶部定价系统简介 */
+.pricing-intro {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: rgba(138, 122, 92, 0.08);
+  border: 1px solid rgba(138, 122, 92, 0.25);
+  border-radius: 6px;
+}
+.pricing-intro-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1, #d8d3c8);
+  margin-bottom: 0.4rem;
+}
+.pricing-intro-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.pricing-intro-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.pricing-intro-mode {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gold, #8a7a5c);
+}
+.pricing-intro-desc {
+  font-size: 11px;
+  opacity: 0.85;
+  line-height: 1.5;
+  color: var(--text-2, #b8b2a6);
+}
+.pricing-intro-current {
+  margin-top: 0.45rem;
+  font-size: 11px;
+  opacity: 0.8;
+  color: var(--text-2, #b8b2a6);
+}
+.simple-risk-hint {
+  border: 1px solid rgba(230, 162, 60, 0.4);
+  background: rgba(230, 162, 60, 0.1);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.75rem;
+}
 .page-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -900,14 +1066,34 @@ async function saveAll() {
   flex-direction: column;
   gap: 1rem;
 }
-/* 表单类 tab 限宽居中，表格类 tab 在 1320px 容器内全宽 */
+/* 表单类 tab 内容自适应宽度（与表格类 tab 统一全宽），内部表单自行限宽 */
 .panel-limit {
   width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+/* 首页总览/模型目录内容多：子元素不参与 flex 压缩，内容自然高度溢出 → 面板可上下滚动；其余 tab 保持紧凑不滚动 */
+.scroll-panel {
+  /* 预留滚动条空间（scrollbar-gutter 自动让内容让出约 10px），避免不透明卡片背景盖住滚动条 */
+  scrollbar-gutter: stable;
+}
+.scroll-panel > * {
+  flex-shrink: 0;
+}
+/* 滚动条始终可见、不透明、不与卡片圆角重叠 */
+.scroll-panel::-webkit-scrollbar {
+  width: 10px;
+}
+.scroll-panel::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.45);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scroll-panel::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* 顶层浮动工具按钮组：固定定位，不占用布局区域（全局样式，Teleport 目标在组件外） */

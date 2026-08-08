@@ -141,11 +141,27 @@ export function normalizeConfig(raw: any): any {
   c.yesimbotExposeStyleListTool ??= true
   // 模型映射：ratioOverride 可选（未配置时后端按 MJ 默认因子 / 表值 / 1 兜底）。
   // 旧 groupRatio 字段仅用于旧配置反序列化，运行时不再读取；此处剥离以避免面板保存时回写。
+  // simple 模式：确保每个映射都有 creditCostPerImage（缺省 1 积分/次），供模型定价表 v-model 绑定与结算短路使用；
+  // 并清理死字段 billingPolicy（结算层不消费）。auto 模式：不注入固定积分（结算走公式链），
+  // billingPolicy 保留（可能是用户显式配置，如 mj fixed 0.1，由 config-autopilot 推导保留）。
+  const effectiveIntent = source.configMode === 'auto' ? 'auto' : 'simple'
   c.modelMappings = Array.isArray(source.modelMappings) ? source.modelMappings.map((m: any) => {
     const copy = { ...m }
     delete copy.groupRatio
     if (typeof copy.ratioOverride !== 'number' || !Number.isFinite(copy.ratioOverride) || copy.ratioOverride <= 0) {
       delete copy.ratioOverride
+    }
+    if (effectiveIntent === 'simple') {
+      // 死字段 billingPolicy.fixed 值迁移到 creditCostPerImage（保留用户显式定价），再删字段
+      const policy = copy.billingPolicy as { type?: string; creditsPerImage?: number } | undefined
+      if (policy && policy.type === 'fixed' && typeof policy.creditsPerImage === 'number' && Number.isFinite(policy.creditsPerImage) && policy.creditsPerImage > 0) {
+        if (typeof copy.creditCostPerImage !== 'number' || !Number.isFinite(copy.creditCostPerImage) || copy.creditCostPerImage <= 0) {
+          copy.creditCostPerImage = policy.creditsPerImage
+        }
+      }
+      delete copy.billingPolicy
+      const legacyFixed = typeof copy.creditCostPerImage === 'number' && Number.isFinite(copy.creditCostPerImage)
+      if (!legacyFixed) copy.creditCostPerImage = 1
     }
     return copy
   }) : []

@@ -418,6 +418,22 @@ export function roundCreditsPrecise(value: number, dp = 4): number {
 }
 
 /**
+ * 解析映射级固定积分（simple 模式）：返回每张固定积分，未配置时返回 null。
+ * 仅 simple 模式（或未显式 auto）短路结算；auto 模式永远返回 null，走公式链。
+ * 读取 creditCostPerImage（schema 认可字段）。
+ */
+export function resolveMappingFixedCost(
+  mapping?: ModelMappingConfig | null,
+  configMode?: string,
+): number | null {
+  if (configMode === 'auto') return null
+  if (!mapping) return null
+  const direct = mapping.creditCostPerImage
+  if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) return direct
+  return null
+}
+
+/**
  * 迁移期兼容：把 `cost-plus`（旧遗留）视作 `auto`；`fixed`/`disabled` 原样传递；
  * 没有 policy 但存在旧 `creditCostPerImage` 数字时视作 fixed，否则默认 auto。
  */
