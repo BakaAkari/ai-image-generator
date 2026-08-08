@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-aka-ai-image-generator",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "AI image generator for Koishi: contract-driven routing across OpenAI / Gemini / Midjourney, yunwu catalog with fail-closed supplier/protocol/operation/model contracts, credit billing.",
   "license": "MIT",
   "main": "lib/index.js",

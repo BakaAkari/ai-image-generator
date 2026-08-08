@@ -32,8 +32,6 @@
             <el-option value="auto" label="自动模式" />
             <el-option value="simple" label="简易模式" />
           </el-select>
-          <el-button size="small" plain @click="loadState" :loading="loading">刷新</el-button>
-          <el-button size="small" type="primary" :loading="saving" @click="saveAll">保存全部</el-button>
         </div>
       </div>
 
@@ -938,8 +936,13 @@ async function saveAll() {
     syncInteractionOverrides()
     cfg.value.providerSettings.openaiCompatibleExtraHeaders = sanitizeHeaders(cfg.value.providerSettings.openaiCompatibleExtraHeaders)
     const res: any = await send('image-generator/save-config', cfg.value)
-    if (res.success) ElMessage.success('设置已保存并热重载')
-    else ElMessage.error(`保存失败：${res.error}`)
+    if (res.success) {
+      ElMessage.success('设置已保存并热重载')
+      // 保存成功后自动刷新状态（服务端已热重载，get-state 返回最新配置），无需用户手动刷新
+      await loadState()
+    } else {
+      ElMessage.error(`保存失败：${res.error}`)
+    }
   } finally {
     saving.value = false
   }
@@ -959,6 +962,15 @@ async function saveAll() {
   gap: 1rem;
   overflow: hidden;
 }
+/* 统一子元素盒模型与宽度：全局 content-box 下 width:100% + 自身 padding 会溢出容器，
+   这里在唯一容器层强制 border-box + 1320px 收敛，所有直接子元素（页头/横幅/主体）自动对齐 */
+.image-page > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1320px;
+  margin-left: auto;
+  margin-right: auto;
+}
 .page-header {
   display: flex;
   align-items: center;
@@ -968,16 +980,10 @@ async function saveAll() {
   padding: 0.25rem 0.25rem 0.75rem;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
-  width: 100%;
-  max-width: 1320px;
-  margin: 0 auto;
 }
 .page-tabs { flex-wrap: wrap; row-gap: 0.4rem; }
 .auto-banner {
   flex: 0 0 auto;
-  width: 100%;
-  max-width: 1320px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -1053,9 +1059,6 @@ async function saveAll() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  max-width: 1320px;
-  margin: 0 auto;
 }
 .tab-panel {
   flex: 1 1 auto;
@@ -1065,6 +1068,10 @@ async function saveAll() {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+/* tab 内卡片同样修正盒模型：自身 padding/border 不再撑宽超出面板 */
+.tab-panel > * {
+  box-sizing: border-box;
 }
 /* 表单类 tab 内容自适应宽度（与表格类 tab 统一全宽），内部表单自行限宽 */
 .panel-limit {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.1] - 2026-08-08
+
+### 优化
+
+- **保存后自动刷新（UI 收尾）**：控制台只保留浮动「保存」图标，删除页头「保存全部 / 刷新」文字按钮与浮动「刷新」图标；`saveAll` 保存成功后自动调用 `loadState()` 刷新页面状态（服务端热重载后 get-state 返回最新配置），切换 auto/simple 模式后保存立即生效，无需手动刷新。
+- **布局对齐修复**：Koishi 控制台全局 `box-sizing: content-box` 导致 `width:100%` + 自身 padding/border 的元素右缘溢出容器（页头 +8px、自动模式横幅 +26px、定价系统卡 +26px）。在唯一容器层统一 `box-sizing: border-box`（`.image-page > *` 与 `.tab-panel > *`），页头 / 横幅 / 主体 / 各 tab 卡片全部对齐到同一边缘线，删除子元素重复的 width/max-width/margin 声明，收敛为单一来源约束。
+
+### 验证
+
+- `tsc` clean；全量 `619 passed`；`pnpm build` 通过。
+- 本地 Koishi 实机验证：保存后自动刷新（切 simple → 保存 → tabs 5→4 自动切换）、浮动工具条 4 图标（保存/图像/视频/存储）、5 个 tab 全部无右缘越界（DOM 几何断言）。
+
 ## [2.6.0] - 2026-08-08
 
 ### 新增
