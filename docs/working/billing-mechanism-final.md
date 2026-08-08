@@ -1,7 +1,7 @@
 # aka-ai-image-generator 计费机制最终定案
 
-日期：2026-08-06
-状态：基于真实充值/余额铁证与门户「计费过程」读数；本文件为唯一权威设计文档，替代此前所有计费方案文档（已归档）
+日期：2026-08-06（v2.4.0 定案）；**2026-08-08 追加双模式定案（v2.6.0，见第 9 节）**
+状态：基于真实充值/余额铁证与门户「计费过程」读数；本文件为唯一权威设计文档，替代此前所有计费方案文档（已归档）；v2.6.0 起按「定价双模式（auto / simple）」运行，第 1–8 节描述 auto 模式结算机制，第 9 节为双模式总定案
 
 ---
 
@@ -98,3 +98,27 @@
 - `plans/aka-ai-image-generator-billing-chain-fix.md`（首轮修复计划）
 - `docs/working/billing-calibration-methodology.md`（方法论草案）
 - `docs/working/billing-mechanism-decision.md`（决策草案）
+---
+
+## 9. 双模式定案（v2.6.0 起）
+
+> 追加日期：2026-08-08。第 1–8 节机制在 auto 模式下仍然成立；本节省略为总定案，代码真相以 `src/shared/billing.ts`（resolveMappingFixedCost）、`src/services/config-autopilot.ts`、`src/shared/effective-mode.ts` 为准。
+
+### 9.1 两种模式
+- **auto（自动）**：连接供应商（NewAPI 兼容站）后从平台目录自动推导模型价格，按 `USD → 人民币 → 积分 × 加成` 公式链结算；结算优先级 **日志真源 → 公式链**（即第 4.5 节权威路径）。管理员只做运营决策。
+- **simple（简易）**：无需供应商凭据也可运行。管理员直接为每个模型设置「每次消耗积分」（`creditCostPerImage`，映射级 schema 字段，默认 1 积分/次），预扣与结算按 `creditCostPerImage × 张数` 短路（`settleSource='fixed'`），**不依赖平台价格、不走公式链**。定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。
+- 默认 simple；auto 但凭据缺失 / 错误 / 目录刷新失败时 UI 自动降级显示 simple（仅 UI 提示，不回写配置）；可在总览右上角切换。
+
+### 9.2 结算短路
+- `resolveMappingFixedCost(mapping, configMode)`：simple 模式下返回 `creditCostPerImage`（含迁移保值：旧 `billingPolicy.fixed` 迁移到 `creditCostPerImage` 后删除字段；auto 模式完全不动映射字段）。
+- auto 模式两处恒走公式链，不受 simple 字段影响。
+
+### 9.3 双模式对账实证（v2.6.0）
+沙盒真实触发 `文生图` 生成，系统结算 vs 平台 `/api/log/self` 权威 quota 完全一致：
+
+| 模型 | 平台 quota | 权威 USD | 系统结算积分 | 反推 USD（÷68.276） | 差异 |
+|---|---|---|---|---|---|
+| grok-imagine-image | 7647 | $0.015294 | 1.0442 | $0.015294 | 0 |
+| qwen-image-max-2025-12-30 | 18383 | $0.036766 | 2.5102 | $0.036765 | 1e-6（4dp 舍入） |
+
+68.276 = usdToRmb 6.76 × creditsPerCny 10 × 1.01（加成）。向导预估按默认分组倍率 1 保守计算，真实结算按平台实际分组倍率 0.07 精确扣费，多退少补行为正确。历史旧系统（8-07）grok quota=45883↔6.2654、qwen quota=18383↔2.5102 亦一致。

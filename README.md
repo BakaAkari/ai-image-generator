@@ -2,21 +2,21 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-aka-ai-image-generator?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-aka-ai-image-generator)
 
-自用 AI 图像生成插件 V2（image-only）。当前 `2.3.x` 版本以「供应商 + 协议 + 操作 + 模型」四元组精确契约为核心：new-api 兼容站（openlux）是唯一完整维护的目录 / 计价源；OpenAI、Gemini 与 Midjourney（Imagine + Blend）已按官方 / 供应商文档建契约；未接入契约的能力（MJ Action / Describe、Kling 多图 / 扩图、omni-image、图像识别）目录级 fail-closed。生成链路使用真实积分预授权（预扣上界 → 生成后按实际路由分组倍率结算多退少补）+ 免计费平台绕过 + 每日免费 + 平台级交互模式路由，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接、总览统计。
+自用 AI 图像生成插件 V2（image-only）。当前 `2.6.x` 版本以「供应商 + 协议 + 操作 + 模型」四元组精确契约为核心：new-api 兼容站（openlux）是唯一完整维护的目录 / 计价源；OpenAI、Gemini、Midjourney（Imagine + Blend）与 qwen / grok 图像系列已按官方 / 供应商文档建契约；未接入契约的能力（MJ Action / Describe、Kling 多图 / 扩图、omni-image、图像识别）目录级 fail-closed。定价支持**双模式**：auto（平台目录自动推导 + 日志真源精确结算）与 simple（每模型固定积分，盈亏自负）。生成链路使用真实积分预授权（预扣上界 → 生成后按实际路由分组倍率结算多退少补）+ 免计费平台绕过 + 每日免费 + 平台级交互模式路由，并提供 aka-tools 独立管理页面、ChatLuna 与 YesImBot 可选桥接、总览统计。
 
 > 范围：仅图像生成。aka-tools Console 页面已实现；视频生成不在当前运行时范围内。
 
 ## 当前版本状态
 
-- 当前包版本：`2.3.1`。
-- 当前稳定能力：new-api（openlux）完整目录 / 计价 / route；OpenAI、Gemini、Midjourney（Imagine + Blend）契约精确到操作 / 模型；contract-driven 请求构建与参数补全；显式非法参数 fail-closed；auto / guided / advanced 三种交互模式 + `interactionModeOverrides` 平台覆盖；`freePlatforms` 免计费平台绕过积分与试用（保留限流）；单模型每日免费；**动态倍率定价**（目录 `group_ratio` 表：预扣按 enable_groups 上界、结算按 `x-routing-group` 实际分组）；Prompt presets（styles / styleGroups）+ 动态命令热重载；ChatLuna 桥接（5 个基础工具 + 每 style 动态工具 + 上下文注入）；YesImBot 桥接（5 个 AI Agent 工具）；aka-tools 总览 / 配置页（含用量统计）；`图像充值 @用户 人民币金额` 按 `creditsPerCny` 换算。
-- 已实现契约覆盖：newapi OpenAI image create / edit（openai 协议）、newapi Gemini generateContent（gemini 协议）、`newapi.mj.imagine`（文生图 + 参考图垫图）、`newapi.mj.blend`（合成图多图融合）、OpenAI 官方 create / edit、Gemini 官方 create / edit。
+- 当前包版本：`2.6.1`。
+- 当前稳定能力：new-api（openlux）完整目录 / 计价 / route；OpenAI、Gemini、Midjourney（Imagine + Blend）、qwen-image-max、grok-imagine 契约精确到操作 / 模型；contract-driven 请求构建与参数补全；显式非法参数 fail-closed；**定价双模式（auto / simple）**：auto 从平台目录自动推导模型价格（USD → 人民币 → 积分 × 加成公式链）并支持日志真源精确结算，simple 为每模型固定积分（`creditCostPerImage`，盈亏自负）；auto 但凭据缺失 / 目录失败自动降级 simple（仅 UI 提示，不回写配置）；auto / guided / advanced 三种交互模式 + `interactionModeOverrides` 平台覆盖；`freePlatforms` 免计费平台绕过积分与试用（保留限流）；单模型每日免费；**动态倍率定价**（目录 `group_ratio` 表：预扣按 enable_groups 上界、结算按 `x-routing-group` 实际分组 + 日志真源优先）；Prompt presets（styles / styleGroups）+ 动态命令热重载；ChatLuna 桥接（5 个基础工具 + 每 style 动态工具 + 上下文注入）；YesImBot 桥接（5 个 AI Agent 工具）；aka-tools 总览 / 配置页（含用量统计）；`图像充值 @用户 人民币金额` 按 `creditsPerCny` 换算。
+- 已实现契约覆盖：newapi OpenAI image create / edit（openai 协议）、newapi Gemini generateContent（gemini 协议）、`newapi.mj.imagine`（文生图 + 参考图垫图）、`newapi.mj.blend`（合成图多图融合）、`newapi.openai.qwen-image-max.generate`（qwen-image-max 系列）、`newapi.openai.grok-imagine.generate`（grok-imagine-image 系列）、OpenAI 官方 create / edit、Gemini 官方 create / edit。
 - 目录级 fail-closed（未实现能力）：MJ Action / Describe / Modal / Upload、Kling 生图 / 多图生图 / 扩图、omni-image、图像识别。相关模型进入 `unsupported`，不会被路由到 provider。
 - 后续路线图：见 `ROADMAP.md`。
 
 ## 支持的供应商入口 / 模型路由
 
-- `newapi`（openlux 等 new-api 兼容站）：当前唯一完整维护的目录 / 计价源。目录从 `/v1/models` + `/api/pricing` 获取（`/api/pricing` 的 `group_ratio` 表作为动态倍率来源，默认 6h 快照刷新）；协议 route 按语义规则识别；契约由 `src/contracts/registry.ts` 精确注册到具体 endpoint + operation。
+- `newapi`（openlux 等 new-api 兼容站）：当前唯一完整维护的目录 / 计价源。目录从 `/v1/models` + `/api/pricing` 获取（`/api/pricing` 的 `group_ratio` 表作为动态倍率来源，默认 6h 快照刷新）；协议 route 按语义规则识别；契约由 `src/contracts/registry.ts` 精确注册到具体 endpoint + operation。除 OpenAI / Gemini / Midjourney 外，qwen-image-max 与 grok-imagine 系列也走 newapi openai 协议（`/v1/images/generations`，单张调用，1k 固定尺寸）。
 - `gpt-official`（OpenAI 官方 GPT）：目录不由 new-api 维护，按已注册的 OpenAI 官方 create / edit 契约执行；未在契约中声明的字段不发送。
 - `gemini-official`（Google Gemini 官方）：按 Gemini 官方 create / edit 契约执行；`imageSize` 使用大写 `1K/2K/4K`。
 
@@ -97,8 +97,11 @@
 
 ## 计费与豁免
 
+- **定价双模式**：
+  - **auto**：连接供应商（NewAPI 兼容站）后从平台目录自动推导模型价格，按 `USD → 人民币 → 积分 × 加成` 公式链结算；价格随目录刷新更新，管理员只做运营决策。结算优先级：**日志真源 → 公式链**（生成成功后按响应捕获的 `request_id` 查平台 `/api/log/self` 拿权威 quota 精确结算，未配置凭据或查询失败时回退目录公式链 `pricePerCall × group_ratio`）。
+  - **simple**：无需供应商凭据也可运行，管理员直接为每个模型设置「每次消耗积分」（`creditCostPerImage`），预扣与结算按 `creditCostPerImage × 张数` 短路（`settleSource='fixed'`），不依赖平台价格；定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。默认 simple；auto 但凭据缺失 / 错误 / 目录刷新失败时 UI 自动降级显示 simple（仅 UI 提示，不回写配置）。
 - 生成前在用户余额中真实冻结预计积分（预扣上界 = 模型单价 × enable_groups 最大分组倍率）；并发请求不能超卖同一余额。
-- 成功后按实际发送图片数结算（结算倍率 = 实际路由分组 `x-routing-group` 对应的 `group_ratio`，缺失回退 default → mapping.groupRatio）；未使用部分释放；失败、超时或未返回图片时全额释放。
+- 成功后按实际发送图片数结算（结算倍率 = 实际路由分组 `x-routing-group` 对应的 `group_ratio`，缺失回退 default → mapping.groupRatio；auto 模式日志真源优先）；未使用部分释放；失败、超时或未返回图片时全额释放。
 - reserve / settle / release 幂等，满足 `reserved = settled + released`；活动 hold 持久化到 `credit-reservations.v1.json`。
 - 倍率来源为目录快照中的供应商 `group_ratio` 表（默认 6h 自动刷新，启动 / 手动 `图像模型 刷新` / 面板刷新均可触发）；`mapping.groupRatio` 仅在探测表缺失时兜底。
 - `图像充值 @用户 <金额>` 中的金额是**人民币金额**，按 `creditsPerCny`（1 元 = N 平台积分）折算为平台积分后入账；负数视为余额修正。
@@ -126,16 +129,17 @@
 
 ## 配置页
 
+- aka-tools 页头为「自动模式 / 简易模式」切换（右上角下拉），浮动工具条提供保存图标（保存成功后自动刷新页面状态，无需手动刷新）；各 tab 内容与表格统一对齐、单屏自适配。
 - 配置页文案采用分层策略：下拉选项和表格列名保持极简，字段描述适度说明用途、单位和权限影响。
 - 数值字段使用数字输入，不使用滑竿；低频设置使用 Koishi Schema 嵌套 `.collapse()` 默认收起。
-- 保存配置前会校验当前供应商对应 API Key：未填写时弹警告并阻止保存。
+- 保存配置前会校验当前供应商对应 API Key（仅 auto 模式要求；simple 模式无需凭据）。
 - 顶部提供只读「使用说明 / 命令速查」，按首次配置、普通用户、管理员、常用参数、权限规则分区。
 - 日志级别使用 `simple` / `detail`：`simple` 记录关键流程，`detail` 额外记录脱敏请求诊断（`supplier / modelId / routeId / contractId / operation / 请求字段名 / HTTP 状态`；不记录完整 prompt / base64 / API key，taskId 仅内部关联）。
 
 ## 安装与配置
 
 1. 在 Koishi 控制台安装 `koishi-plugin-aka-ai-image-generator`。
-2. 打开 aka-tools 页面，在「供应商凭证」中填写 apiKey（`openai-compatible` 还需填写 apiBase 与 `extraHeaders`）。
+2. 打开 aka-tools 页面，选择「自动模式」时在「供应商凭证」中填写 apiKey（`openai-compatible` 还需填写 apiBase 与 `extraHeaders`）；选择「简易模式」则无需凭据，直接在「模型定价」为每个模型设置固定积分。
 3. 在「模型映射」中至少添加一条映射，配置命令后缀、modelId、受限状态与 `groupRatio`；运行时 supplier / protocol 由激活供应商和目录 route 决定，第一条有效映射即为默认模型。
 4. 可选：配置 `freePlatforms`、`interactionMode` / `interactionModeOverrides`、每日免费模型、Prompt 预设、ChatLuna / YesImBot 桥接。
 5. 保存配置，插件目录会生成 / 更新 `users.v2.json`、`credit-ledger.v2.jsonl`、`recharge-records.v2.jsonl`、`credit-reservations.v1.json`。

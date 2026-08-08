@@ -2,12 +2,14 @@
 
 ## Current status
 
-- Current package version: `2.3.1`.
-- Current line: v2.3.x 完成 new-api（openlux）适配、动态倍率定价闭环（预扣上界 + 实际路由结算）、MJ Blend 合成图接入、总览页真实用量统计，以及死代码清理（移除未接线的 60s 实时探测模块）。详见 `CHANGELOG.md`。
-- Current UI model: aka-tools 管理页（总览统计 / 供应商凭证 / 模型目录 / 模型映射 / Prompt 预设 / 定价 / 运营）+ ChatLuna 桥接 + YesImBot 桥接 + 交互模式配置。
+- Current package version: `2.6.1`.
+- Current line: v2.6.x 完成定价双模式收敛（auto / simple）、simple 固定积分接入真实结算链路、qwen / grok 图像契约接入、日志真源精确结算（Gemini 路由分组捕获修复）、grok / qwen 真实计价对账（与平台后台一致），以及 UI 收尾（保存后自动刷新 + 布局对齐）。详见 `CHANGELOG.md`。
+- Current UI model: aka-tools 管理页（总览统计 / 供应商凭证 / 模型目录 / 模型映射 / 模型定价 / 运营 / 预设）+ ChatLuna 桥接 + YesImBot 桥接 + 交互模式配置；页头「自动模式 / 简易模式」切换，浮动工具条保存（自动刷新）。
 - Current contract coverage（implemented, contract-driven）:
   - `newapi.mj.imagine`（文生图 + 参考图垫图，`/mj/submit/imagine`）
   - `newapi.mj.blend`（合成图多图融合，`/mj/submit/blend`）
+  - `newapi.openai.qwen-image-max.generate`（qwen-image-max / qwen-image-max-2025-12-30）
+  - `newapi.openai.grok-imagine.generate`（grok-imagine-image / grok-imagine-image-pro）
   - newapi OpenAI image create / edit（openai 协议）
   - newapi Gemini generateContent（gemini 协议）
   - OpenAI 官方 create / edit、Gemini 官方 create / edit
@@ -26,6 +28,7 @@
 
 - `/mj/submit/imagine` 与 `/mj/submit/blend` 上游偶发 `all_retries_failed` / `429` 饱和——供应商侧稳定性，非插件路由问题。
 - openlux `/api/models` 直连仍返回 `Permission denied, invalid access token`（文档级核验受限，目录拉取走业务端点正常）。
+- 3001 QQ adapter ECONNRESET 持续断连重试（代码 1006）——运行环境网络问题，非插件问题。
 
 ## Stable scope
 
@@ -34,9 +37,10 @@
 稳定运行方向：
 
 1. 供应商凭证与模型配置完全分离：**供应商**（凭证）为 `newapi` / `gpt-official` / `gemini-official`；**模型映射**（协议 + modelId）由目录 route 决定。
-2. 默认模型 = `modelMappings` 第一条有效映射。
-3. 第三方 new-api 兼容站通过 `apiBase + apiKey + extraHeaders` 配置，不硬编码供应商名。
-4. 命令保持无前缀直呼：`文生图` / `图生图` / `合成图` / `图像查询` / `图像账单` / `图像充值` / `图像排行榜` / `图像指令` / `图像参数`。
-5. 计费保持「预扣上界 → 实际路由分组结算多退少补」的闭环，倍率来自目录 `group_ratio` 快照（默认 6h 刷新），不引入手工倍率 UI。
-6. 契约层 fail-closed：未接入的 endpoint / 参数绝不静默降级。
-7. 无诊断工具 / 探测按钮：状态可观察性靠日志（`settlement-audit` 完整定价痕迹 + 脱敏请求诊断）。
+2. 定价双模式：auto（平台目录自动推导 + 日志真源精确结算，管理员只做运营决策）与 simple（每模型固定积分 `creditCostPerImage`，盈亏自负）；auto 但凭据缺失 / 目录失败自动降级 simple（仅 UI 提示，不回写配置）。
+3. 默认模型 = `modelMappings` 第一条有效映射。
+4. 第三方 new-api 兼容站通过 `apiBase + apiKey + extraHeaders` 配置，不硬编码供应商名。
+5. 命令保持无前缀直呼：`文生图` / `图生图` / `合成图` / `图像查询` / `图像账单` / `图像充值` / `图像排行榜` / `图像指令` / `图像参数`。
+6. 计费保持「预扣上界 → 实际路由分组结算多退少补」的闭环，auto 模式日志真源优先；倍率来自目录 `group_ratio` 快照（默认 6h 刷新），不引入手工倍率 UI。
+7. 契约层 fail-closed：未接入的 endpoint / 参数绝不静默降级。
+8. 无诊断工具 / 探测按钮：状态可观察性靠日志（`settlement-audit` 完整定价痕迹 + 脱敏请求诊断）。
