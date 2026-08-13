@@ -53,7 +53,7 @@ export function registerConsoleService(deps: ConsoleServiceDeps) {
       snapshot != null && !snapshot.error && snapshot.models.length > 0,
     )
     return { ...state, knownPlatforms, effectiveMode: effective }
-  })
+  }, { authority: 4 })
 
   consoleService.addListener('image-generator/save-config', async (config: Config, ...rest: unknown[]) => {
     try {

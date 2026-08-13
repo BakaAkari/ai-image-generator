@@ -126,7 +126,7 @@
         </section>
 
         <!-- 供应商与凭证 -->
-        <section v-show="activeTab === 'credentials'" class="tab-panel">
+        <section v-show="activeTab === 'credentials'" class="tab-panel scroll-panel">
           <div class="panel-limit">
             <k-card title="供应商与凭证" class="section" shadow="never">
               <div class="supplier-picker">
@@ -231,66 +231,9 @@
           </k-card>
         </section>
 
-        <!-- 模型映射 -->
-        <section v-show="activeTab === 'mappings'" class="tab-panel">
-          <k-card title="模型映射" class="section" shadow="never">
-            <template #header>
-              <div class="card-header">
-                <span>模型映射（第一条为默认模型）</span>
-                <el-button size="small" @click="addMapping">添加映射</el-button>
-              </div>
-            </template>
-            <div class="hint">命令后缀用于聊天中 -后缀 切换模型；新映射默认自动定价，基于目录价格估算。</div>
-            <el-table :data="cfg.modelMappings" size="small" style="width: 100%">
-              <el-table-column label="排序" width="60">
-                <template #default="{ $index }">
-                  <el-button link size="small" :disabled="$index === 0" @click="moveMapping($index, -1)">↑</el-button>
-                  <el-button link size="small" :disabled="$index === cfg.modelMappings.length - 1" @click="moveMapping($index, 1)">↓</el-button>
-                </template>
-              </el-table-column>
-              <el-table-column label="命令后缀" width="110">
-                <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
-              </el-table-column>
-              <el-table-column label="模型" min-width="180">
-                <template #default="{ row }">
-                  <el-select v-model="row.modelId" size="small" filterable style="width: 100%">
-                    <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="modelOptionLabel(m)" />
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="倍率覆盖" width="110">
-                <template #default="{ row }">
-                  <el-input-number
-                    :model-value="row.ratioOverride ?? null"
-                    :min="0.01"
-                    :step="0.01"
-                    controls-position="right"
-                    size="small"
-                    style="width: 100%"
-                    placeholder="自动"
-                    @update:model-value="(v) => setRatioOverride(row, v)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="受限" width="55">
-                <template #default="{ row }"><el-checkbox v-model="row.restricted" /></template>
-              </el-table-column>
-              <el-table-column label="状态" width="70">
-                <template #default="{ row }">
-                  <el-tag :type="mappingValid(row) ? 'success' : 'danger'" size="small">{{ mappingValid(row) ? '可用' : '失效' }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="" width="50">
-                <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </k-card>
-        </section>
 
         <!-- Prompt 预设 -->
-        <section v-show="activeTab === 'presets'" class="tab-panel">
+        <section v-show="activeTab === 'presets'" class="tab-panel scroll-panel">
           <k-card class="section" shadow="never">
             <template #header>
               <div class="card-header">
@@ -414,7 +357,7 @@
         </section>
 
         <!-- 定价 -->
-        <section v-show="activeTab === 'pricing'" class="tab-panel">
+        <section v-show="activeTab === 'pricing'" class="tab-panel scroll-panel">
           <div class="panel-limit">
             <!-- simple 模式：简化手动定价（每模型每次消耗积分，盈亏自负） -->
             <template v-if="effectiveMode === 'simple'">
@@ -511,7 +454,7 @@
         </section>
 
         <!-- 运营 -->
-        <section v-show="activeTab === 'operations'" class="tab-panel">
+        <section v-show="activeTab === 'operations'" class="tab-panel scroll-panel">
           <div class="panel-limit">
             <k-card title="运营" class="section" shadow="never">
               <el-form label-width="200px">
@@ -766,12 +709,6 @@ const billingLimit = computed(() => state.value?.billing?.hardLimitUsd != null ?
 function modeLabel(m: string) {
   return { 'text-to-image': '文生图', 'image-to-image': '图生图', 'compose-image': '合成图' }[m] ?? m
 }
-function modelOptionLabel(m: any) {
-  return `${m.id}（${m.yunwuCost?.label ?? '成本未知'}）`
-}
-function mappingValid(row: any) {
-  return selectableModels.value.some((m: any) => m.id === row.modelId)
-}
 
 function addMapping() {
   cfg.value.modelMappings.push({
@@ -780,18 +717,6 @@ function addMapping() {
     restricted: false,
     creditCostPerImage: 1,
   })
-}
-function setRatioOverride(row: any, v: number | null | undefined) {
-  if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
-    row.ratioOverride = v
-  } else {
-    delete row.ratioOverride
-  }
-}
-function moveMapping(i: number, dir: number) {
-  const arr = cfg.value.modelMappings
-  const [item] = arr.splice(i, 1)
-  arr.splice(i + dir, 0, item)
 }
 // Prompt 预设 / 分组：groupName === null 表示未分组，绑定 cfg.styles；
 // 其他分组绑定 cfg.styleGroups[groupName].prompts。分组仅用于后台分类，

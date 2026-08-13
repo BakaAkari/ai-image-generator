@@ -72,17 +72,17 @@ describe('aka-tools panel Prompt 预设 card contract', () => {
     expect(credTab).toBeGreaterThan(-1)
     expect(credTab).toBeLessThan(autoCatalogTab)
     expect(credTab).toBeLessThan(simplePricingTab)
-    // 模板分区顺序保持：模型目录 → 模型映射 → 预设 → 定价 → 运营
+    // 模板分区顺序保持：模型目录 → 预设 → 定价 → 运营（悬空「模型映射」页已清理）
     const catalogSection = PAGE_VUE.indexOf(`v-show="activeTab === 'catalog'"`)
-    const mappingsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'mappings'"`)
     const presetsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'presets'"`)
     const pricingSection = PAGE_VUE.indexOf(`v-show="activeTab === 'pricing'"`)
     const opsSection = PAGE_VUE.indexOf(`v-show="activeTab === 'operations'"`)
     expect(catalogSection).toBeGreaterThan(-1)
-    expect(mappingsSection).toBeGreaterThan(catalogSection)
-    expect(presetsSection).toBeGreaterThan(mappingsSection)
+    expect(presetsSection).toBeGreaterThan(catalogSection)
     expect(pricingSection).toBeGreaterThan(presetsSection)
     expect(opsSection).toBeGreaterThan(pricingSection)
+    // 悬空「模型映射」section 应已删除，不再作为独立模板分区存在
+    expect(PAGE_VUE).not.toContain(`activeTab === 'mappings'`)
   })
 
   test('legacy JSON textarea and mislabelled copy are removed', () => {

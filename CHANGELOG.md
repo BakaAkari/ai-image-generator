@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.6.3] - 2026-08-13
+
+### 修复
+
+- **所有页签补齐滚动（flex 压缩导致无法滚动）**：`credentials / presets / pricing / operations` 等 tab 的 section 类补上 `scroll-panel`（`> * { flex-shrink: 0 }` 阻止子元素被 flex 压缩，内容自然溢出才出滚动条）。此前仅 `overview / catalog` 有，预设等长内容 tab 展开后无法上下滚动。
+- **清理悬空的「模型映射」面板（死代码）**：`mappings` section 不在任何 tab 集合（SIMPLE/AUTO_TABS）也无代码跳转，属不可达悬空面板；其模型绑定能力在 simple 模式的「模型定价」页已有（modelId 只读）且完整配置本就不应在 UI 暴露。删除该 section 及仅被它引用的 `modelOptionLabel / mappingValid / setRatioOverride / moveMapping` 死函数；保留 `addMapping`（pricing 页仍使用）。
+- **安全：aka-tools 页面未登录可访问**：`ctx.page` 此前未声明任何权限，启用 Koishi auth 后未登录也能直接访问 aka-tools（可读/写供应商 Key、计费配置）。已为页面路由加 `fields: ['user']`——启用 auth 时未登录访问会被路由守卫拦到登录页；未启用 auth 时该字段无副作用。
+- **安全：后端 `get-state` 通道未鉴权**：该 listener 返回含凭证/计费的全量配置，此前无 `authority` 限制。已加 `{ authority: 4 }`（管理员级），与 `save-config / refresh-catalog` 对齐。
+
+### 验证
+
+- `tsc` clean 通过；image 全量 **619 passed**（含为悬空 mappings 清理同步更新的 2 个断言）；build 通过，已确认 bundle 含 `fields:["user"]` 与 get-state authority。
+- video 局域网独立发布，本包不含。
+
 ## [2.6.2] - 2026-08-13
 
 ### 修复
