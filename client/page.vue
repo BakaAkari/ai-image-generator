@@ -625,6 +625,7 @@ const SIMPLE_TABS = [
   { key: 'overview', label: '总览' },
   { key: 'credentials', label: '供应商' },
   { key: 'pricing', label: '模型定价' },
+  { key: 'presets', label: '预设' },
   { key: 'operations', label: '运营' },
 ]
 const AUTO_TABS = [
