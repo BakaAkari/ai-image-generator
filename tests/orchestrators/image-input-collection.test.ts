@@ -87,12 +87,16 @@ function setup(inbox: any[] = []) {
     requestProviderImages: async (prompt: string, imageUrls: string[], _n: number, _ctx: any, onImage: any) => {
       providerCalls.push({ prompt, imageUrls })
       await onImage('http://gen/1.png', 0, 1)
-      return ['http://gen/1.png']
+      return {
+        images: ['http://gen/1.png'],
+        usage: { totalTokens: null, inputTokens: null, outputTokens: null },
+        routingGroup: null,
+        requestId: null,
+      }
     },
     recordUsageOnly: async () => {},
     rememberGeneratedImages: () => {},
     calculateGenerationCost: () => ({}),
-    lastProviderUsage: 0,
   } as any
 
   const userManager = {

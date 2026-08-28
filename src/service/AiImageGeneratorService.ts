@@ -88,6 +88,24 @@ const DEFAULT_GEMINI_API_BASE = 'https://generativelanguage.googleapis.com'
 const DEFAULT_OPENAI_API_BASE = 'https://api.openai.com'
 const DEFAULT_CONTEXT_HISTORY_SIZE = 20
 
+/**
+ * requestProviderImages 的 request-scoped 返回：把 provider 生成结果与后生成结算读数
+ * （usage tokens / 路由分组 / request-id）打包成同一次调用的局部结果返回，
+ * 不再写入 Service 实例级单例字段 —— 消除多用户并发生成时结算读数互相覆盖的竞争。
+ */
+export interface ProviderImagesResult {
+  images: string[]
+  usage: {
+    totalTokens: number | null
+    inputTokens: number | null
+    outputTokens: number | null
+  }
+  /** new-api 响应头 x-routing-group（实际路由分组），后生成结算用。 */
+  routingGroup: string | null
+  /** 响应头 request-id（x-api-request-id 等），MJ 逐任务结算按此查 /api/log/self。 */
+  requestId: string | null
+}
+
 export class AiImageGeneratorService extends Service {
   readonly userManager: UserManager
   readonly imageContextStore: ImageContextStore
@@ -142,7 +160,7 @@ export class AiImageGeneratorService extends Service {
     numImages: number,
     requestContext?: ImageRequestContext,
     onImageGenerated?: (imageUrl: string, index: number, total: number) => void | Promise<void>,
-  ): Promise<string[]> {
+  ): Promise<ProviderImagesResult> {
     const provider = this.resolveProvider(requestContext)
     const supplier = this.resolveSupplier(requestContext)
     const targetModelId = requestContext?.modelId
@@ -199,13 +217,7 @@ export class AiImageGeneratorService extends Service {
     }
 
     const providerInstance = this.providerRegistry.createProvider(provider, this.ctx, factoryConfig)
-    // 重置前一次用量/路由追踪
-    this.lastProviderUsage = null
-    this.lastProviderInputTokens = null
-    this.lastProviderOutputTokens = null
-    this.lastProviderRoutingGroup = null
-    this.lastProviderRequestId = null
-    const result = await providerInstance.generateImages(
+    const images = await providerInstance.generateImages(
       prompt,
       imageUrls,
       numImages,
@@ -213,22 +225,31 @@ export class AiImageGeneratorService extends Service {
       onImageGenerated,
     )
 
-    // 后生成定价：捕获 provider 返回的 usage（total/input/output tokens）
-    this.lastProviderUsage = providerInstance.lastTotalTokens
-    this.lastProviderInputTokens = providerInstance.lastInputTokens
-    this.lastProviderOutputTokens = providerInstance.lastOutputTokens
-    // 后生成结算：捕获 new-api 实际路由分组（x-routing-group 响应头）
-    this.lastProviderRoutingGroup = providerInstance.lastRoutingGroup
-    // 后生成结算：捕获 request-id（供 MJ /api/log/self 权威查 quota）
-    this.lastProviderRequestId = providerInstance.lastRequestId
+    // request-scoped 结算读数：providerInstance 是按本次请求创建的，其 usage / 路由 / request-id
+    // 只属于当前调用，直接打包返回，不写入 Service 单例 —— 避免并发生成时被其它请求覆盖。
+    const usage = {
+      totalTokens: providerInstance.lastTotalTokens,
+      inputTokens: providerInstance.lastInputTokens,
+      outputTokens: providerInstance.lastOutputTokens,
+    }
+    const result: ProviderImagesResult = {
+      images,
+      usage,
+      // new-api 实际路由分组（x-routing-group 响应头）
+      routingGroup: providerInstance.lastRoutingGroup,
+      // request-id（供 MJ /api/log/self 权威查 quota）
+      requestId: providerInstance.lastRequestId,
+    }
 
     this.pluginLogger.info('requestProviderImages 完成', {
       supplier,
       provider,
-      resultCount: result.length,
-      lastTotalTokens: this.lastProviderUsage,
-      lastInputTokens: this.lastProviderInputTokens,
-      lastOutputTokens: this.lastProviderOutputTokens,
+      resultCount: images.length,
+      lastTotalTokens: usage.totalTokens,
+      lastInputTokens: usage.inputTokens,
+      lastOutputTokens: usage.outputTokens,
+      routingGroup: result.routingGroup,
+      requestId: result.requestId,
     })
 
     return result
@@ -472,24 +493,6 @@ export class AiImageGeneratorService extends Service {
   }
 
   /** 目录 route 查询（由 index.ts 注入）；唯一协议来源。 */
-  /** 最近一次 provider 生成调用返回的 usage.total_tokens（后生成定价用）。 */
-  lastProviderUsage: number | null = null
-
-  /** 最近一次 provider 生成调用返回的 usage.input_tokens（per-token 精确结算用）。 */
-  lastProviderInputTokens: number | null = null
-
-  /** 最近一次 provider 生成调用返回的 usage.output_tokens（per-token 精确结算用）。 */
-  lastProviderOutputTokens: number | null = null
-
-  /** 最近一次 provider 生成调用响应头的 x-routing-group（new-api 实际路由分组，后生成结算用）。 */
-  lastProviderRoutingGroup: string | null = null
-
-  /**
-   * 最近一次 provider 生成调用响应头的 request-id（x-api-request-id 等）。
-   * MJ 逐任务结算路径按此查 `/api/log/self` 拿权威 quota → 真实美元。
-   */
-  lastProviderRequestId: string | null = null
-
   public catalogRouteLookup: CatalogRouteLookup | undefined
 
   /**

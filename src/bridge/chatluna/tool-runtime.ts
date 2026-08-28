@@ -118,7 +118,7 @@ async function runGenerateImageTool(
       }
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       [],
       generationCost.numImages,
@@ -185,7 +185,7 @@ async function runEditImageTool(
       }
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       imageUrls,
       generationCost.numImages,
@@ -265,7 +265,7 @@ async function runStylePresetTool(
       return formatToolError(reservation.message || '积分不足。')
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       imageUrls,
       generationCost.numImages,
@@ -434,7 +434,7 @@ async function runDynamicStyleTool(
       return formatToolError(reservation.message || '积分不足。')
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       imageUrls,
       generationCost.numImages,

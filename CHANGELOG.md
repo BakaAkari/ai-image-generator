@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.6.5] - 2026-08-28
+
+### 修复
+
+- **结算读数 request-scoped 化（消除跨用户竞争）**：`requestProviderImages` 不再把 usage / 路由分组 / request_id 写入 Service 实例级单例字段 `lastProvider*`，改为随同一次调用直接返回 `ProviderImagesResult { images, usage, routingGroup, requestId }`。编排器结算块与 ChatLuna / YesImBot 桥（7 处调用）改用该返回结果。此前多用户并发生成时，后完成的请求会覆盖前者的单例读数，导致 A 用 B 的路由倍率 / request_id 结算（日志真源会查错配额、扣错账）。修复依据：`providerInstance` 本按请求创建，其读数天然 request-scoped。
+- 审计项对应 `plan: aka-ai-image-generator-flow-review-2026-08-28`（缺陷 #1 P1）。
+
+### 验证
+
+- `tsc` clean；全量 `619 passed`（含更新 image-input-collection service mock 返回新结果形状）。
+- `pnpm build` 通过；lib 中已无 `lastProvider` 单例字段。
+- 本地 koishi-app 加载：目录 43 模型、模型映射校验通过、启动无报错。
+
 ## [2.6.4] - 2026-08-28
 
 ### 新增 / 修复

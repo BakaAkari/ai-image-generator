@@ -120,7 +120,7 @@ async function runGenerateImageTool(
       }
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       [],
       generationCost.numImages,
@@ -191,7 +191,7 @@ async function runEditImageTool(
       }
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       imageUrls,
       generationCost.numImages,
@@ -277,7 +277,7 @@ async function runStylePresetTool(
       }
     }
 
-    const images = await aiGenerator.requestProviderImages(
+    const { images } = await aiGenerator.requestProviderImages(
       providerPrompt,
       imageUrls,
       generationCost.numImages,

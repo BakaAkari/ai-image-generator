@@ -577,7 +577,7 @@ export function createImageGenerationHandlers(
         onImageGenerated,
       )
 
-      const allImages = await Promise.race([generationPromise, timeoutPromise])
+      const genResult = await Promise.race([generationPromise, timeoutPromise])
       generationActive = false
       if (timeoutTimer !== undefined) {
         clearTimeout(timeoutTimer)
@@ -585,8 +585,8 @@ export function createImageGenerationHandlers(
       }
 
       // 5. 兜底：流式回调没触发时，统一发送
-      if (allImages && allImages.length > 0 && !checkTimeout()) {
-        for (const imageUrl of allImages) {
+      if (genResult && genResult.images.length > 0 && !checkTimeout()) {
+        for (const imageUrl of genResult.images) {
           if (!generatedImages.includes(imageUrl)) {
             try {
               if (checkTimeout()) break
@@ -619,22 +619,22 @@ export function createImageGenerationHandlers(
         try {
           const modelId = options.requestContext?.modelId ?? ''
           // TODO: accumulate tokens across multi-call batches
-          const totalTokens = service.lastProviderUsage
-          const inputTokens = service.lastProviderInputTokens
-          const outputTokens = service.lastProviderOutputTokens
+          const totalTokens = genResult.usage.totalTokens
+          const inputTokens = genResult.usage.inputTokens
+          const outputTokens = genResult.usage.outputTokens
 
           // 从目录快照读取计价参数计算供应商积分（不使用 mapping 字段）
           const settleSuffix = options.requestContext?.modelSuffix
           const settleMapping = config.modelMappings?.find(m => settleSuffix ? m.suffix === settleSuffix : m.modelId === modelId)
           // 动态倍率结算：header 命中表 > ratioOverride > table.default > 1
-          const routingGroup = service.lastProviderRoutingGroup
+          const routingGroup = genResult.routingGroup
           const groupRatioMap = catalog.current?.groupRatio
           const settleOverride = resolveEffectiveRatioOverride(modelId, settleMapping, catalogModels)
           const actualRatio = resolveActualRoutingRatio(routingGroup, groupRatioMap, settleOverride)
           // 结算优先级：MJ 日志真源（若配置 logAccess 且捕获 request_id）→ 公式链
           //   - 日志真源：quota / quotaPerUnit(默认 500000) = 权威美元；不重复叠加 routingGroup。
           //   - 公式链：per-call = pricePerCall × actualRatio；per-token = eff_tokens × tokenRatio × actualRatio / quotaPerUnit。
-          const providerRequestId = service.lastProviderRequestId
+          const providerRequestId = genResult.requestId
           const logCreds = getLogAccessCredentials?.()
           let logSourceQuota: number | null = null
           if (logCreds && providerRequestId) {
