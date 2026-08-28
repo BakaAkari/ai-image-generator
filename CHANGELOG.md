@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.6.4] - 2026-08-28
+
+### 新增 / 修复
+
+- **双模式下「模型列表」与「模型定价」tab 补齐**（`plan: aka-ai-image-generator-model-pricing-both-modes`）：统一 auto / simple 两模式的顶栏 tab（总览 / 供应商 / 模型列表 / 模型定价 / 预设 / 运营），消除 2.6.0 起"简易模式缺供应商模型列表、自动模式缺模型定价"的互斥分区。
+- **模型映射编辑器两模式共用，模型 ID 改为下拉选择**：模型定价页的映射表在 auto / simple 均可用；`modelId` 从只读改为 `<el-select>`，数据源为后端 `selectableModels`（供应商目录可用模型，附参考成本）；目录外模型保留兜底标签不丢失；「每次消耗积分」列仅 simple 模式显示。
+- **自动推导触发点调整（方案 ii）**：`save-config` 不再做「只补缺」合并，保存永远尊重管理员手动增删；`get-state` 基于目录快照返回 `suggestedMappings`（新可用模型），面板提示「N 个新可用模型可补 + 采纳」，采纳后才写入映射并待保存落盘——auto 模式下删掉的默认模型不会在保存/刷新时被自动回填。
+- auto 模式横幅文案同步更新（模型映射可编辑、不自动回填），消除与实现的表述矛盾。
+
+### 验证
+
+- `tsc` clean；全量 `619 passed`（含更新 `frontend-no-pricing-formula` 断言：模型下拉数据源改用 selectableModels 为预期行为）。
+- `pnpm build` 通过（tsup + koishi-console build），dist 包含「模型列表」「采纳」「目录外」等新能力字符串；`lib` 已确认 `mergeDerivedMappings` 不再参与保存路径，`deriveConfigFromSnapshot` 仅用于 get-state 建议。
+- 本地 koishi-app 加载新构建：aka-tools console entry 注册成功（prod dist exists=true）、目录 43 模型、模型映射校验通过，启动无报错。
+
 ## [2.6.3] - 2026-08-13
 
 ### 修复

@@ -14,11 +14,14 @@ describe('aka-tools frontend pricing guard', () => {
     expect(source).toContain('每日免费试用模型')
     expect(source).toContain('选择模型映射中的 modelId')
   })
-  test('model selection source is backend selectableModels (mappings UI removed)', () => {
-    // 模型绑定数据源必须是后端 selectableModels（addMapping 用其首个模型作默认），
-    // 前端不得硬编码模型列表；悬空的「模型映射」页已清理（不会再有 el-table 版 v-for）。
+  test('model selection source is backend selectableModels (editable mapping editor)', () => {
+    // 模型绑定数据源必须是后端 selectableModels：模型映射编辑器（模型定价页）里
+    // modelId 用下拉从 selectableModels 选择（addMapping 用其首个模型作默认），
+    // 前端不硬编码具体模型列表；新增模型映射的能力在两种定价模式下都在。
     expect(source).toContain('selectableModels.value[0]?.id ??')
-    expect(source).not.toContain('v-for="m in selectableModels"')
+    // 映射表内 modelId 下拉的数据源来自 selectableModels，而非硬编码列表
+    expect(source).toContain('v-for="m in selectableModels"')
+    expect(source).toContain('v-model="row.modelId"')
   })
   test('console service forwards catalog unsupported models', () => {
     const serviceSource = readFileSync(resolve(process.cwd(), 'src/console/service.ts'), 'utf8')

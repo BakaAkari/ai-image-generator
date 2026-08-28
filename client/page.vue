@@ -39,8 +39,8 @@
       <div v-else class="page-body">
         <!-- 自动模式横幅（含 fallback 提示） -->
         <div v-if="effectiveMode === 'auto'" class="auto-banner">
-          <span>🔒 自动模式：可推导配置（模型映射 / 定价参考）从平台目录自动推导，只读 + 可覆盖；运营决策字段保持手动。</span>
-          <span class="auto-banner-sub">切换为简易模式可手动设置每模型每次消耗积分（盈亏自负）。已有映射（含自定义计费策略）永不被自动覆盖。</span>
+          <span>🔒 自动模式：模型从供应商目录选择/新增（新模型靠面板「采纳」添加，不会被自动回填），价格由公式链自动推导；运营决策字段保持手动。</span>
+          <span class="auto-banner-sub">切换为简易模式可手动设置每模型每次消耗积分（盈亏自负）。自动模式里增删的模型映射都会被尊重，不会被自动覆盖。</span>
         </div>
         <div v-else-if="effectiveMode === 'simple' && cfg.configMode === 'auto'" class="auto-banner fallback-banner">
           <span>⚠️ 凭据缺失或目录不可用，已按简易模式运行（每模型固定积分，盈亏自负）。</span>
@@ -359,61 +359,66 @@
         <!-- 定价 -->
         <section v-show="activeTab === 'pricing'" class="tab-panel scroll-panel">
           <div class="panel-limit">
-            <!-- simple 模式：简化手动定价（每模型每次消耗积分，盈亏自负） -->
-            <template v-if="effectiveMode === 'simple'">
-              <k-card title="简易定价" class="section" shadow="never">
-                <div class="hint simple-risk-hint">简易模式：每模型按固定积分扣费，不依赖平台价格。定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。</div>
-                <el-form label-width="220px">
-                  <el-form-item label="平台积分单位名称">
-                    <el-input v-model="cfg.creditUnitName" style="width: 200px" />
-                    <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
-                  </el-form-item>
-                  <el-form-item label="试用图片张数（每用户）">
-                    <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
-                    <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
-                  </el-form-item>
-                </el-form>
-                <el-table :data="cfg.modelMappings" size="small" class="dark-table" style="margin-top: 0.5rem">
-                  <el-table-column label="命令后缀" width="140">
-                    <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
-                  </el-table-column>
-                  <el-table-column prop="modelId" label="模型" min-width="220" />
-                  <el-table-column label="每次消耗积分" width="180">
-                    <template #default="{ row }">
-                      <el-input-number v-model="row.creditCostPerImage" :min="0" :step="1" :precision="2" size="small" controls-position="right" style="width: 140px" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="80">
-                    <template #default="{ $index }">
-                      <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <el-button size="small" style="margin-top: 0.5rem" @click="addMapping">添加模型</el-button>
-              </k-card>
-            </template>
-            <!-- auto 模式：完整定价（平台积分 + 公式链 + 展示偏好） -->
-            <template v-else>
-            <k-card title="定价" class="section" shadow="never">
-              <el-form label-width="260px">
-                <el-divider content-position="left">A · 平台积分</el-divider>
+            <!-- 共有：模型映射编辑器（两模式共用） -->
+            <k-card title="模型映射" class="section" shadow="never">
+              <div class="hint">聊天命令中的可用模型 = 下表映射；模型 ID 从供应商目录（可用模型）中选择。第一条为默认模型，可用 -后缀 临时切换。</div>
+              <el-table :data="cfg.modelMappings" size="small" class="dark-table" style="margin-top: 0.5rem">
+                <el-table-column label="命令后缀" width="140">
+                  <template #default="{ row }"><el-input v-model="row.suffix" size="small" /></template>
+                </el-table-column>
+                <el-table-column label="模型" min-width="270">
+                  <template #default="{ row }">
+                    <el-select v-model="row.modelId" filterable size="small" style="width: 100%">
+                      <el-option v-for="m in selectableModels" :key="m.id" :value="m.id" :label="`${m.id}（${m.yunwuCost?.label ?? '未知'}）`" />
+                      <el-option v-if="!selectableModels.some(m => m.id === row.modelId)" :value="row.modelId" :label="`${row.modelId}（目录外）`" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column v-if="effectiveMode === 'simple'" label="每次消耗积分" width="180">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.creditCostPerImage" :min="0" :step="1" :precision="2" size="small" controls-position="right" style="width: 140px" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="80">
+                  <template #default="{ $index }">
+                    <el-button link type="danger" size="small" @click="cfg.modelMappings.splice($index, 1)">删</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button size="small" style="margin-top: 0.5rem" @click="addMapping">添加模型</el-button>
+              <div v-if="effectiveMode === 'simple'" class="hint simple-risk-hint" style="margin-top: 0.5rem">简易模式：每模型按固定积分扣费，不依赖平台价格。定价过低 = 亏损、过高 = 用户流失，盈亏由管理员自行承担。</div>
+
+              <!-- 自动推导建议（方案 ii）：目录刷新只给出"新可用模型"，不自动落盘；采纳后才写入，保存尊重手动增删 -->
+              <div v-if="suggestedMappings.length" class="suggestion-banner" style="margin-top: 0.75rem">
+                <span>目录有 {{ suggestedMappings.length }} 个新可用模型可补：{{ suggestedMappings.map(m => m.modelId).join('、') }}。</span>
+                <el-button size="small" type="primary" @click="adoptSuggestions">采纳</el-button>
+              </div>
+            </k-card>
+
+            <!-- 共有：计费基础 -->
+            <k-card title="计费基础" class="section" shadow="never">
+              <el-form label-width="220px">
                 <el-form-item label="平台积分单位名称">
-                  <el-input v-model="cfg.creditUnitName" style="width: 160px" />
+                  <el-input v-model="cfg.creditUnitName" style="width: 200px" />
                   <div class="hint">聊天里对用户展示余额/消耗时使用的单位（例如"积分"、"魔力值"）。</div>
                 </el-form-item>
                 <el-form-item label="试用图片张数（每用户）">
                   <el-input-number v-model="cfg.trialImageLimit" :min="0" :max="100" :step="1" />
                   <div class="hint">新用户可免费生成的图片张数；0 为禁用试用。试用不计入积分。</div>
                 </el-form-item>
-
                 <el-form-item label="每日免费试用模型">
                   <el-select v-model="cfg.freeTrialModelId" clearable placeholder="选择模型映射中的 modelId" style="width: 320px">
                     <el-option v-for="m in cfg.modelMappings" :key="m.modelId" :value="m.modelId" :label="`${m.suffix || m.modelId}（${m.modelId}）`" />
                   </el-select>
                   <div class="hint">只有选中的模型允许普通用户使用每日免费额度；为空时禁用每日免费。</div>
                 </el-form-item>
+              </el-form>
+            </k-card>
 
-                <el-divider content-position="left">B · 自动定价（USD 成本 → 平台积分 → 用户售价）</el-divider>
+            <!-- auto 模式：自动定价公式链参数（simple 模式每模型固定积分已在映射表内） -->
+            <template v-if="effectiveMode === 'auto'">
+            <k-card title="自动定价（USD 成本 → 平台积分 → 用户售价）" class="section" shadow="never">
+              <el-form label-width="260px">
                 <el-form-item label="1 元人民币 = N 平台积分">
                   <el-input-number v-model="cfg.creditsPerCny" :min="0.01" :step="1" :precision="2" />
                   <div class="hint">人民币与平台积分的换算比例；同时用作管理员余额/充值提示的估值。</div>
@@ -438,8 +443,10 @@
                   公式：用户扣费 = USD 成本 × usdToRmb × 「1 元 = N 平台积分」 × (1 + 加成% / 100)。
                   MJ 等逐任务精确计费模型在「供应商与凭证」页配置日志真源结算凭据后按 quota / quotaPerUnit 结算；其它模型走目录公式链。
                 </div>
-
-                <el-divider content-position="left">C · 展示偏好</el-divider>
+              </el-form>
+            </k-card>
+            <k-card title="展示偏好" class="section" shadow="never">
+              <el-form label-width="260px">
                 <el-form-item label="生成结束时显示本次消耗">
                   <el-switch v-model="cfg.showCreditCostInResult" />
                 </el-form-item>
@@ -564,26 +571,15 @@ function openVideoTools(): void {
   void router.push('/aka-tools-video')
 }
 
-const SIMPLE_TABS = [
+const TABS = [
   { key: 'overview', label: '总览' },
   { key: 'credentials', label: '供应商' },
+  { key: 'catalog', label: '模型列表' },
   { key: 'pricing', label: '模型定价' },
   { key: 'presets', label: '预设' },
   { key: 'operations', label: '运营' },
 ]
-const AUTO_TABS = [
-  { key: 'overview', label: '总览' },
-  { key: 'credentials', label: '供应商' },
-  { key: 'catalog', label: '模型' },
-  { key: 'operations', label: '运营' },
-  { key: 'presets', label: '预设' },
-]
-const tabs = computed(() => {
-  if (effectiveMode.value === 'auto') return AUTO_TABS
-  if (cfg.value?.configMode === 'simple') return SIMPLE_TABS
-  // auto 意图但 fallback simple：按 simple 布局展示，顶部横幅提示降级原因
-  return SIMPLE_TABS
-})
+const tabs = computed(() => TABS)
 const activeTab = ref('overview')
 
 /** 运行时生效模式（来自后端 effectiveMode 判定；未加载时按配置意图兜底）。 */
@@ -687,6 +683,20 @@ function removeInteractionOverride(index: number) {
 
 const catalogModels = computed(() => state.value?.catalog?.models ?? [])
 const selectableModels = computed(() => state.value?.catalog?.selectableModels ?? [])
+const suggestedMappings = computed(() => state.value?.suggestedMappings ?? [])
+
+/** 采纳自动推导建议：把目录里"新可用模型"加入映射（去重），待用户保存落盘。 */
+function adoptSuggestions() {
+  const existing = new Set((cfg.value.modelMappings ?? []).map((m: any) => m.modelId))
+  const added = suggestedMappings.value.filter((m: any) => !existing.has(m.modelId))
+  if (!added.length) {
+    ElMessage.info('没有可采纳的新模型')
+    return
+  }
+  if (!cfg.value.modelMappings) cfg.value.modelMappings = []
+  cfg.value.modelMappings.push(...added)
+  ElMessage.success(`已加入 ${added.length} 个模型映射，记得点保存生效`)
+}
 const filteredCatalog = computed(() => {
   const kw = catalogFilter.value.trim().toLowerCase()
   if (!kw) return catalogModels.value
