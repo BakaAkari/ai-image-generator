@@ -97,7 +97,7 @@ describe('合成图向导（Bug 4）', () => {
     expect(String(r2)).toContain('已收到 1 张')
 
     const r3 = await mw(makeSession(`<img src="${IMG_2}"/>`), next)
-    expect(r3).toBe('请输入合成描述')
+    expect(String(r3)).toContain('请输入合成描述')
 
     const r4 = await mw(makeSession('把两张图合成一张海报'), next)
     expect(String(r4)).toContain('1 ·') // 模型列表

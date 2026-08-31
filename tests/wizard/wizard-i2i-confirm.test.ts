@@ -96,7 +96,7 @@ async function walkToConfirm(handler: WizardHandler) {
   expect(r1).toBe('请先发送 1 张图片')
 
   const r2 = await mw(makeSession(`<img src="${INTERNAL_IMG}"/>`), next)
-  expect(r2).toBe('请输入修改描述')
+  expect(String(r2)).toContain('请输入修改描述')
 
   const r3 = await mw(makeSession('把背景换成蓝色'), next)
   expect(String(r3)).toContain('1 ·') // 模型列表

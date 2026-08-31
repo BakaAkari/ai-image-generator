@@ -75,6 +75,23 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     return reply.split('\n')[0].slice(0, 60)
   }
 
+  /** 步骤上下文前缀：让用户始终知道自己走到哪一步、bot 的回复属于哪一步。
+   *  解决「提示文本与向导状态错位」——用户在 model-select 步重发描述时不再以为 bot 没反应。 */
+  const STEP_LABELS: Record<string, string> = {
+    'await-prompt': '第1步 · 画面描述',
+    'model-select': '第2步 · 选择模型',
+    'param-resolution': '第3步 · 选择分辨率',
+    'param-select': '第3步 · 设置参数',
+    'confirm': '确认生成',
+  }
+  function stepPrefix(w: WizardSession): string {
+    const label = STEP_LABELS[w.step] ?? w.step
+    const recorded = w.prompt && w.step !== 'await-prompt'
+      ? ` · 已记录描述「${w.prompt.slice(0, 20)}」`
+      : ''
+    return `〔${label}〕${recorded}`
+  }
+
   // ─── 工具函数 ──────────────────────────────────────────────────────────────
 
   function getModels(): ImageModelInfo[] {
@@ -899,9 +916,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const inputSummary = { scope: scopeKey, step: w.step, mode: w.mode, text: text.slice(0, 40), images: images.length }
       detailLog('收到输入', inputSummary)
 
-      /** 记录步骤处理结果并返回（统一出口，保证每次操作都有结果日志） */
+      /** 记录步骤处理结果并返回（统一出口，保证每次操作都有结果日志）。
+       *  非终态回复统一加步骤上下文前缀，用户不会把上一步提示误认为当前状态。 */
       const replyWith = (event: string, reply: string | void, extra?: Record<string, unknown>) => {
         detailLog(event, { ...inputSummary, nextStep: w.step, reply: summarizeReply(reply), ...extra })
+        if (typeof reply === 'string' && reply && extra?.nextStep !== '-') {
+          return `${stepPrefix(w)}\n${reply}`
+        }
         return reply
       }
 
@@ -996,8 +1017,12 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
           return replyWith('选择分辨率', await handleParamResolution(w, text), { resolution: String(w.params['resolution'] ?? '') })
         case 'param-select':
           return replyWith('设置参数', await handleParamSelect(w, text))
-        case 'confirm':
-          return replyWith('确认步骤', await handleConfirm(session, w, text), { confirmed: !wizardSessions.get(scopeKey) })
+        case 'confirm': {
+          const reply = await handleConfirm(session, w, text)
+          // 会话已在 handleConfirm 入口删除（成功或失败回执路径），同步返回值视为终态不加步骤前缀
+          const terminal = !wizardSessions.get(scopeKey) || typeof reply === 'string'
+          return replyWith('确认步骤', reply, { confirmed: terminal, nextStep: terminal ? '-' : w.step })
+        }
         default:
           return next()
       }
