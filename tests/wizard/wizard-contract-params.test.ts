@@ -21,6 +21,9 @@ import { createWizardHandler } from '../../src/wizard/wizard-handler.js'
 import { WizardSessionManager } from '../../src/services/wizard-session.js'
 import { getContractById } from '../../src/contracts/registry.js'
 
+/** 记录 session.send 的全部文本；中间件回复经此通道送达 */
+const sentMessages: string[] = []
+
 function makeSession(content: string) {
   return {
     userId: 'u1',
@@ -29,8 +32,13 @@ function makeSession(content: string) {
     channelId: 'ch-a',
     content,
     quote: undefined,
-    send: vi.fn(),
+    send: async (text: string) => { sentMessages.push(String(text)) },
   } as any
+}
+
+/** 最近一条经 session.send 送达的向导回复 */
+function lastSent(): string {
+  return sentMessages[sentMessages.length - 1] ?? ''
 }
 
 function makeArgv(session: any) {
@@ -69,14 +77,15 @@ function setup(contractId: string) {
   return { handler }
 }
 
-/** 走完「命令 → 描述 → 选模型」，返回参数页文本 */
+/** 走完「命令 → 描述 → 选模型」，返回参数页文本（经 session.send 送达的最后一条） */
 async function reachParamSelect(handler: ReturnType<typeof setup>['handler']) {
   const next = vi.fn()
   const mw = handler.getMiddleware()
   const s1 = makeSession('文生图')
   await handler.handleCommand(s1, '文生图', makeArgv(s1), undefined, undefined)
   await mw(makeSession('一只猫'), next)
-  return mw(makeSession('1'), next)
+  await mw(makeSession('1'), next)
+  return lastSent()
 }
 
 describe('向导契约感知参数过滤', () => {
@@ -107,11 +116,12 @@ describe('向导契约感知参数过滤', () => {
     expect(resPage).not.toContain('16:9') // 比例此时尚未展示
 
     // 非法编号 → 重提示
-    const invalid = await mw(makeSession('9'), next)
-    expect(String(invalid)).toContain('请输入 1-3 之间的编号')
+    await mw(makeSession('9'), next)
+    expect(lastSent()).toContain('请输入 1-3 之间的编号')
 
     // 选 4K → 比例收窄为 16:9 / 9:16；1:1 / 3:2 不出现；分辨率参数已移除
-    const paramPage = String(await mw(makeSession('3'), next))
+    await mw(makeSession('3'), next)
+    const paramPage = lastSent()
     expect(paramPage).toContain('16:9')
     expect(paramPage).toContain('9:16')
     expect(paramPage).not.toContain('1:1')
@@ -119,10 +129,11 @@ describe('向导契约感知参数过滤', () => {
     expect(paramPage).not.toContain('标清 1K')
 
     // 收窄后比例选项 [16:9, 9:16]：'2,1' = 9:16 + 张数 1 → 确认页含已选分辨率与比例
-    const ok = await mw(makeSession('2,1'), next)
-    expect(String(ok)).toContain('确认生成')
-    expect(String(ok)).toContain('超清 4K')
-    expect(String(ok)).toContain('9:16')
+    await mw(makeSession('2,1'), next)
+    const ok = lastSent()
+    expect(ok).toContain('确认生成')
+    expect(ok).toContain('超清 4K')
+    expect(ok).toContain('9:16')
   })
 
   test('gpt-image-2-c：依赖流 + supportsN=false → 比例页无「生成张数」；连续「跳过」直达确认', async () => {
@@ -133,12 +144,14 @@ describe('向导契约感知参数过滤', () => {
     const resPage = String(await reachParamSelect(handler))
     expect(resPage).toContain('选择分辨率')
 
-    const paramPage = String(await mw(makeSession('跳过'), next))
+    await mw(makeSession('跳过'), next)
+    const paramPage = lastSent()
     expect(paramPage).not.toContain('生成张数')
 
-    const ok = await mw(makeSession('跳过'), next)
-    expect(String(ok)).toContain('确认生成')
-    expect(String(ok)).not.toContain('生成张数')
+    await mw(makeSession('跳过'), next)
+    const ok = lastSent()
+    expect(ok).toContain('确认生成')
+    expect(ok).not.toContain('生成张数')
   })
 
   test('无契约（未知模型）→ 保守展示协议全集，不阻断向导', async () => {

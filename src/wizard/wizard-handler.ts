@@ -916,14 +916,19 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const inputSummary = { scope: scopeKey, step: w.step, mode: w.mode, text: text.slice(0, 40), images: images.length }
       detailLog('收到输入', inputSummary)
 
-      /** 记录步骤处理结果并返回（统一出口，保证每次操作都有结果日志）。
-       *  非终态回复统一加步骤上下文前缀，用户不会把上一步提示误认为当前状态。 */
-      const replyWith = (event: string, reply: string | void, extra?: Record<string, unknown>) => {
+      /** 记录步骤处理结果并发送回复（统一出口）。
+       *  Koishi v4 中间件返回字符串只拦截消息、不会自动发送——必须显式 session.send。
+       *  非终态回复加步骤上下文前缀；发送后返回 void 拦截该消息。 */
+      const replyWith = async (event: string, reply: string | void, extra?: Record<string, unknown>): Promise<void> => {
         detailLog(event, { ...inputSummary, nextStep: w.step, reply: summarizeReply(reply), ...extra })
-        if (typeof reply === 'string' && reply && extra?.nextStep !== '-') {
-          return `${stepPrefix(w)}\n${reply}`
+        if (typeof reply === 'string' && reply) {
+          const text = extra?.nextStep === '-' ? reply : `${stepPrefix(w)}\n${reply}`
+          try {
+            await session.send(text)
+          } catch (sendError) {
+            logger.warn('向导回复发送失败', { ...inputSummary, message: sendError instanceof Error ? sendError.message : String(sendError) })
+          }
         }
-        return reply
       }
 
       // 收到向导相关消息即视为活动，刷新每步超时
@@ -1007,24 +1012,30 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
         // 图片已更新；若同时带有文本则继续按当前步骤处理
       }
 
-      // 按步骤路由
-      switch (w.step) {
-        case 'await-prompt':
-          return replyWith('输入描述', await handleAwaitPrompt(w, session, text, images))
-        case 'model-select':
-          return replyWith('选择模型', await handleModelSelect(w, text), { model: w.modelId ?? '' })
-        case 'param-resolution':
-          return replyWith('选择分辨率', await handleParamResolution(w, text), { resolution: String(w.params['resolution'] ?? '') })
-        case 'param-select':
-          return replyWith('设置参数', await handleParamSelect(w, text))
-        case 'confirm': {
-          const reply = await handleConfirm(session, w, text)
-          // 会话已在 handleConfirm 入口删除（成功或失败回执路径），同步返回值视为终态不加步骤前缀
-          const terminal = !wizardSessions.get(scopeKey) || typeof reply === 'string'
-          return replyWith('确认步骤', reply, { confirmed: terminal, nextStep: terminal ? '-' : w.step })
+      // 按步骤路由（经 try/catch 兜住 session.send 失败：发送失败不回退到返回值，
+      // 防止用户收到重复消息——detail 日志已有记录，用户侧直接无回复并可在日志定位）
+      try {
+        switch (w.step) {
+          case 'await-prompt':
+            return await replyWith('输入描述', await handleAwaitPrompt(w, session, text, images))
+          case 'model-select':
+            return await replyWith('选择模型', await handleModelSelect(w, text), { model: w.modelId ?? '' })
+          case 'param-resolution':
+            return await replyWith('选择分辨率', await handleParamResolution(w, text), { resolution: String(w.params['resolution'] ?? '') })
+          case 'param-select':
+            return await replyWith('设置参数', await handleParamSelect(w, text))
+          case 'confirm': {
+            const reply = await handleConfirm(session, w, text)
+            // 会话已在 handleConfirm 入口删除（成功或失败回执路径），同步返回值视为终态不加步骤前缀
+            const terminal = !wizardSessions.get(scopeKey) || typeof reply === 'string'
+            return await replyWith('确认步骤', reply, { confirmed: terminal, nextStep: terminal ? '-' : w.step })
+          }
+          default:
+            return next()
         }
-        default:
-          return next()
+      } catch (err) {
+        logger.warn('向导步骤处理失败', { ...inputSummary, message: err instanceof Error ? err.message : String(err) })
+        return
       }
     }
   }

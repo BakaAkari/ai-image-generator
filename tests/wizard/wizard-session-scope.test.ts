@@ -36,6 +36,11 @@ function makeSession(content: string, overrides: Record<string, any> = {}) {
   } as any
 }
 
+/** 该会话 send mock 收到的全部文本 */
+function sentTo(session: any): string[] {
+  return (session.send.mock.calls as any[][]).map(c => String(c[0]))
+}
+
 function makeArgv(session: any) {
   // 模拟真实命令 action：argv 存在但无行内 prompt/图片
   return { session, args: [], options: {}, rest: '' } as any
@@ -83,9 +88,11 @@ describe('向导会话键（「跟账户走」，用户级唯一链路）', () =
     expect(r1).toBe('请发送画面描述')
 
     // B 频道发消息 → 驱动同一条向导（进入模型列表），不被放行
-    const rB = await mw(makeSession('一只猫', { channelId: 'ch-b' }), next)
+    const sB = makeSession('一只猫', { channelId: 'ch-b' })
+    const rB = await mw(sB, next)
     expect(next).not.toHaveBeenCalled()
-    expect(String(rB)).toContain('1 ·')
+    expect(rB).toBeUndefined() // 中间件经 session.send 发送后返回 void 拦截
+    expect(sentTo(sB).some(s => s.includes('1 ·'))).toBe(true)
 
     // B 频道重复发起 → 冲突（全局唯一链路，防并发调用）
     const r2 = await handler.handleCommand(makeSession('文生图', { channelId: 'ch-b' }), '文生图', makeArgv(makeSession('文生图', { channelId: 'ch-b' })), undefined, undefined)
@@ -108,8 +115,10 @@ describe('向导会话键（「跟账户走」，用户级唯一链路）', () =
     await handler.handleCommand(makeSession('文生图'), '文生图', makeArgv(makeSession('文生图')), undefined, undefined)
 
     // 在 B 频道取消 A 频道启动的向导
-    const r = await mw(makeSession('取消', { channelId: 'ch-b' }), next)
-    expect(r).toBe('已退出生成向导')
+    const sCancel = makeSession('取消', { channelId: 'ch-b' })
+    const r = await mw(sCancel, next)
+    expect(r).toBeUndefined()
+    expect(sentTo(sCancel).some(s => s.includes('已退出生成向导'))).toBe(true)
 
     // 向导已全局退出：消息完全放行
     const r2 = await mw(makeSession('一只猫', { channelId: 'ch-a' }), next)
@@ -165,7 +174,9 @@ describe('向导超时（Bug 3.3）', () => {
     await handler.handleCommand(makeSession('文生图'), '文生图', makeArgv(makeSession('文生图')), undefined, undefined)
     const msg = makeSession('一只猫')
     const r = await mw(msg, next)
-    expect(String(r)).toContain('1 ·')
-    expect(msg.send).not.toHaveBeenCalled()
+    expect(r).toBeUndefined()
+    // 未超时：无超时提醒，向导正常回复模型列表（经 session.send）
+    expect(sentTo(msg).some(s => s.includes('1 ·'))).toBe(true)
+    expect(sentTo(msg).some(s => s.includes('超时退出'))).toBe(false)
   })
 })

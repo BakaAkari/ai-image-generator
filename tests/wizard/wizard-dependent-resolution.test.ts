@@ -20,6 +20,9 @@ import { createWizardHandler } from '../../src/wizard/wizard-handler.js'
 import { WizardSessionManager } from '../../src/services/wizard-session.js'
 import { getContractById } from '../../src/contracts/registry.js'
 
+/** 记录 session.send 的全部文本；中间件回复经此通道送达 */
+const sentMessages: string[] = []
+
 function makeSession(content: string) {
   return {
     userId: 'u1',
@@ -28,8 +31,13 @@ function makeSession(content: string) {
     channelId: 'ch-a',
     content,
     quote: undefined,
-    send: vi.fn(),
+    send: async (text: string) => { sentMessages.push(String(text)) },
   } as any
+}
+
+/** 最近一条经 session.send 送达的向导回复 */
+function lastSent(): string {
+  return sentMessages[sentMessages.length - 1] ?? ''
 }
 
 function makeArgv(session: any) {
@@ -70,19 +78,21 @@ function setup(contractId: string) {
   return { handler, mw, next }
 }
 
-/** 走完「命令 → 描述 → 选模型」,返回分辨率页文本 */
+/** 走完「命令 → 描述 → 选模型」,返回分辨率页文本（经 session.send 送达的最后一条） */
 async function reachResolutionStep(ctx: ReturnType<typeof setup>) {
   const s1 = makeSession('文生图')
   await ctx.handler.handleCommand(s1, '文生图', makeArgv(s1), undefined, undefined)
   await ctx.mw(makeSession('一只猫'), ctx.next)
-  return ctx.mw(makeSession('1'), ctx.next)
+  await ctx.mw(makeSession('1'), ctx.next)
+  return lastSent()
 }
 
 describe('向导依赖式参数流(gpt-image-2)', () => {
   test('1K → 比例收窄为 1:1/3:2/2:3,不含 16:9/9:16', async () => {
     const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
-    const page = String(await ctx.mw(makeSession('1'), ctx.next))
+    await ctx.mw(makeSession('1'), ctx.next)
+    const page = lastSent()
     expect(page).toContain('1:1')
     expect(page).toContain('3:2')
     expect(page).toContain('2:3')
@@ -94,7 +104,8 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   test('2K → 比例收窄为 1:1/16:9', async () => {
     const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
-    const page = String(await ctx.mw(makeSession('2'), ctx.next))
+    await ctx.mw(makeSession('2'), ctx.next)
+    const page = lastSent()
     expect(page).toContain('1:1')
     expect(page).toContain('16:9')
     expect(page).not.toContain('9:16')
@@ -105,7 +116,8 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
     const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('跳过'), ctx.next)
-    const ok = String(await ctx.mw(makeSession('跳过'), ctx.next))
+    await ctx.mw(makeSession('跳过'), ctx.next)
+    const ok = lastSent()
     expect(ok).toContain('确认生成')
     expect(ok).toContain('标清 1K')
     expect(ok).toContain('1:1')
@@ -116,11 +128,12 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('1'), ctx.next) // 先选 1K
 
-    const back = String(await ctx.mw(makeSession('上一步'), ctx.next))
-    expect(back).toContain('选择分辨率')
+    await ctx.mw(makeSession('上一步'), ctx.next)
+    expect(lastSent()).toContain('选择分辨率')
 
     // 重选 4K:收窄必须基于完整参数定义重算,不能停留在 1K 的收窄结果
-    const page = String(await ctx.mw(makeSession('3'), ctx.next))
+    await ctx.mw(makeSession('3'), ctx.next)
+    const page = lastSent()
     expect(page).toContain('9:16')
     expect(page).not.toContain('3:2')
   })
@@ -128,7 +141,8 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
   test('分辨率页「上一步」→ 回模型列表', async () => {
     const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
-    const back = String(await ctx.mw(makeSession('上一步'), ctx.next))
+    await ctx.mw(makeSession('上一步'), ctx.next)
+    const back = lastSent()
     expect(back).toContain('[OPENAI]')
     expect(back).toContain('-gpt')
   })
@@ -137,12 +151,13 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
     const ctx = setup('newapi.openai.gpt-image-2.generate')
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('2'), ctx.next) // 2K
-    const confirm = String(await ctx.mw(makeSession('2,1'), ctx.next)) // 16:9 + 1 张
+    await ctx.mw(makeSession('2,1'), ctx.next) // 16:9 + 1 张
+    const confirm = lastSent()
     expect(confirm).toContain('确认生成')
     expect(confirm).toContain('高清 2K')
 
-    const back = String(await ctx.mw(makeSession('上一步'), ctx.next))
-    expect(back).toContain('选择分辨率')
+    await ctx.mw(makeSession('上一步'), ctx.next)
+    expect(lastSent()).toContain('选择分辨率')
   })
 
   test('完整链路:4K + 9:16 确认后触发生成(resolution 以显式参数传递)', async () => {
@@ -150,8 +165,9 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('3'), ctx.next) // 4K
     await ctx.mw(makeSession('2,1'), ctx.next) // 9:16 + 1 张
-    const done = await ctx.mw(makeSession('确认'), ctx.next)
-    // handleConfirm 返回 void(异步生成)或错误文案;此处不应是参数错误文案
-    expect(String(done ?? '')).not.toContain('参数')
+    sentMessages.length = 0
+    await ctx.mw(makeSession('确认'), ctx.next)
+    // handleConfirm 经 session.send 发送编排器结果或错误回执;此处不应是参数错误文案
+    expect(sentMessages.join('\n')).not.toContain('参数')
   })
 })

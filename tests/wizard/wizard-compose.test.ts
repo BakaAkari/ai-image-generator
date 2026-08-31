@@ -35,6 +35,9 @@ const IMG_1 = 'internal:lark/self/im/v1/messages/m1/resources/k1?type=image'
 const IMG_2 = 'internal:lark/self/im/v1/messages/m2/resources/k2?type=image'
 const IMG_3 = 'internal:lark/self/im/v1/messages/m3/resources/k3?type=image'
 
+/** 记录 session.send 的全部文本（模拟真实发送；非编排器桩结果的一律抛错防静默吞掉） */
+const sentMessages: string[] = []
+
 function makeSession(content: string, overrides: Record<string, any> = {}) {
   return {
     userId: 'u1',
@@ -43,6 +46,9 @@ function makeSession(content: string, overrides: Record<string, any> = {}) {
     isDirect: true,
     content,
     quote: undefined,
+    send: async (text: string) => {
+      sentMessages.push(typeof text === 'string' ? text : String(text))
+    },
     ...overrides,
   } as any
 }
@@ -94,24 +100,26 @@ describe('合成图向导（Bug 4）', () => {
     expect(r1).toBe('请发送至少 2 张图片（2-8 张）')
 
     const r2 = await mw(makeSession(`<img src="${IMG_1}"/>`), next)
-    expect(String(r2)).toContain('已收到 1 张')
+    expect(r2).toBeUndefined()
+    expect(sentMessages.some(s => s.includes('已收到 1 张'))).toBe(true)
 
     const r3 = await mw(makeSession(`<img src="${IMG_2}"/>`), next)
-    expect(String(r3)).toContain('请输入合成描述')
+    expect(r3).toBeUndefined()
+    expect(sentMessages.some(s => s.includes('请输入合成描述'))).toBe(true)
 
-    const r4 = await mw(makeSession('把两张图合成一张海报'), next)
-    expect(String(r4)).toContain('1 ·') // 模型列表
+    await mw(makeSession('把两张图合成一张海报'), next)
+    expect(sentMessages.some(s => s.includes('1 ·'))).toBe(true) // 模型列表
 
-    const r5 = await mw(makeSession('1'), next)
-    expect(String(r5)).toContain('参数设置')
+    await mw(makeSession('1'), next)
+    expect(sentMessages.some(s => s.includes('参数设置'))).toBe(true)
 
-    const r6 = await mw(makeSession('跳过'), next)
-    expect(String(r6)).toContain('确认生成')
-    expect(String(r6)).toContain('模式 · 合成图')
-    expect(String(r6)).toContain('图片 · 2 张')
+    await mw(makeSession('跳过'), next)
+    expect(sentMessages.some(s => s.includes('确认生成') && s.includes('模式 · 合成图') && s.includes('图片 · 2 张'))).toBe(true)
 
+    sentMessages.length = 0
     const r7 = await mw(makeSession('确认'), next)
-    expect(r7).toBe('compose')
+    expect(r7).toBeUndefined()
+    expect(sentMessages.some(s => s === 'compose')).toBe(true)
     expect(calls).toHaveLength(1)
     expect(calls[0].type).toBe('compose') // 关键：不再走 t2i
     const { args } = calls[0]
@@ -140,10 +148,14 @@ describe('合成图向导（Bug 4）', () => {
     await mw(makeSession('1'), next)
     await mw(makeSession('跳过'), next)
 
+    sentMessages.length = 0
     const r = await mw(makeSession(`<img src="${IMG_3}"/>`), next)
-    expect(String(r)).toContain('已更新图片（当前 3 张）')
+    expect(r).toBeUndefined()
+    expect(sentMessages.some(s => s.includes('已更新图片（当前 3 张）'))).toBe(true)
 
+    sentMessages.length = 0
     await mw(makeSession('确认'), next)
+    expect(sentMessages.some(s => s === 'compose')).toBe(true)
     expect(calls[0].args[6]).toEqual({ includeQuote: false, initialImages: [IMG_1, IMG_2, IMG_3] })
   })
 })

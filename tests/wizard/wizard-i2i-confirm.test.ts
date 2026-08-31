@@ -39,6 +39,9 @@ import type { WizardHandler } from '../../src/wizard/wizard-handler.js'
 const INTERNAL_IMG = 'internal:lark/self123/im/v1/messages/m1/resources/k1?type=image'
 const INTERNAL_IMG_2 = 'internal:lark/self123/im/v1/messages/m2/resources/k2?type=image'
 
+/** 记录 session.send 的全部文本（模拟真实发送；非编排器桩结果的一律抛错防静默吞掉） */
+const sentMessages: string[] = []
+
 function makeSession(content: string, overrides: Record<string, any> = {}) {
   return {
     userId: 'u1',
@@ -47,6 +50,9 @@ function makeSession(content: string, overrides: Record<string, any> = {}) {
     isDirect: true,
     content,
     quote: undefined,
+    send: async (text: string) => {
+      sentMessages.push(typeof text === 'string' ? text : String(text))
+    },
     ...overrides,
   } as any
 }
@@ -93,25 +99,26 @@ async function walkToConfirm(handler: WizardHandler) {
   const mw = handler.getMiddleware()
 
   const r1 = await handler.handleCommand(makeSession('图生图'), '图生图', makeArgv(makeSession('图生图')), undefined, undefined)
-  expect(r1).toBe('请先发送 1 张图片')
+  expect(r1).toBe('请先发送 1 张图片') // 命令返回值：由命令框架发送
 
-  const r2 = await mw(makeSession(`<img src="${INTERNAL_IMG}"/>`), next)
-  expect(String(r2)).toContain('请输入修改描述')
+  await mw(makeSession(`<img src="${INTERNAL_IMG}"/>`), next)
+  expect(sentMessages.some(s => s.includes('请输入修改描述'))).toBe(true)
 
-  const r3 = await mw(makeSession('把背景换成蓝色'), next)
-  expect(String(r3)).toContain('1 ·') // 模型列表
+  await mw(makeSession('把背景换成蓝色'), next)
+  expect(sentMessages.some(s => s.includes('1 ·'))).toBe(true) // 模型列表
 
-  const r4 = await mw(makeSession('1'), next)
-  expect(String(r4)).toContain('参数设置')
+  await mw(makeSession('1'), next)
+  expect(sentMessages.some(s => s.includes('参数设置'))).toBe(true)
 
-  const r5 = await mw(makeSession('跳过'), next)
-  expect(String(r5)).toContain('确认生成')
+  await mw(makeSession('跳过'), next)
+  expect(sentMessages.some(s => s.includes('确认生成'))).toBe(true)
 
   return { mw, next }
 }
 
 describe('图生图向导 → 确认生成链路', () => {
   test('分步收图后「确认」：internal: 图片原样透传，includeQuote=false（Bug 1 / 3.5 回归）', async () => {
+    sentMessages.length = 0
     const { handler, calls } = setup()
     const { mw, next } = await walkToConfirm(handler)
 
@@ -121,7 +128,8 @@ describe('图生图向导 → 确认生成链路', () => {
     })
     const r = await mw(confirmSession, next)
 
-    expect(r).toBe('i2i')
+    expect(r).toBeUndefined() // 中间件经 session.send 发送后返回 void 拦截
+    expect(sentMessages.some(s => s === 'i2i')).toBe(true) // 编排器结果经 session.send 送达
     expect(calls).toHaveLength(1)
     const { args } = calls[0]
     expect(args[1]).toBe(INTERNAL_IMG) // imgParam 为向导收集的 internal: URL
@@ -131,15 +139,20 @@ describe('图生图向导 → 确认生成链路', () => {
   })
 
   test('后续步骤收到图片：更新图片并重新渲染，不再静默吞掉（Bug 3.2）', async () => {
+    sentMessages.length = 0
     const { handler, calls } = setup()
     const { mw, next } = await walkToConfirm(handler)
 
     // confirm 步骤补发/更换图片
+    sentMessages.length = 0
     const r = await mw(makeSession(`<img src="${INTERNAL_IMG_2}"/>`), next)
-    expect(String(r)).toContain('已更新图片')
-    expect(String(r)).toContain('确认生成')
+    expect(r).toBeUndefined()
+    expect(sentMessages.some(s => s.includes('已更新图片'))).toBe(true)
+    expect(sentMessages.some(s => s.includes('确认生成'))).toBe(true)
 
+    sentMessages.length = 0
     await mw(makeSession('确认'), next)
+    expect(sentMessages.some(s => s === 'i2i')).toBe(true)
     expect(calls).toHaveLength(1)
     expect(calls[0].args[1]).toBe(INTERNAL_IMG_2) // 用的是更换后的图片
   })
