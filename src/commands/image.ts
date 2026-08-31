@@ -13,7 +13,8 @@ import type { Argv, Command, Context, Session } from 'koishi'
 import type { Config } from '../shared/config.js'
 import { COMMANDS } from '../shared/constants.js'
 import { detectDirectIntent } from '../shared/direct-intent.js'
-import { resolveInteractionMode } from '../shared/interaction-mode.js'
+import { isGroupChat, resolveInteractionMode } from '../shared/interaction-mode.js'
+import { isDetailLogLevel } from '../shared/logging.js'
 import type { ImageGenerationHandlers } from '../orchestrators/ImageGenerationOrchestrator.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type {
@@ -60,9 +61,34 @@ function toUserFriendlyError(error: unknown): string | null {
   return null
 }
 
+/** 交互模式解析日志回调，由 registerImageCommands 注入（供模块级 style 命令注册器使用） */
+type InteractionModeLogger = (command: string, config: Config, session: Session, mode: 'advanced' | 'guided', hasDirectIntent: boolean) => void
+let interactionModeLogger: InteractionModeLogger | undefined
+function setInteractionModeLogger(fn: InteractionModeLogger): void {
+  interactionModeLogger = fn
+}
+function logInteractionMode(command: string, config: Config, session: Session, mode: 'advanced' | 'guided', hasDirectIntent: boolean): void {
+  interactionModeLogger?.(command, config, session, mode, hasDirectIntent)
+}
+
 export function registerImageCommands(params: RegisterImageCommandsParams): RegisteredImageCommands {
   const { ctx, service, handlers, getConfig } = params
   const logger = ctx.logger('aka-ai-image-generator')
+
+  /** detail 级别记录交互模式解析结果（guided/advanced 路由的唯一可见性） */
+  setInteractionModeLogger((command, config, session, mode, hasDirectIntent) => {
+    if (!isDetailLogLevel(config.logLevel)) return
+    logger.info('交互模式解析', {
+      command,
+      userId: session.userId ?? '',
+      platform: session.platform ?? '',
+      configured: config.interactionMode,
+      override: config.interactionModeOverrides?.[session.platform ?? ''] ?? '-',
+      effective: mode,
+      isGroup: isGroupChat(session),
+      hasDirectIntent,
+    })
+  })
 
   // ---------------------------------------------------------------------------
   // 文生图：文生图 [-n 数量|-1k|-16:9|-add ...] <prompt:text>
@@ -87,6 +113,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         session,
         { hasDirectIntent },
       )
+      logInteractionMode(COMMANDS.TXT_TO_IMG, config, session, mode, hasDirectIntent)
 
       // guided 模式 → 走交互向导（管理员强制向导，即使命令带后缀也保持）
       if (mode === 'guided' && wizardHandler) {
@@ -145,6 +172,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         session,
         { hasDirectIntent },
       )
+      logInteractionMode(COMMANDS.IMG_TO_IMG, config, session, mode, hasDirectIntent)
 
       // guided 模式 → 走交互向导
       if (mode === 'guided' && wizardHandler) {
@@ -206,6 +234,7 @@ export function registerImageCommands(params: RegisterImageCommandsParams): Regi
         session,
         { hasDirectIntent },
       )
+      logInteractionMode(COMMANDS.COMPOSE_IMAGE, config, session, mode, hasDirectIntent)
 
       // guided 模式 → 走交互向导
       if (mode === 'guided' && wizardHandler) {
@@ -503,6 +532,7 @@ function registerStyleCommand(
         session,
         { hasDirectIntent },
       )
+      logInteractionMode(style.commandName, config, session, resolvedInteractionMode, hasDirectIntent)
 
       if (resolvedInteractionMode === 'guided' && wizardHandler) {
         // guided → 进入向导选模型和参数（管理员强制向导，即使命令带后缀也保持）

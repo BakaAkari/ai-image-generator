@@ -31,6 +31,7 @@ import type {
 } from '../shared/types.js'
 import { queryLogQuotaByRequestId } from '../services/log-quota.js'
 import { applyPromptAppends } from '../shared/generation-setup.js'
+import { isDetailLogLevel } from '../shared/logging.js'
 import type { AiImageGeneratorService } from '../service/AiImageGeneratorService.js'
 import type { UserManager } from '../services/UserManager.js'
 import {
@@ -195,6 +196,12 @@ export function createImageGenerationHandlers(
 ): ImageGenerationHandlers {
   const { service, userManager, logger, getConfig, catalog, getLogAccessCredentials } = params
 
+  /** detail 日志级别下的编排层日志；simple 级别完全静默 */
+  function detailLog(event: string, fields: Record<string, unknown>): void {
+    if (!isDetailLogLevel(getConfig().logLevel)) return
+    logger.info(`编排 ${event}`, fields)
+  }
+
   // ---------------------------------------------------------------------------
   // 内部工具
   // ---------------------------------------------------------------------------
@@ -256,6 +263,7 @@ export function createImageGenerationHandlers(
 
     await session.send('请发送画面描述；回复「取消」中止')
     const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+    detailLog('等待用户输入结果', { userId: session.userId ?? '', kind: wait.kind, phase: 'text-input' })
     if (wait.kind === 'interrupted') return { error: '' }
     if (wait.kind === 'cancelled') return { error: '已取消' }
     if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
@@ -291,6 +299,7 @@ export function createImageGenerationHandlers(
       if (!promptText) {
         await session.send('请发送图片修改描述；回复「取消」中止')
         const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+        detailLog('等待用户输入结果', { userId: session.userId ?? '', kind: wait.kind, phase: 'image-desc' })
         if (wait.kind === 'interrupted') return { error: '' }
         if (wait.kind === 'cancelled') return { error: '已取消' }
         if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
@@ -305,6 +314,7 @@ export function createImageGenerationHandlers(
     await session.send(`请在 ${getPromptTimeoutText(config)}内发送 1 张图片；回复「取消」中止`)
     while (true) {
       const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+      detailLog('等待用户输入结果', { userId: session.userId ?? '', kind: wait.kind, phase: 'image-upload' })
       if (wait.kind === 'interrupted') return { error: '' }
       if (wait.kind === 'cancelled') return { error: '已取消' }
       if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
@@ -321,6 +331,7 @@ export function createImageGenerationHandlers(
         if (!promptText) {
           await session.send('请发送图片修改描述；回复「取消」中止')
           const wait2 = await waitUserInput(session, getPromptTimeoutMs(config))
+          detailLog('等待用户输入结果', { userId: session.userId ?? '', kind: wait2.kind, phase: 'image-desc-after-upload' })
           if (wait2.kind === 'interrupted') return { error: '' }
           if (wait2.kind === 'cancelled') return { error: '已取消' }
           if (wait2.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
@@ -376,6 +387,7 @@ export function createImageGenerationHandlers(
 
     while (true) {
       const wait = await waitUserInput(session, getPromptTimeoutMs(config))
+      detailLog('等待用户输入结果', { userId: session.userId ?? '', kind: wait.kind, phase: 'compose-input' })
       if (wait.kind === 'interrupted') return { error: '' }
       if (wait.kind === 'cancelled') return { error: '已取消' }
       if (wait.kind === 'timeout') return { error: formatPromptTimeoutError(config) }
@@ -424,6 +436,7 @@ export function createImageGenerationHandlers(
     // 限流检查：所有路径（命令 / 向导 / 免计费平台）统一在此拦截，避免各调用点漏加
     const rateLimit = userManager.checkRateLimit(userId, config)
     if (!rateLimit.allowed) {
+      detailLog('限流拒绝', { userId, platform: session.platform ?? '' })
       return formatUserScopedText(session, rateLimit.message || '操作过于频繁，请稍后再试', userId, userName)
     }
 
@@ -437,8 +450,10 @@ export function createImageGenerationHandlers(
     )
     const requestId = userManager.startTask(userId, taskTtlMs)
     if (!requestId) {
+      detailLog('任务锁冲突', { userId, styleName: options.styleName })
       return formatUserScopedText(session, '任务进行中，请完成后再试', userId, userName)
     }
+    detailLog('任务开始', { userId, requestId, styleName: options.styleName, numImages: options.numImages, ttlMs: taskTtlMs })
 
     const startedAt = Date.now()
     const timeoutMs = COMMAND_TIMEOUT_SECONDS * 1000
@@ -463,6 +478,7 @@ export function createImageGenerationHandlers(
       // ── 目录快照（生成前锁定，确保预估价和结算价使用同一份目录数据） ──
       const catalogModels = catalog.current?.models ?? []
       if (!catalogModels.length) {
+        detailLog('模型目录未就绪', { userId, requestId })
         return formatUserScopedText(session, '模型目录尚未就绪，请稍后重试', userId, userName)
       }
       const modelIdForPricing = options.requestContext?.modelId ?? options.displayInfo?.modelId ?? ''
@@ -494,8 +510,17 @@ export function createImageGenerationHandlers(
 
       // 1. 积分预检（免计费平台完全跳过预授权）
       if (!freePlatform) {
+        detailLog('积分预授权', {
+          userId, requestId,
+          model: modelIdForPricing,
+          costSource: estimatedCost?.costSource ?? 'unknown',
+          estimated: estimatedCost?.totalCredits,
+          fixedCost: mappingFixedCost ?? '-',
+          numImages,
+        })
         const reservation = await service.reserveCredits(userId, userName, requestId, estimatedCost!, platform, mapping?.modelId === config.freeTrialModelId)
         if (!reservation.allowed) {
+          detailLog('预授权拒绝', { userId, requestId, model: modelIdForPricing, estimated: estimatedCost?.totalCredits })
           return formatUserScopedText(session, reservation.message || '额度不足｜无法继续生成', userId, userName)
         }
       }
@@ -830,6 +855,7 @@ export function createImageGenerationHandlers(
     } finally {
       generationActive = false
       if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
+      detailLog('任务结束', { userId, requestId, timeoutFired, durationMs: Date.now() - startedAt })
       userManager.endTask(userId, requestId)
     }
   }

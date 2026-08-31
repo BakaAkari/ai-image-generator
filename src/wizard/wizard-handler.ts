@@ -28,6 +28,7 @@ import type { ImageGenerationModifiers, ModelMappingConfig } from '../shared/typ
 import { applyPromptAppends, buildProtocolRequestContext, ContractRejectedParamsError } from '../shared/generation-setup.js'
 import { isSupportedImageUrl, parseMessageImagesAndText } from '../utils/input.js'
 import { buildModelMappingIndex, parseStyleCommandModifiers, stripImageCommandControls } from '../utils/parser.js'
+import { isDetailLogLevel } from '../shared/logging.js'
 import { filterParamsForContract } from '../contracts/wizard-params.js'
 import { availableAspectRatios, availableResolutionLevels, resolveOpenAiSize } from '../contracts/openai-size.js'
 import type { ContractOperation, ImageContract } from '../contracts/types.js'
@@ -61,6 +62,18 @@ export interface WizardHandler {
 export function createWizardHandler(params: CreateWizardHandlerParams): WizardHandler {
   const { ctx, catalog, service, handlers, getConfig, wizardSessions } = params
   const logger = ctx.logger('wizard-handler')
+
+  /** detail 日志级别下的引导流程日志；simple 级别完全静默 */
+  function detailLog(event: string, fields: Record<string, unknown>): void {
+    if (!isDetailLogLevel(getConfig().logLevel)) return
+    logger.info(`向导 ${event}`, fields)
+  }
+
+  /** 回复内容摘要：取首行截断，避免把模型列表/参数页刷屏 */
+  function summarizeReply(reply: unknown): string {
+    if (typeof reply !== 'string' || !reply) return ''
+    return reply.split('\n')[0].slice(0, 60)
+  }
 
   // ─── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -790,8 +803,12 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       mode: !!style?.prompt,
       commandName,
     })
-    if ('conflict' in result) return Promise.resolve(result.message)
+    if ('conflict' in result) {
+      detailLog('启动冲突', { scope: scopeKey, command: commandName, mode })
+      return Promise.resolve(result.message)
+    }
     const w = result
+    detailLog('会话启动', { scope: scopeKey, command: commandName, mode, step: w.step, platform: session.platform ?? '' })
 
     // 记录命令行已解析的 flag 类参数
     if (preModifiers.resolution) w.preResolution = preModifiers.resolution
@@ -865,6 +882,7 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       // 随后放行该消息（新指令等仍可正常执行），不再静默落空
       const expired = wizardSessions.takeIfExpired(scopeKey)
       if (expired) {
+        detailLog('会话超时回收', { scope: scopeKey, step: expired.step, mode: expired.mode })
         await session.send('之前的生成向导已超时退出，请重新发起指令')
         return next()
       }
@@ -878,35 +896,44 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       const text = (parsed.text ?? '').trim()
       const images = parsed.images.map(i => i.attrs?.src).filter(Boolean) as string[]
 
+      const inputSummary = { scope: scopeKey, step: w.step, mode: w.mode, text: text.slice(0, 40), images: images.length }
+      detailLog('收到输入', inputSummary)
+
+      /** 记录步骤处理结果并返回（统一出口，保证每次操作都有结果日志） */
+      const replyWith = (event: string, reply: string | void, extra?: Record<string, unknown>) => {
+        detailLog(event, { ...inputSummary, nextStep: w.step, reply: summarizeReply(reply), ...extra })
+        return reply
+      }
+
       // 收到向导相关消息即视为活动，刷新每步超时
       wizardSessions.touch(w)
 
       // 向导控制命令
       if (text === '取消' || text === 'cancel') {
         wizardSessions.cancel(scopeKey)
-        return '已退出生成向导'
+        return replyWith('用户取消', '已退出生成向导', { nextStep: '-' })
       }
       if (text === '上一步' || text === 'back') {
         if (w.step === 'await-prompt') {
           if (w.mode === 'image-to-image' && w.imageUrls?.length && !w.prompt) {
-            return '上一步：请重新发送 1 张图片'
+            return replyWith('返回上一步', '上一步：请重新发送 1 张图片')
           }
-          return '已在第一步，无法返回'
+          return replyWith('返回上一步', '已在第一步，无法返回')
         }
         if (w.step === 'model-select') {
           w.prompt = undefined
           w.step = 'await-prompt'
           if (w.mode === 'compose-image') {
-            return `已收到 ${w.imageUrls?.length ?? 0} 张；继续发图或发送合成描述`
+            return replyWith('返回上一步', `已收到 ${w.imageUrls?.length ?? 0} 张；继续发图或发送合成描述`)
           }
-          return w.mode === 'image-to-image'
+          return replyWith('返回上一步', w.mode === 'image-to-image'
             ? (w.imageUrls?.length ? '请输入修改描述' : '请先发送 1 张图片')
-            : '请重新发送画面描述'
+            : '请重新发送画面描述')
         }
         if (w.step === 'param-resolution') {
           w.params = {}
           w.step = 'model-select'
-          return renderModelList(userId, w.platform)
+          return replyWith('返回上一步', renderModelList(userId, w.platform))
         }
         if (w.step === 'param-select') {
           w.params = {}
@@ -915,10 +942,10 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
             const contract = resolveWizardContract(w)
             w.paramDefs = filterParamsForContract(contract, (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? [])
             w.step = 'param-resolution'
-            return renderResolutionList(w)
+            return replyWith('返回上一步', renderResolutionList(w))
           }
           w.step = 'model-select'
-          return renderModelList(userId, w.platform)
+          return replyWith('返回上一步', renderModelList(userId, w.platform))
         }
         if (w.step === 'confirm') {
           w.params = {}
@@ -927,15 +954,15 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
             const contract = resolveWizardContract(w)
             w.paramDefs = filterParamsForContract(contract, (w.protocol ? PROTOCOL_PARAMS[w.protocol]?.params : undefined) ?? [])
             w.step = 'param-resolution'
-            return renderResolutionList(w)
+            return replyWith('返回上一步', renderResolutionList(w))
           }
           w.step = 'param-select'
-          return w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)
+          return replyWith('返回上一步', w.protocol ? renderParamList(w) : renderModelList(userId, w.platform))
         }
-        return '已在第一步，无法返回'
+        return replyWith('返回上一步', '已在第一步，无法返回')
       }
       if (text === '?帮助' || text === '？帮助' || text === 'help') {
-        return renderHelp()
+        return replyWith('查看帮助', renderHelp())
       }
 
       // 图生图/合成图：后续步骤（选模型/参数/确认）中补发或更换图片。
@@ -951,10 +978,10 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
           const prefix = w.mode === 'compose-image'
             ? `已更新图片（当前 ${w.imageUrls!.length} 张）`
             : '已更新图片'
-          if (w.step === 'model-select') return `${prefix}\n${renderModelList(userId, w.platform)}`
-          if (w.step === 'param-resolution') return `${prefix}\n${renderResolutionList(w)}`
-          if (w.step === 'param-select') return `${prefix}\n${w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)}`
-          if (w.step === 'confirm') return `${prefix}\n${renderConfirm(w)}`
+          if (w.step === 'model-select') return replyWith('更新图片', `${prefix}\n${renderModelList(userId, w.platform)}`)
+          if (w.step === 'param-resolution') return replyWith('更新图片', `${prefix}\n${renderResolutionList(w)}`)
+          if (w.step === 'param-select') return replyWith('更新图片', `${prefix}\n${w.protocol ? renderParamList(w) : renderModelList(userId, w.platform)}`)
+          if (w.step === 'confirm') return replyWith('更新图片', `${prefix}\n${renderConfirm(w)}`)
         }
         // 图片已更新；若同时带有文本则继续按当前步骤处理
       }
@@ -962,15 +989,15 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       // 按步骤路由
       switch (w.step) {
         case 'await-prompt':
-          return handleAwaitPrompt(w, session, text, images)
+          return replyWith('输入描述', await handleAwaitPrompt(w, session, text, images))
         case 'model-select':
-          return handleModelSelect(w, text)
+          return replyWith('选择模型', await handleModelSelect(w, text), { model: w.modelId ?? '' })
         case 'param-resolution':
-          return handleParamResolution(w, text)
+          return replyWith('选择分辨率', await handleParamResolution(w, text), { resolution: String(w.params['resolution'] ?? '') })
         case 'param-select':
-          return handleParamSelect(w, text)
+          return replyWith('设置参数', await handleParamSelect(w, text))
         case 'confirm':
-          return handleConfirm(session, w, text)
+          return replyWith('确认步骤', await handleConfirm(session, w, text), { confirmed: !wizardSessions.get(scopeKey) })
         default:
           return next()
       }
