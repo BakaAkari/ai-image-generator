@@ -143,8 +143,9 @@ describe('向导依赖式参数流(gpt-image-2)', () => {
     await reachResolutionStep(ctx)
     await ctx.mw(makeSession('上一步'), ctx.next)
     const back = lastSent()
-    expect(back).toContain('[OPENAI]')
-    expect(back).toContain('-gpt')
+    expect(back).toContain('gpt-image-x')
+    expect(back).not.toContain('[OPENAI]')
+    expect(back).not.toContain('-gpt ')
   })
 
   test('确认页「上一步」→ 回分辨率页(分辨率需重选)', async () => {

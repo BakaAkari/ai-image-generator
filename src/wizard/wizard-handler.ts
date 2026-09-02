@@ -214,19 +214,13 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
     const lines: string[] = []
     for (let i = 0; i < mappings.length; i++) {
       const mapping = mappings[i]
-      const proto = resolveProtocol(mapping.modelId)
-      const providerLabel = PROTOCOL_LABELS[proto] ?? proto.toUpperCase()
       if (freePlatform) {
-        lines.push(`${i + 1} · [${providerLabel}] ${normalizeMappingSuffixLabel(mapping.suffix)}`)
+        lines.push(`${i + 1} · ${mapping.modelId}`)
         continue
       }
       const cost = estimateCost(mapping.modelId)
       const costText = cost > 0 ? `~${service.formatCredits(cost)}` : '免费'
-      const pp = PROTOCOL_PARAMS[proto]
-      const asyncTag = pp?.async
-        ? ` 异步 ${pp.async.minSec}-${pp.async.maxSec}s`
-        : ''
-      lines.push(`${i + 1} · [${providerLabel}] ${normalizeMappingSuffixLabel(mapping.suffix)}  ${costText}${asyncTag}`)
+      lines.push(`${i + 1} · ${mapping.modelId}  ${costText}`)
     }
     return lines.join('\n')
   }
@@ -843,8 +837,11 @@ export function createWizardHandler(params: CreateWizardHandlerParams): WizardHa
       w.imageUrls = imageUrls.slice(0, 8)
     }
 
-    // 预设命令（带锁定 prompt）：直接进模型选择；合成图不足 2 张时先收图
+    // 预设命令（带锁定 prompt）：图生图缺图先收图，合成图不足 2 张时先收图，其余直接进模型选择
     if (style?.prompt) {
+      if (mode === 'image-to-image' && !w.imageUrls?.length) {
+        return Promise.resolve('请先发送 1 张图片')
+      }
       if (mode === 'compose-image' && (w.imageUrls?.length ?? 0) < 2) {
         return Promise.resolve(`请发送至少 2 张图片（2-8 张，已收到 ${w.imageUrls?.length ?? 0} 张）`)
       }
